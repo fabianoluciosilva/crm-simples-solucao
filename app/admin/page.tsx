@@ -230,4 +230,292 @@ export default function AdminPage() {
 
   // ─── LÓGICA DE FILTRAGEM TEMPORAL ─────────────────────────────────────────
   const propostasFiltradas = propostas.filter(p => {
-    if (fil
+    if (filtroDias === 0) return true; // Mostra tudo
+    const dataLimite = new Date();
+    dataLimite.setDate(dataLimite.getDate() - filtroDias);
+    return new Date(p.created_at) >= dataLimite;
+  });
+
+  // ─── MÉTRICAS ─────────────────────────────────────────────────────────────
+  const totalPropostas = propostasFiltradas.length;
+  const propostasFechadas = propostasFiltradas.filter(p => p.status === 'fechada');
+  const propostasPerdidas = propostasFiltradas.filter(p => p.status === 'perdida');
+  
+  const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
+  
+  const volumeFinanceiro = propostasFiltradas.reduce((acc, p) => acc + (p.valor || 0), 0);
+  const receitaFechada = propostasFechadas.reduce((acc, p) => acc + (p.valor || 0), 0);
+  const ticketMedio = totalPropostas > 0 ? volumeFinanceiro / totalPropostas : 0;
+
+  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  // ─── TELA DE LOGIN ────────────────────────────────────────────────────────
+  if (!autenticado) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; }`}</style>
+        <div style={{ width: "100%", maxWidth: 400, background: "rgba(255,255,255,0.04)", border: `1px solid ${erro ? "rgba(248,113,113,0.4)" : "rgba(255,255,255,0.1)"}`, borderRadius: 20, padding: "40px 36px", transition: "border-color 0.2s" }}>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 10 }}>Simples Solução TI</div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 8 }}>CRM Comercial</div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Painel Administrativo Restrito</div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <input type="password" value={input} onChange={e => { setInput(e.target.value); setErro(false); }} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="••••••••" autoFocus style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${erro ? "rgba(248,113,113,0.5)" : "rgba(255,255,255,0.12)"}`, borderRadius: 10, color: "#fff", fontFamily: "'DM Mono', monospace", fontSize: 16, padding: "12px 16px", outline: "none", letterSpacing: "0.15em", textAlign: "center" }} />
+          </div>
+          <button onClick={handleLogin} style={{ width: "100%", padding: "13px", borderRadius: 10, background: "#4A90D9", color: "#fff", fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", border: "none", cursor: "pointer" }}>Acessar Painel</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── TELA DO PAINEL CRM ───────────────────────────────────────────────────
+  return (
+    <div style={{ minHeight: "100vh", background: "#080f1e", color: "#fff", paddingBottom: 60 }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+        
+        /* Menu Abas */
+        .tabs { display: flex; gap: 24px; margin-top: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .tab-btn { background: transparent; border: none; padding: 12px 0; color: rgba(255,255,255,0.4); font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: color 0.2s; border-bottom: 2px solid transparent; }
+        .tab-btn:hover { color: rgba(255,255,255,0.8); }
+        .tab-btn.active { color: #4A90D9; border-bottom-color: #4A90D9; }
+
+        .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 32px; margin-bottom: 40px; }
+        .metric-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 8px; }
+        .metric-title { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.4); }
+        .metric-value { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: #fff; }
+        .metric-value.highlight { color: #4A90D9; }
+        .metric-value.success { color: #22c55e; }
+        
+        .table-wrapper { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.2); }
+        td { font-family: 'Outfit', sans-serif; font-size: 14px; color: rgba(255,255,255,0.8); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        
+        .badge-status { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-family: 'Outfit', sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+        .badge-aberta { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+        .badge-fechada { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+        .badge-perdida { background: rgba(156,163,175,0.15); color: #9ca3af; border: 1px solid rgba(156,163,175,0.3); }
+        .badge-email { background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.3); margin-top: 4px;}
+        
+        .btn-action { padding: 6px 12px; border-radius: 6px; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+        .btn-view { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.2); margin-right: 8px; }
+        .btn-view:hover { background: rgba(255,255,255,0.2); }
+        .btn-wpp { background: rgba(34,197,94,0.1); color: #22c55e; border-color: rgba(34,197,94,0.2); margin-right: 8px; }
+        .btn-wpp:hover { background: rgba(34,197,94,0.2); }
+        .btn-email { background: rgba(168,85,247,0.1); color: #a855f7; border-color: rgba(168,85,247,0.2); margin-right: 8px; }
+        .btn-email:hover { background: rgba(168,85,247,0.2); }
+        .btn-email:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-win { background: rgba(74,144,217,0.1); color: #4A90D9; border-color: rgba(74,144,217,0.2); margin-right: 8px; }
+        .btn-win:hover { background: rgba(74,144,217,0.2); }
+        .btn-loss { background: rgba(156,163,175,0.1); color: #9ca3af; border-color: rgba(156,163,175,0.2); margin-right: 8px; }
+        .btn-loss:hover { background: rgba(156,163,175,0.2); }
+        .btn-reopen { background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2); margin-right: 8px; }
+        .btn-reopen:hover { background: rgba(245,158,11,0.2); }
+        .btn-delete { background: transparent; color: #f87171; }
+        .btn-delete:hover { text-decoration: underline; }
+      `}</style>
+
+      {/* HEADER */}
+      <div style={{ paddingTop: "20px" }}>
+        <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 4 }}>Gestão Comercial</div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff" }}>Painel de Oportunidades</div>
+          </div>
+          <button onClick={() => window.location.href = '/preco'} style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            + Nova Proposta
+          </button>
+        </div>
+      </div>
+
+      <div className="container">
+        {/* NAVEGAÇÃO DE ABAS */}
+        <div className="tabs">
+          <button className={`tab-btn ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
+            Propostas Enviadas
+          </button>
+          <button className={`tab-btn ${aba === 'leads' ? 'active' : ''}`} onClick={() => setAba('leads')}>
+            Leads do Site
+          </button>
+        </div>
+
+        {/* ===================== ABA DE PROPOSTAS ===================== */}
+        {aba === "propostas" && (
+          <>
+            {/* FILTRO DE PERÍODO */}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 24 }}>
+              <select 
+                value={filtroDias} 
+                onChange={e => setFiltroDias(Number(e.target.value))}
+                style={{
+                  background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff",
+                  padding: "10px 16px", borderRadius: "8px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer"
+                }}
+              >
+                <option value={30} style={{ color: "#000" }}>Último Mês (30 dias)</option>
+                <option value={90} style={{ color: "#000" }}>Últimos 3 Meses</option>
+                <option value={180} style={{ color: "#000" }}>Últimos 6 Meses</option>
+                <option value={365} style={{ color: "#000" }}>Último Ano</option>
+                <option value={0} style={{ color: "#000" }}>Todo o Histórico</option>
+              </select>
+            </div>
+
+            {/* CARDS DE MÉTRICAS */}
+            <div className="grid-metrics">
+              <div className="metric-card">
+                <div className="metric-title">Propostas / Orçado</div>
+                <div className="metric-value">{carregando ? "-" : totalPropostas} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(volumeFinanceiro)}</span></div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Taxa de Conversão</div>
+                <div className="metric-value highlight">{carregando ? "-" : taxaConversao.toFixed(1)}%</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Novos Contratos (Fechados)</div>
+                <div className="metric-value success">{carregando ? "-" : propostasFechadas.length} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(receitaFechada)}</span></div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Ticket Médio Ofertado</div>
+                <div className="metric-value" style={{ color: "#fff" }}>{carregando ? "-" : fmt(ticketMedio)}</div>
+              </div>
+            </div>
+
+            {/* TABELA DE PROPOSTAS */}
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+              Pipeline de Vendas
+              {carregando && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>Carregando dados...</span>}
+            </div>
+
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Empresa (Cliente)</th>
+                    <th>Valor Mensal</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: "right" }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {propostasFiltradas.length === 0 && !carregando && (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "40px 20px", color: "rgba(255,255,255,0.4)" }}>
+                        Nenhuma proposta encontrada neste período.
+                      </td>
+                    </tr>
+                  )}
+                  {propostasFiltradas.map(prop => (
+                    <tr key={prop.id} style={{ opacity: prop.status === 'perdida' ? 0.6 : 1 }}>
+                      <td>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#4A90D9", marginTop: 2 }}>{prop.numero}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "#fff" }}>{prop.cliente}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>Contato: {prop.contato || "—"}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{prop.email || "Sem e-mail cadastrado"}</div>
+                      </td>
+                      <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? '#22c55e' : prop.status === 'perdida' ? '#9ca3af' : '#fff' }}>
+                        {fmt(prop.valor)}
+                      </td>
+                      <td>
+                        <div>
+                          <span className={`badge-status ${prop.status === 'fechada' ? 'badge-fechada' : prop.status === 'perdida' ? 'badge-perdida' : 'badge-aberta'}`}>
+                            {prop.status === 'fechada' ? 'Venda Fechada' : prop.status === 'perdida' ? 'Perdida' : 'Aguardando'}
+                          </span>
+                        </div>
+                        {prop.status_envio === 'enviado' && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="badge-status badge-email">E-mail Enviado</span>
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ textAlign: "right", minWidth: 320 }}>
+                        <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
+                        <button className="btn-action btn-wpp" onClick={() => enviarWhatsApp(prop)}>Wpp</button>
+                        <button className="btn-action btn-email" disabled={enviando === prop.id} onClick={() => enviarPorEmail(prop)}>
+                          {enviando === prop.id ? "Enviando..." : "E-mail"}
+                        </button>
+                        
+                        {(!prop.status || prop.status === 'aberta') ? (
+                          <>
+                            <button className="btn-action btn-win" onClick={() => alterarStatus(prop.id, 'fechada')}>Ganho</button>
+                            <button className="btn-action btn-loss" onClick={() => alterarStatus(prop.id, 'perdida')}>Perdido</button>
+                          </>
+                        ) : (
+                          <button className="btn-action btn-reopen" onClick={() => alterarStatus(prop.id, 'aberta')}>Reabrir</button>
+                        )}
+
+                        <button className="btn-action btn-delete" onClick={() => excluirProposta(prop.id, prop.cliente)}>Excluir</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* ===================== ABA DE LEADS ===================== */}
+        {aba === "leads" && (
+          <div style={{ marginTop: 24 }}>
+             <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+              Capturas Recentes
+              {carregando && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>Carregando dados...</span>}
+            </div>
+
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Lead</th>
+                    <th>Interesse</th>
+                    <th style={{ textAlign: "right" }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.length === 0 && !carregando && (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center", padding: "40px 20px", color: "rgba(255,255,255,0.4)" }}>
+                        Nenhum lead recebido ainda.
+                      </td>
+                    </tr>
+                  )}
+                  {leads.map(lead => (
+                    <tr key={lead.id}>
+                      <td>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "#fff" }}>{lead.empresa}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{lead.email}</div>
+                      </td>
+                      <td>
+                        <span className="badge-status badge-aberta" style={{ background: "rgba(74,144,217,0.15)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)" }}>
+                          {lead.produto} - {lead.plano}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <button className="btn-action btn-wpp" onClick={() => enviarWhatsAppLead(lead)}>Chamar no WhatsApp</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
