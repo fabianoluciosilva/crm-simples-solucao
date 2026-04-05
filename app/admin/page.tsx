@@ -12,6 +12,7 @@ interface PropostaDB {
   numero: string;
   cliente: string;
   contato: string;
+  telefone?: string;
   email: string;
   valor: number;
   status: string;
@@ -230,7 +231,7 @@ export default function AdminPage() {
 
   // ─── LÓGICA DE FILTRAGEM TEMPORAL ─────────────────────────────────────────
   const propostasFiltradas = propostas.filter(p => {
-    if (filtroDias === 0) return true; // Mostra tudo
+    if (filtroDias === 0) return true; 
     const dataLimite = new Date();
     dataLimite.setDate(dataLimite.getDate() - filtroDias);
     return new Date(p.created_at) >= dataLimite;
