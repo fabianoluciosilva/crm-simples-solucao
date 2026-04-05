@@ -21,9 +21,10 @@ interface PropostaDB {
 export default function AdminPage() {
   const router = useRouter();
 
-  // --- ESTADOS DE AUTENTICAÇÃO ---
+  // --- ESTADOS GERAIS ---
   const [session, setSession] = useState<any>(null);
   const [carregandoAuth, setCarregandoAuth] = useState(true);
+  const [tema, setTema] = useState<"dark" | "light">("dark");
 
   // --- ESTADOS DO CRM ---
   const [aba, setAba] = useState<"propostas" | "leads">("propostas");
@@ -33,11 +34,26 @@ export default function AdminPage() {
   const [filtroDias, setFiltroDias] = useState<number>(30); // Filtro inicial: 30 dias
   const [enviando, setEnviando] = useState<number | null>(null);
 
+  // ─── LÓGICA DO TEMA (DARK/LIGHT MODE) ────────────────────────────────────
+  useEffect(() => {
+    // Ao carregar a página, verifica se o utilizador já tinha escolhido um tema antes
+    const temaSalvo = localStorage.getItem("tema_ssti");
+    if (temaSalvo === "light" || temaSalvo === "dark") {
+      setTema(temaSalvo);
+    }
+  }, []);
+
+  const alternarTema = () => {
+    const novoTema = tema === "dark" ? "light" : "dark";
+    setTema(novoTema);
+    localStorage.setItem("tema_ssti", novoTema); // Guarda a preferência
+  };
+
   // ─── LÓGICA DE SESSÃO DO SUPABASE ──────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
-        router.push("/"); // Redireciona para o login se não estiver autenticado
+        router.push("/");
       } else {
         setSession(session);
         setCarregandoAuth(false);
@@ -63,7 +79,7 @@ export default function AdminPage() {
       if (aba === "propostas") carregarDados();
       if (aba === "leads") carregarLeads();
     }
-  }, [session, aba]);
+  }, [session, aba, filtroDias]); // Adicionado filtroDias aqui para recarregar se necessário (opcional)
 
   const carregarDados = async () => {
     setCarregando(true);
@@ -234,70 +250,100 @@ export default function AdminPage() {
     return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "sans-serif" }}>A validar sessão...</div>;
   }
 
-  // ─── ESTRUTURA DO DASHBOARD (MENU LATERAL + CONTEÚDO) ───────────────────
+  // ─── ESTRUTURA DO DASHBOARD (CSS DINÂMICO BASEADO NO TEMA) ───────────────────
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#080f1e", color: "#fff" }}>
+    <div style={{ display: "flex", minHeight: "100vh" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+        
+        /* Variáveis Dinâmicas de Tema */
+        :root {
+          --bg-main: ${tema === 'dark' ? '#080f1e' : '#f4f7f9'};
+          --bg-sidebar: ${tema === 'dark' ? '#050a14' : '#ffffff'};
+          --bg-card: ${tema === 'dark' ? 'rgba(255,255,255,0.02)' : '#ffffff'};
+          --bg-hover: ${tema === 'dark' ? 'rgba(255,255,255,0.03)' : '#f8fafc'};
+          --text-primary: ${tema === 'dark' ? '#ffffff' : '#0f172a'};
+          --text-secondary: ${tema === 'dark' ? 'rgba(255,255,255,0.5)' : '#64748b'};
+          --text-tertiary: ${tema === 'dark' ? 'rgba(255,255,255,0.3)' : '#94a3b8'};
+          --border-light: ${tema === 'dark' ? 'rgba(255,255,255,0.05)' : '#e2e8f0'};
+          --border-medium: ${tema === 'dark' ? 'rgba(255,255,255,0.1)' : '#cbd5e1'};
+          --table-header: ${tema === 'dark' ? 'rgba(0,0,0,0.2)' : '#f8fafc'};
+          --profile-bg: ${tema === 'dark' ? 'rgba(0,0,0,0.2)' : '#f8fafc'};
+          --shadow-card: ${tema === 'dark' ? 'none' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)'};
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
         /* Layout Principal */
-        .sidebar { width: 260px; background: #050a14; border-right: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 10; }
-        .main-content { flex: 1; margin-left: 260px; padding: 32px 40px; display: flex; flex-direction: column; min-height: 100vh; }
+        body { background: var(--bg-main); color: var(--text-primary); transition: background 0.3s, color 0.3s; }
+        .sidebar { width: 260px; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 10; transition: background 0.3s; }
+        .main-content { flex: 1; margin-left: 260px; padding: 32px 40px; display: flex; flex-direction: column; min-height: 100vh; background: var(--bg-main); color: var(--text-primary); transition: background 0.3s; }
         
         /* Menu Lateral */
-        .sidebar-logo { padding: 30px 24px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .sidebar-logo { padding: 30px 24px; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; justify-content: center; }
         .nav-menu { padding: 24px 16px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
-        .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; color: rgba(255,255,255,0.5); font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; background: transparent; text-align: left; width: 100%; }
-        .nav-item:hover { background: rgba(255,255,255,0.03); color: #fff; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; color: var(--text-secondary); font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; background: transparent; text-align: left; width: 100%; }
+        .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
         .nav-item.active { background: rgba(74,144,217,0.1); color: #4A90D9; }
         
-        .user-profile { padding: 20px 24px; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2); }
+        .user-profile { padding: 20px 24px; border-top: 1px solid var(--border-light); background: var(--profile-bg); }
         .btn-logout { background: transparent; border: 1px solid rgba(248,113,113,0.3); color: #f87171; padding: 8px 0; border-radius: 8px; cursor: pointer; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; width: 100%; margin-top: 12px; transition: 0.2s; }
         .btn-logout:hover { background: rgba(248,113,113,0.1); }
 
-        /* Estilos Existentes (Cards, Tabelas) */
+        /* Cards e Tabelas */
         .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 40px; }
-        .metric-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 8px; }
-        .metric-title { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.4); }
-        .metric-value { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: #fff; }
+        .metric-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-card); transition: all 0.3s; }
+        .metric-title { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); }
+        .metric-value { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-primary); }
         .metric-value.highlight { color: #4A90D9; }
         .metric-value.success { color: #22c55e; }
         
-        .table-wrapper { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; overflow: hidden; }
+        .table-wrapper { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-card); transition: all 0.3s; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2); }
-        td { font-family: 'Outfit', sans-serif; font-size: 14px; color: rgba(255,255,255,0.8); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; }
+        th { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); padding: 16px 20px; border-bottom: 1px solid var(--border-light); background: var(--table-header); }
+        td { font-family: 'Outfit', sans-serif; font-size: 14px; color: var(--text-primary); padding: 16px 20px; border-bottom: 1px solid var(--border-light); vertical-align: middle; }
         tr:last-child td { border-bottom: none; }
-        tr:hover td { background: rgba(255,255,255,0.02); }
+        tr:hover td { background: var(--bg-hover); }
         
+        /* Badges e Botões */
         .badge-status { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-family: 'Outfit', sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-        .badge-aberta { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
-        .badge-fechada { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
-        .badge-perdida { background: rgba(156,163,175,0.15); color: #9ca3af; border: 1px solid rgba(156,163,175,0.3); }
-        .badge-email { background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.3); margin-top: 4px;}
+        .badge-aberta { background: rgba(245,158,11,0.15); color: ${tema === 'dark' ? '#f59e0b' : '#d97706'}; border: 1px solid rgba(245,158,11,0.3); }
+        .badge-fechada { background: rgba(34,197,94,0.15); color: ${tema === 'dark' ? '#22c55e' : '#16a34a'}; border: 1px solid rgba(34,197,94,0.3); }
+        .badge-perdida { background: rgba(156,163,175,0.15); color: ${tema === 'dark' ? '#9ca3af' : '#4b5563'}; border: 1px solid rgba(156,163,175,0.3); }
+        .badge-email { background: rgba(168,85,247,0.15); color: ${tema === 'dark' ? '#a855f7' : '#9333ea'}; border: 1px solid rgba(168,85,247,0.3); margin-top: 4px;}
         
         .btn-action { padding: 6px 12px; border-radius: 6px; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
-        .btn-view { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.2); margin-right: 8px; }
-        .btn-wpp { background: rgba(34,197,94,0.1); color: #22c55e; border-color: rgba(34,197,94,0.2); margin-right: 8px; }
-        .btn-email { background: rgba(168,85,247,0.1); color: #a855f7; border-color: rgba(168,85,247,0.2); margin-right: 8px; }
+        .btn-view { background: ${tema === 'dark' ? 'rgba(255,255,255,0.1)' : '#f1f5f9'}; color: var(--text-primary); border-color: ${tema === 'dark' ? 'rgba(255,255,255,0.2)' : '#cbd5e1'}; margin-right: 8px; }
+        .btn-view:hover { background: ${tema === 'dark' ? 'rgba(255,255,255,0.2)' : '#e2e8f0'}; }
+        .btn-wpp { background: rgba(34,197,94,0.1); color: ${tema === 'dark' ? '#22c55e' : '#16a34a'}; border-color: rgba(34,197,94,0.2); margin-right: 8px; }
+        .btn-wpp:hover { background: rgba(34,197,94,0.2); }
+        .btn-email { background: rgba(168,85,247,0.1); color: ${tema === 'dark' ? '#a855f7' : '#9333ea'}; border-color: rgba(168,85,247,0.2); margin-right: 8px; }
+        .btn-email:hover { background: rgba(168,85,247,0.2); }
+        .btn-email:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-win { background: rgba(74,144,217,0.1); color: #4A90D9; border-color: rgba(74,144,217,0.2); margin-right: 8px; }
-        .btn-loss { background: rgba(156,163,175,0.1); color: #9ca3af; border-color: rgba(156,163,175,0.2); margin-right: 8px; }
-        .btn-reopen { background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2); margin-right: 8px; }
+        .btn-win:hover { background: rgba(74,144,217,0.2); }
+        .btn-loss { background: rgba(156,163,175,0.1); color: ${tema === 'dark' ? '#9ca3af' : '#4b5563'}; border-color: rgba(156,163,175,0.2); margin-right: 8px; }
+        .btn-loss:hover { background: rgba(156,163,175,0.2); }
+        .btn-reopen { background: rgba(245,158,11,0.1); color: ${tema === 'dark' ? '#f59e0b' : '#d97706'}; border-color: rgba(245,158,11,0.2); margin-right: 8px; }
+        .btn-reopen:hover { background: rgba(245,158,11,0.2); }
         .btn-delete { background: transparent; color: #f87171; }
         
         /* Mobile adjustment */
         @media(max-width: 900px) {
-          .sidebar { width: 100%; position: relative; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.05); }
+          .sidebar { width: 100%; position: relative; border-right: none; border-bottom: 1px solid var(--border-light); }
           .main-content { margin-left: 0; padding: 20px; }
-          div[style*="display: flex"] { flex-direction: column; }
         }
       `}</style>
 
       {/* MENU LATERAL (SIDEBAR) */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <img src="/Logo-negativo.webp" alt="SSTI" style={{ maxHeight: "40px", objectFit: "contain" }} />
+          {/* Lógica da Logo baseada no Tema */}
+          <img 
+            src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} 
+            alt="SSTI" 
+            style={{ maxHeight: "45px", objectFit: "contain", transition: "all 0.3s" }} 
+          />
         </div>
         
         <nav className="nav-menu">
@@ -321,8 +367,8 @@ export default function AdminPage() {
         </nav>
 
         <div className="user-profile">
-          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Sessão ativa</div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#fff", marginTop: 4, wordBreak: "break-all" }}>{session?.user?.email}</div>
+          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, color: "var(--text-secondary)" }}>Sessão ativa</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "var(--text-primary)", marginTop: 4, wordBreak: "break-all" }}>{session?.user?.email}</div>
           <button onClick={handleLogout} className="btn-logout">Encerrar Sessão</button>
         </div>
       </aside>
@@ -331,28 +377,39 @@ export default function AdminPage() {
       <main className="main-content">
         
         {/* HEADER DA PÁGINA */}
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 40 }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 40, flexWrap: "wrap", gap: "20px" }}>
           <div>
-            <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 28, fontWeight: 800, color: "#fff", margin: 0 }}>
+            <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
               {aba === 'propostas' ? "Visão Geral Comercial" : "Gestão de Leads"}
             </h1>
-            <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+            <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "var(--text-secondary)", marginTop: 4 }}>
               {aba === 'propostas' ? "Acompanhe as suas métricas e propostas enviadas." : "Potenciais clientes que chegaram através do site."}
             </p>
           </div>
           
-          {aba === 'propostas' && (
-            <select 
-              value={filtroDias} 
-              onChange={e => setFiltroDias(Number(e.target.value))}
-              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer" }}
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            
+            {/* BOTÃO DE MUDAR TEMA */}
+            <button 
+              onClick={alternarTema} 
+              style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-medium)", padding: "10px 16px", borderRadius: "10px", cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: "8px", transition: "all 0.2s" }}
             >
-              <option value={30} style={{ color: "#000" }}>Último Mês (30 dias)</option>
-              <option value={90} style={{ color: "#000" }}>Últimos 3 Meses</option>
-              <option value={365} style={{ color: "#000" }}>Último Ano</option>
-              <option value={0} style={{ color: "#000" }}>Todo o Histórico</option>
-            </select>
-          )}
+              {tema === 'dark' ? '☀️ Modo Claro' : '🌙 Modo Escuro'}
+            </button>
+
+            {aba === 'propostas' && (
+              <select 
+                value={filtroDias} 
+                onChange={e => setFiltroDias(Number(e.target.value))}
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-medium)", color: "var(--text-primary)", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer", transition: "all 0.2s" }}
+              >
+                <option value={30}>Último Mês (30 dias)</option>
+                <option value={90}>Últimos 3 Meses</option>
+                <option value={365}>Último Ano</option>
+                <option value={0}>Todo o Histórico</option>
+              </select>
+            )}
+          </div>
         </header>
 
         {/* CONTEÚDO PROPOSTAS */}
@@ -361,7 +418,7 @@ export default function AdminPage() {
             <div className="grid-metrics">
               <div className="metric-card">
                 <div className="metric-title">Propostas Criadas</div>
-                <div className="metric-value">{carregando ? "-" : totalPropostas} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(volumeFinanceiro)}</span></div>
+                <div className="metric-value">{carregando ? "-" : totalPropostas} <span style={{fontSize: 14, color: "var(--text-secondary)", fontWeight: 400}}>| {fmt(volumeFinanceiro)}</span></div>
               </div>
               <div className="metric-card">
                 <div className="metric-title">Taxa de Conversão</div>
@@ -369,7 +426,7 @@ export default function AdminPage() {
               </div>
               <div className="metric-card">
                 <div className="metric-title">Negócios Fechados</div>
-                <div className="metric-value success">{carregando ? "-" : propostasFechadas.length} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(receitaFechada)}</span></div>
+                <div className="metric-value success">{carregando ? "-" : propostasFechadas.length} <span style={{fontSize: 14, color: "var(--text-secondary)", fontWeight: 400}}>| {fmt(receitaFechada)}</span></div>
               </div>
             </div>
 
@@ -386,20 +443,20 @@ export default function AdminPage() {
                 </thead>
                 <tbody>
                   {propostasFiltradas.length === 0 && !carregando && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "rgba(255,255,255,0.4)" }}>Nenhuma proposta encontrada.</td></tr>
+                    <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhuma proposta encontrada.</td></tr>
                   )}
                   {propostasFiltradas.map(prop => (
                     <tr key={prop.id} style={{ opacity: prop.status === 'perdida' ? 0.6 : 1 }}>
                       <td>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
                         <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#4A90D9", marginTop: 2 }}>{prop.numero}</div>
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, color: "#fff" }}>{prop.cliente}</div>
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{prop.contato || "—"}</div>
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{prop.email || "Sem e-mail"}</div>
+                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{prop.cliente}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{prop.contato || "—"}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{prop.email || "Sem e-mail"}</div>
                       </td>
-                      <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? '#22c55e' : prop.status === 'perdida' ? '#9ca3af' : '#fff' }}>
+                      <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? '#22c55e' : prop.status === 'perdida' ? '#9ca3af' : 'var(--text-primary)' }}>
                         {fmt(prop.valor)}
                       </td>
                       <td>
@@ -451,17 +508,17 @@ export default function AdminPage() {
               </thead>
               <tbody>
                 {leads.length === 0 && !carregando && (
-                  <tr><td colSpan={4} style={{ textAlign: "center", padding: "40px", color: "rgba(255,255,255,0.4)" }}>Nenhum lead capturado.</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhum lead capturado.</td></tr>
                 )}
                 {leads.map(lead => (
                   <tr key={lead.id}>
                     <td>
-                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
+                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
                     </td>
                     <td>
-                      <div style={{ fontWeight: 600, color: "#fff" }}>{lead.empresa}</div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{lead.email}</div>
+                      <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{lead.empresa}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{lead.email}</div>
                     </td>
                     <td>
                       <span className="badge-status badge-aberta" style={{ background: "rgba(74,144,217,0.15)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)" }}>
