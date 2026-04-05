@@ -533,4 +533,301 @@ export default function AdminPage() {
                 <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>De {totalPropostas} propostas criadas</div>
               </div>
               <div className="metric-card">
-                <div
+                <div className="metric-title">Ganhos vs Perdidos</div>
+                <div className="metric-value">
+                  <span style={{ color: tema === 'dark' ? '#22c55e' : '#16a34a' }}>{propostasFechadas.length}</span> 
+                  <span style={{ color: "var(--text-tertiary)", margin: "0 8px", fontSize: 20 }}>/</span> 
+                  <span style={{ color: tema === 'dark' ? '#f87171' : '#dc2626' }}>{propostasPerdidas.length}</span>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Negócios concluídos</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Total de Leads</div>
+                <div className="metric-value">{carregando ? "-" : leadsFiltrados.length}</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Capturados no site</div>
+              </div>
+            </div>
+
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data / Ref</th>
+                    <th>Empresa & Contacto</th>
+                    <th>Mensalidade</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: "right" }}>Gestão</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {propostasFiltradas.length === 0 && !carregando && (
+                    <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhuma proposta encontrada no período.</td></tr>
+                  )}
+                  {propostasFiltradas.map(prop => (
+                    <tr key={prop.id} style={{ opacity: prop.status === 'perdida' ? 0.6 : 1 }}>
+                      <td>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#4A90D9", marginTop: 2 }}>{prop.numero}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{prop.cliente}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{prop.contato || "—"}</div>
+                      </td>
+                      <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? (tema === 'dark' ? '#22c55e' : '#16a34a') : prop.status === 'perdida' ? (tema === 'dark' ? '#f87171' : '#dc2626') : 'var(--text-primary)' }}>
+                        {fmt(prop.valor)}
+                      </td>
+                      <td>
+                        <div>
+                          <span className={`badge-status ${prop.status === 'fechada' ? 'badge-fechada' : prop.status === 'perdida' ? 'badge-perdida' : 'badge-aberta'}`}>
+                            {prop.status === 'fechada' ? 'Ganha' : prop.status === 'perdida' ? 'Perdida' : 'Aberto'}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "right", minWidth: 320 }}>
+                        {prop.status === 'fechada' && (
+                          <button className="btn-action btn-view" style={{ color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }} onClick={() => abrirNovoContrato(prop)}>+ Contrato</button>
+                        )}
+                        <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
+                        
+                        {(!prop.status || prop.status === 'aberta') ? (
+                          <>
+                            <button className="btn-action btn-win" onClick={() => alterarStatus(prop.id, 'fechada')}>Ganho</button>
+                            <button className="btn-action btn-loss" onClick={() => alterarStatus(prop.id, 'perdida')}>Perdido</button>
+                          </>
+                        ) : (
+                          <button className="btn-action btn-reopen" onClick={() => alterarStatus(prop.id, 'aberta')}>Reabrir</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* ─── ABA: CONTRATOS ─── */}
+        {aba === "contratos" && (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Início</th>
+                  <th>Cliente</th>
+                  <th>Valor Mensal (MRR)</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contratos.length === 0 && !carregando && (
+                  <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhum contrato registado.</td></tr>
+                )}
+                {contratos.map(c => (
+                  <tr key={c.id} style={{ opacity: c.status === 'Cancelado' ? 0.5 : 1 }}>
+                    <td>
+                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(c.data_inicio).toLocaleDateString('pt-BR')}</div>
+                      {c.data_fim && <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>Fim: {new Date(c.data_fim).toLocaleDateString('pt-BR')}</div>}
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{c.cliente_nome}</div>
+                      {c.servicos_inclusos && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 300 }}>{c.servicos_inclusos}</div>}
+                    </td>
+                    <td>
+                      <div style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: c.status === 'Ativo' ? (tema === 'dark' ? '#22c55e' : '#16a34a') : 'var(--text-primary)' }}>
+                        {fmt(c.valor_mensal)}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge-status ${c.status === 'Ativo' ? 'badge-concluido' : c.status === 'Suspenso' ? 'badge-andamento' : 'badge-atrasado'}`}>
+                        {c.status}
+                      </span>
+                      {c.status === 'Cancelado' && c.motivo_cancelamento && (
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, fontStyle: "italic", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={c.motivo_cancelamento}>
+                          Motivo: {c.motivo_cancelamento}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button className="btn-action btn-view" onClick={() => editarContrato(c)}>Gerir Contrato</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ─── ABA: TAREFAS ─── */}
+        {aba === "tarefas" && (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Prazo</th>
+                  <th>Tarefa</th>
+                  <th>Referência (Cliente)</th>
+                  <th>Responsável</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tarefasFiltradas.length === 0 && !carregando && (
+                  <tr><td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhuma tarefa encontrada.</td></tr>
+                )}
+                {tarefasFiltradas.map(t => {
+                  const statusVisual = getStatusRealTarefa(t);
+                  return (
+                    <tr key={t.id} style={{ opacity: statusVisual === 'Concluído' ? 0.5 : 1 }}>
+                      <td>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: statusVisual === 'Atrasado' ? (tema === 'dark' ? '#f87171' : '#dc2626') : 'var(--text-primary)', fontWeight: statusVisual === 'Atrasado' ? 700 : 400 }}>
+                          {new Date(t.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{t.titulo}</div>
+                        {t.descricao && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 250 }}>{t.descricao}</div>}
+                      </td>
+                      <td><div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>{t.nome_referencia || "—"}</div></td>
+                      <td><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.usuario_email.split('@')[0]}</div></td>
+                      <td><span className={`badge-status badge-${statusVisual.toLowerCase().replace(' ', '')}`}>{statusVisual}</span></td>
+                      <td style={{ textAlign: "right", minWidth: 200 }}>
+                        {statusVisual !== 'Concluído' && (
+                          <button className="btn-action btn-view" onClick={() => alterarStatusTarefaRapido(t.id, 'Concluído')} style={{ color: tema === 'dark' ? '#22c55e' : '#16a34a', borderColor: "rgba(34,197,94,0.3)" }}>✓ Concluir</button>
+                        )}
+                        <button className="btn-action btn-view" onClick={() => editarTarefa(t)}>Editar</button>
+                        <button className="btn-action btn-delete" onClick={() => excluirTarefa(t.id)}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ─── ABA: LEADS ─── */}
+        {aba === "leads" && (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Lead / Empresa</th>
+                  <th>Solução de Interesse</th>
+                  <th style={{ textAlign: "right" }}>Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map(lead => (
+                  <tr key={lead.id}>
+                    <td><div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div></td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{lead.empresa}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
+                    </td>
+                    <td><span className="badge-status badge-aberta">{lead.produto} - {lead.plano}</span></td>
+                    <td style={{ textAlign: "right" }}>
+                      <button className="btn-action btn-view" onClick={() => abrirNovaTarefa(`Contato Lead: ${lead.empresa}`, lead.id, undefined)}>+ Tarefa</button>
+                      <button className="btn-action btn-wpp" onClick={() => enviarWhatsAppLead(lead)}>Wpp</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+      </main>
+
+      {/* ─── MODAL TAREFA ─── */}
+      {modalTarefa && (
+        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 20, color: "var(--text-primary)", marginBottom: 24, borderBottom: "1px solid var(--border-light)", paddingBottom: 16 }}>
+              {formTarefa.id ? "Editar Tarefa" : "Nova Tarefa"}
+            </h2>
+            <form onSubmit={salvarTarefa}>
+              <label className="label-modal">Título da Tarefa</label>
+              <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({...formTarefa, titulo: e.target.value})} placeholder="Ex: Ligar para confirmar..." />
+              <label className="label-modal">Data e Hora de Vencimento</label>
+              <input type="datetime-local" required className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({...formTarefa, data_vencimento: e.target.value})} />
+              <label className="label-modal">Descrição (Opcional)</label>
+              <textarea className="input-modal" rows={3} value={formTarefa.descricao} onChange={e => setFormTarefa({...formTarefa, descricao: e.target.value})} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <label className="label-modal">Status</label>
+                  <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({...formTarefa, status: e.target.value})}>
+                    <option value="Pendente">Pendente</option><option value="Em andamento">Em andamento</option><option value="Concluído">Concluído</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label-modal">Responsável (E-mail)</label>
+                  <input required type="email" className="input-modal" value={formTarefa.usuario_email} onChange={e => setFormTarefa({...formTarefa, usuario_email: e.target.value})} disabled={!isAdmin} style={{ opacity: !isAdmin ? 0.6 : 1 }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+                <button type="button" onClick={() => setModalTarefa(false)} style={{ background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-medium)", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>Cancelar</button>
+                <button type="submit" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>Gravar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL CONTRATO ─── */}
+      {modalContrato && (
+        <div className="modal-overlay" onClick={() => setModalContrato(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 20, color: "var(--text-primary)", marginBottom: 24, borderBottom: "1px solid var(--border-light)", paddingBottom: 16 }}>
+              {formContrato.id ? "Gestão do Contrato" : "Novo Contrato"}
+            </h2>
+            <form onSubmit={salvarContrato}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <label className="label-modal">Nome do Cliente</label>
+                  <input required className="input-modal" value={formContrato.cliente_nome} onChange={e => setFormContrato({...formContrato, cliente_nome: e.target.value})} disabled={!!formContrato.proposta_id} style={{ opacity: formContrato.proposta_id ? 0.6 : 1 }} />
+                </div>
+                <div>
+                  <label className="label-modal">Valor Mensal (R$)</label>
+                  <input type="number" step="0.01" required className="input-modal" value={formContrato.valor_mensal || ""} onChange={e => setFormContrato({...formContrato, valor_mensal: Number(e.target.value)})} />
+                </div>
+              </div>
+              
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <label className="label-modal">Data Início</label>
+                  <input type="date" required className="input-modal" value={formContrato.data_inicio} onChange={e => setFormContrato({...formContrato, data_inicio: e.target.value})} />
+                </div>
+                <div>
+                  <label className="label-modal">Status do Contrato</label>
+                  <select className="input-modal" value={formContrato.status} onChange={e => setFormContrato({...formContrato, status: e.target.value})}>
+                    <option value="Ativo">Ativo</option>
+                    <option value="Suspenso">Suspenso</option>
+                    <option value="Cancelado">Cancelado</option>
+                  </select>
+                </div>
+              </div>
+
+              <label className="label-modal">Serviços Inclusos / Observações</label>
+              <textarea className="input-modal" rows={2} value={formContrato.servicos_inclusos} onChange={e => setFormContrato({...formContrato, servicos_inclusos: e.target.value})} />
+              
+              {formContrato.status === 'Cancelado' && (
+                <>
+                  <label className="label-modal" style={{ color: "#f87171" }}>Motivo do Cancelamento (Obrigatório)</label>
+                  <textarea required className="input-modal" style={{ borderColor: "rgba(248,113,113,0.5)" }} rows={2} value={formContrato.motivo_cancelamento} onChange={e => setFormContrato({...formContrato, motivo_cancelamento: e.target.value})} placeholder="Escreva o motivo..." />
+                </>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+                <button type="button" onClick={() => setModalContrato(false)} style={{ background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-medium)", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>Cancelar</button>
+                <button type="submit" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>Gravar Contrato</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
