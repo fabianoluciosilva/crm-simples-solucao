@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 interface PropostaDB {
@@ -18,6 +19,8 @@ interface PropostaDB {
 }
 
 export default function AdminPage() {
+  const router = useRouter();
+
   // --- ESTADOS DE AUTENTICAÇÃO ---
   const [session, setSession] = useState<any>(null);
   const [emailLogin, setEmailLogin] = useState("");
@@ -30,7 +33,7 @@ export default function AdminPage() {
   const [propostas, setPropostas] = useState<PropostaDB[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [carregando, setCarregando] = useState(false);
-  const [filtroDias, setFiltroDias] = useState<number>(30); // Filtro inicial: 30 dias
+  const [filtroDias, setFiltroDias] = useState<number>(30); 
   const [enviando, setEnviando] = useState<number | null>(null);
 
   // ─── LÓGICA DE SESSÃO DO SUPABASE ──────────────────────────────────────────
@@ -116,10 +119,8 @@ export default function AdminPage() {
     window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // ─── DISPARO DE E-MAIL ─────────────────────────────────────────────
   const enviarPorEmail = async (prop: PropostaDB) => {
     if (!prop.email) return alert("Esta proposta não possui o e-mail do cliente cadastrado.");
-    
     if (!confirm(`Confirmar envio de proposta para ${prop.email}?`)) return;
 
     setEnviando(prop.id);
@@ -160,7 +161,6 @@ export default function AdminPage() {
     }
   };
 
-  // ─── VISUALIZAR PDF ───────────────────────────────────────────────────────
   const visualizarProposta = (prop: PropostaDB) => {
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
     const nomeCliente = prop.cliente || "Empresa Não Identificada";
@@ -246,7 +246,6 @@ export default function AdminPage() {
     setTimeout(() => { w.document.title = `Proposta_${nomeCliente.replace(/\s+/g, '_')}_${prop.numero}`; w.print(); }, 500);
   };
 
-  // ─── LÓGICA DE FILTRAGEM TEMPORAL ─────────────────────────────────────────
   const propostasFiltradas = propostas.filter(p => {
     if (filtroDias === 0) return true; 
     const dataLimite = new Date();
@@ -254,7 +253,6 @@ export default function AdminPage() {
     return new Date(p.created_at) >= dataLimite;
   });
 
-  // ─── MÉTRICAS ─────────────────────────────────────────────────────────────
   const totalPropostas = propostasFiltradas.length;
   const propostasFechadas = propostasFiltradas.filter(p => p.status === 'fechada');
   const propostasPerdidas = propostasFiltradas.filter(p => p.status === 'perdida');
@@ -267,7 +265,6 @@ export default function AdminPage() {
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  // ─── TELA DE LOGIN ────────────────────────────────────────────────────────
   if (carregandoAuth) {
     return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "sans-serif" }}>Verificando credenciais...</div>;
   }
@@ -316,7 +313,6 @@ export default function AdminPage() {
     );
   }
 
-  // ─── TELA DO PAINEL CRM ───────────────────────────────────────────────────
   return (
     <div style={{ minHeight: "100vh", background: "#080f1e", color: "#fff", paddingBottom: 60 }}>
       <style>{`
@@ -324,7 +320,6 @@ export default function AdminPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
         
-        /* Menu Abas */
         .tabs { display: flex; gap: 24px; margin-top: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
         .tab-btn { background: transparent; border: none; padding: 12px 0; color: rgba(255,255,255,0.4); font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: color 0.2s; border-bottom: 2px solid transparent; }
         .tab-btn:hover { color: rgba(255,255,255,0.8); }
@@ -383,7 +378,7 @@ export default function AdminPage() {
                <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", fontFamily: "'Outfit', sans-serif" }}>Logado como:</span><br/>
                <strong style={{ fontSize: "13px", fontFamily: "'DM Mono', monospace" }}>{session.user.email}</strong>
             </div>
-            <button onClick={() => window.location.href = '/preco'} style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <button onClick={() => router.push('/preco')} style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               + Nova Proposta
             </button>
             <button onClick={handleLogout} className="btn-logout">Sair</button>
