@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [carregando, setCarregando] = useState(true);
   const [logando, setLogando] = useState(false);
 
-  // 1. Verifica se o Fabiano/Equipa já está logado
+  // 1. Verifica se a Equipe já está logada
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
@@ -73,15 +73,15 @@ export default function LoginPage() {
       <div style={{ width: "100%", maxWidth: 420, background: "rgba(255,255,255,0.03)", border: `1px solid ${erro ? "rgba(248,113,113,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 24, padding: "48px 40px", zIndex: 1, backdropFilter: "blur(10px)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
         
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          {/* AQUI VOCÊ PODE COLOCAR A LOGO DA SIMPLES SOLUÇÃO TI */}
-          {/* <img src="/logo-ssti.png" alt="Simples Solução TI" style={{ maxHeight: "60px", marginBottom: "20px" }} /> */}
-          
-          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 64, height: 64, borderRadius: 16, background: "rgba(74,144,217,0.1)", border: "1px solid rgba(74,144,217,0.2)", color: "#4A90D9", marginBottom: 20 }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-          </div>
+          {/* LOGO OFICIAL NEGATIVA DA SIMPLES SOLUÇÃO TI */}
+          <img 
+            src="/Logo-negativo.webp" 
+            alt="Simples Solução TI" 
+            style={{ maxHeight: "80px", objectFit: "contain", marginBottom: "20px" }} 
+          />
 
           <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 26, fontWeight: 800, color: "#fff", margin: "0 0 8px 0" }}>CRM Comercial</h1>
-          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "rgba(255,255,255,0.4)", margin: 0 }}>Simples Solução TI</p>
+          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "rgba(255,255,255,0.4)", margin: 0 }}>Acesso Restrito</p>
         </div>
 
         <form onSubmit={handleLogin}>
