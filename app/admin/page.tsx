@@ -31,12 +31,11 @@ export default function AdminPage() {
   const [propostas, setPropostas] = useState<PropostaDB[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [carregando, setCarregando] = useState(false);
-  const [filtroDias, setFiltroDias] = useState<number>(30); // Filtro inicial: 30 dias
+  const [filtroDias, setFiltroDias] = useState<number>(30);
   const [enviando, setEnviando] = useState<number | null>(null);
 
   // ─── LÓGICA DO TEMA (DARK/LIGHT MODE) ────────────────────────────────────
   useEffect(() => {
-    // Ao carregar a página, verifica se o utilizador já tinha escolhido um tema antes
     const temaSalvo = localStorage.getItem("tema_ssti");
     if (temaSalvo === "light" || temaSalvo === "dark") {
       setTema(temaSalvo);
@@ -46,7 +45,7 @@ export default function AdminPage() {
   const alternarTema = () => {
     const novoTema = tema === "dark" ? "light" : "dark";
     setTema(novoTema);
-    localStorage.setItem("tema_ssti", novoTema); // Guarda a preferência
+    localStorage.setItem("tema_ssti", novoTema);
   };
 
   // ─── LÓGICA DE SESSÃO DO SUPABASE ──────────────────────────────────────────
@@ -79,7 +78,7 @@ export default function AdminPage() {
       if (aba === "propostas") carregarDados();
       if (aba === "leads") carregarLeads();
     }
-  }, [session, aba, filtroDias]); // Adicionado filtroDias aqui para recarregar se necessário (opcional)
+  }, [session, aba, filtroDias]);
 
   const carregarDados = async () => {
     setCarregando(true);
