@@ -32,6 +32,19 @@ interface TarefaDB {
   created_at: string;
 }
 
+interface ContratoDB {
+  id: number;
+  proposta_id?: number;
+  cliente_nome: string;
+  servicos_inclusos?: string;
+  valor_mensal: number;
+  status: string;
+  data_inicio: string;
+  data_fim?: string;
+  motivo_cancelamento?: string;
+  created_at: string;
+}
+
 export default function AdminPage() {
   const router = useRouter();
 
@@ -42,22 +55,27 @@ export default function AdminPage() {
   const isAdmin = session?.user?.email === 'fabiano@simplessolucao.com.br';
 
   // --- ESTADOS DO CRM ---
-  const [aba, setAba] = useState<"propostas" | "leads" | "tarefas">("propostas");
+  const [aba, setAba] = useState<"propostas" | "leads" | "tarefas" | "contratos">("propostas");
   const [propostas, setPropostas] = useState<PropostaDB[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [tarefas, setTarefas] = useState<TarefaDB[]>([]);
+  const [contratos, setContratos] = useState<ContratoDB[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [filtroDias, setFiltroDias] = useState<number>(30);
   const [enviando, setEnviando] = useState<number | null>(null);
 
-  // --- ESTADOS DA GESTÃO DE TAREFAS ---
+  // --- ESTADOS DE MODAIS ---
   const [modalTarefa, setModalTarefa] = useState(false);
   const [filtroStatusTarefa, setFiltroStatusTarefa] = useState("Todos");
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB>>({
     titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: ""
   });
 
-  // Utilitário de formatação de moeda
+  const [modalContrato, setModalContrato] = useState(false);
+  const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({
+    cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: ""
+  });
+
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   // ─── LÓGICA DO TEMA (DARK/LIGHT MODE) ────────────────────────────────────
@@ -99,7 +117,10 @@ export default function AdminPage() {
   // ─── CARREGAMENTO DE DADOS ─────────────────────────────────────────
   useEffect(() => {
     if (session) {
-      if (aba === "propostas") carregarDados();
+      if (aba === "propostas" || aba === "contratos") {
+        carregarDados();
+        carregarContratos(); // MRR na aba propostas precisa dos contratos
+      }
       if (aba === "leads") carregarLeads();
       if (aba === "tarefas") carregarTarefas();
     }
@@ -109,7 +130,6 @@ export default function AdminPage() {
     setCarregando(true);
     const { data, error } = await supabase.from('propostas').select('*').order('created_at', { ascending: false });
     if (!error && data) setPropostas(data);
-    else console.error("Erro ao carregar propostas:", error);
     setCarregando(false);
   };
 
@@ -117,24 +137,76 @@ export default function AdminPage() {
     setCarregando(true);
     const { data, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false });
     if (!error && data) setLeads(data);
-    else console.error("Erro ao carregar leads:", error);
     setCarregando(false);
   };
 
   const carregarTarefas = async () => {
     setCarregando(true);
     let query = supabase.from('tarefas').select('*').order('data_vencimento', { ascending: true });
-    
-    if (!isAdmin) {
-      query = query.eq('usuario_email', session?.user?.email);
-    }
-    
+    if (!isAdmin) query = query.eq('usuario_email', session?.user?.email);
     const { data, error } = await query;
     if (!error && data) setTarefas(data);
     setCarregando(false);
   };
 
-  // ─── GESTÃO DE TAREFAS (LÓGICA) ─────────────────────────────────────────
+  const carregarContratos = async () => {
+    const { data, error } = await supabase.from('contratos').select('*').order('created_at', { ascending: false });
+    if (!error && data) setContratos(data);
+  };
+
+  // ─── GESTÃO DE CONTRATOS ──────────────────────────────────────────────────
+  const abrirNovoContrato = (prop?: PropostaDB) => {
+    if (prop) {
+      setFormContrato({
+        proposta_id: prop.id,
+        cliente_nome: prop.cliente,
+        valor_mensal: prop.valor,
+        status: "Ativo",
+        data_inicio: new Date().toISOString().split('T')[0],
+        servicos_inclusos: `Contrato originado da Proposta ${prop.numero}`,
+        motivo_cancelamento: ""
+      });
+    } else {
+      setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
+    }
+    setModalContrato(true);
+  };
+
+  const editarContrato = (c: ContratoDB) => {
+    setFormContrato({ ...c });
+    setModalContrato(true);
+  };
+
+  const salvarContrato = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento?.trim()) {
+      alert("Para cancelar o contrato, é obrigatório preencher o motivo do cancelamento.");
+      return;
+    }
+
+    const payload = {
+      proposta_id: formContrato.proposta_id || null,
+      cliente_nome: formContrato.cliente_nome,
+      servicos_inclusos: formContrato.servicos_inclusos,
+      valor_mensal: formContrato.valor_mensal,
+      status: formContrato.status,
+      data_inicio: formContrato.data_inicio,
+      data_fim: formContrato.status === 'Cancelado' && !formContrato.data_fim ? new Date().toISOString().split('T')[0] : formContrato.data_fim || null,
+      motivo_cancelamento: formContrato.status === 'Cancelado' ? formContrato.motivo_cancelamento : null,
+      updated_at: new Date().toISOString()
+    };
+
+    if (formContrato.id) {
+      await supabase.from('contratos').update(payload).eq('id', formContrato.id);
+    } else {
+      await supabase.from('contratos').insert([payload]);
+    }
+    
+    setModalContrato(false);
+    carregarContratos();
+  };
+
+  // ─── GESTÃO DE TAREFAS ─────────────────────────────────────────
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => {
     setFormTarefa({
       titulo: "", descricao: "", data_vencimento: "", status: "Pendente", 
@@ -152,14 +224,9 @@ export default function AdminPage() {
 
   const salvarTarefa = async (e: React.FormEvent) => {
     e.preventDefault();
-    const isUpdate = !!formTarefa.id;
-    
     let data_conclusao = formTarefa.data_conclusao;
-    if (formTarefa.status === 'Concluído' && !data_conclusao) {
-      data_conclusao = new Date().toISOString();
-    } else if (formTarefa.status !== 'Concluído') {
-      data_conclusao = undefined;
-    }
+    if (formTarefa.status === 'Concluído' && !data_conclusao) data_conclusao = new Date().toISOString();
+    else if (formTarefa.status !== 'Concluído') data_conclusao = undefined;
 
     const payload = {
       titulo: formTarefa.titulo,
@@ -170,15 +237,12 @@ export default function AdminPage() {
       nome_referencia: formTarefa.nome_referencia,
       lead_id: formTarefa.lead_id || null,
       proposta_id: formTarefa.proposta_id || null,
-      data_conclusao: data_conclusao,
+      data_conclusao,
       updated_at: new Date().toISOString()
     };
 
-    if (isUpdate) {
-      await supabase.from('tarefas').update(payload).eq('id', formTarefa.id);
-    } else {
-      await supabase.from('tarefas').insert([payload]);
-    }
+    if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id);
+    else await supabase.from('tarefas').insert([payload]);
     
     setModalTarefa(false);
     carregarTarefas();
@@ -199,8 +263,7 @@ export default function AdminPage() {
 
   const getStatusRealTarefa = (t: TarefaDB) => {
     if (t.status === 'Concluído') return 'Concluído';
-    const vencimento = new Date(t.data_vencimento);
-    if (vencimento < new Date()) return 'Atrasado';
+    if (new Date(t.data_vencimento) < new Date()) return 'Atrasado';
     return t.status;
   };
 
@@ -227,8 +290,7 @@ export default function AdminPage() {
   };
 
   const enviarWhatsApp = (prop: PropostaDB) => {
-    const primeiroNome = prop.contato ? prop.contato.split(" ")[0] : "cliente";
-    const texto = `Olá ${primeiroNome}, tudo bem?\n\nSou da Simples Solução TI. Conforme conversámos, estou a enviar a nossa proposta comercial (cód: ${prop.numero}) para o suporte e gestão de TI da *${prop.cliente}*, no valor de ${fmt(prop.valor)} mensais.\n\nQualquer dúvida, estou à total disposição!`;
+    const texto = `Olá, tudo bem?\n\nSou da Simples Solução TI. Conforme conversámos, estou a enviar a nossa proposta comercial (cód: ${prop.numero}) para a *${prop.cliente}*, no valor de ${fmt(prop.valor)} mensais.\n\nQualquer dúvida, estou à total disposição!`;
     const link = `https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`;
     window.open(link, '_blank');
   };
@@ -262,7 +324,6 @@ export default function AdminPage() {
   };
 
   const visualizarProposta = (prop: PropostaDB) => {
-    const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR");
     const w = window.open("", "_blank")!;
     w.document.write(`<html><head><title>Proposta - ${prop.cliente}</title></head><body style="font-family: sans-serif; padding: 40px;"><h2>Proposta Simples Solução TI</h2><p>Cliente: ${prop.cliente}</p><p>Valor: ${fmt(prop.valor)}</p></body></html>`);
     w.document.close();
@@ -273,22 +334,20 @@ export default function AdminPage() {
   const limiteFiltro = new Date();
   if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
 
-  // Propostas filtradas
   const propostasFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
   const totalPropostas = propostasFiltradas.length;
   const propostasFechadas = propostasFiltradas.filter(p => p.status === 'fechada');
   const propostasPerdidas = propostasFiltradas.filter(p => p.status === 'perdida');
   
-  // Leads filtrados
   const leadsFiltrados = leads.filter(l => filtroDias === 0 || new Date(l.created_at) >= limiteFiltro);
 
-  // Fórmulas
   const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
   
-  const mrrPeriodo = propostasFechadas.reduce((acc, p) => acc + (p.valor || 0), 0);
-  const ticketMedio = propostasFechadas.length > 0 ? mrrPeriodo / propostasFechadas.length : 0;
-  
-  const mrrTotalHistorico = propostas.filter(p => p.status === 'fechada').reduce((acc, p) => acc + (p.valor || 0), 0);
+  // O MRR Ativo (Total da empresa) lê da tabela de contratos
+  const mrrTotalAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
+  // O MRR Adicionado no período selecionado lê das propostas fechadas no filtro
+  const mrrAdicionadoPeriodo = propostasFechadas.reduce((acc, p) => acc + (p.valor || 0), 0);
+  const ticketMedio = propostasFechadas.length > 0 ? mrrAdicionadoPeriodo / propostasFechadas.length : 0;
 
   if (carregandoAuth) return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "sans-serif" }}>A validar sessão...</div>;
 
@@ -351,7 +410,6 @@ export default function AdminPage() {
         .btn-view { background: ${tema === 'dark' ? 'rgba(255,255,255,0.1)' : '#f1f5f9'}; color: var(--text-primary); border-color: ${tema === 'dark' ? 'rgba(255,255,255,0.2)' : '#cbd5e1'}; margin-right: 8px; }
         .btn-view:hover { background: ${tema === 'dark' ? 'rgba(255,255,255,0.2)' : '#e2e8f0'}; }
         
-        /* Modal Styles */
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .modal-content { background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 20px; width: 100%; max-width: 500px; padding: 32px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
         .input-modal { width: 100%; background: var(--bg-main); border: 1px solid var(--border-medium); color: var(--text-primary); padding: 12px 16px; border-radius: 10px; font-family: 'Outfit', sans-serif; font-size: 14px; outline: none; margin-bottom: 16px; }
@@ -366,18 +424,23 @@ export default function AdminPage() {
       {/* MENU LATERAL */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <img src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} alt="SSTI" style={{ maxHeight: "45px", objectFit: "contain" }} />
+          <img src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} alt="SSTI" style={{ maxHeight: "45px", objectFit: "contain", transition: "all 0.3s" }} />
         </div>
         
         <nav className="nav-menu">
-          <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => setAba('tarefas')}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-            Gestão de Tarefas
-          </button>
-
           <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
             Dashboard / Pipeline
+          </button>
+
+          <button className={`nav-item ${aba === 'contratos' ? 'active' : ''}`} onClick={() => setAba('contratos')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            Contratos (MRR)
+          </button>
+          
+          <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => setAba('tarefas')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            Gestão de Tarefas
           </button>
           
           <button className={`nav-item ${aba === 'leads' ? 'active' : ''}`} onClick={() => setAba('leads')}>
@@ -405,21 +468,17 @@ export default function AdminPage() {
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 40, flexWrap: "wrap", gap: "20px" }}>
           <div>
             <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
-              {aba === 'propostas' ? "Dashboard Comercial" : aba === 'leads' ? "Gestão de Leads" : "Minhas Tarefas"}
+              {aba === 'propostas' ? "Dashboard Comercial" : aba === 'leads' ? "Gestão de Leads" : aba === 'tarefas' ? "Minhas Tarefas" : "Contratos Recorrentes"}
             </h1>
             <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "var(--text-secondary)", marginTop: 4 }}>
-              {aba === 'propostas' ? "Métricas e pipeline de vendas." : aba === 'leads' ? "Potenciais clientes do site." : "Organize as suas rotinas e follow-ups."}
+              {aba === 'propostas' ? "Métricas e pipeline de vendas." : aba === 'leads' ? "Potenciais clientes do site." : aba === 'tarefas' ? "Organize as suas rotinas e follow-ups." : "Gestão da carteira de clientes ativos e MRR."}
             </p>
           </div>
           
           <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
             
             {aba === 'propostas' && (
-              <select 
-                value={filtroDias} 
-                onChange={e => setFiltroDias(Number(e.target.value))}
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border-medium)", color: "var(--text-primary)", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer" }}
-              >
+              <select value={filtroDias} onChange={e => setFiltroDias(Number(e.target.value))} style={{ background: "var(--bg-card)", border: "1px solid var(--border-medium)", color: "var(--text-primary)", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer" }}>
                 <option value={30}>Último Mês (30 dias)</option>
                 <option value={90}>Últimos 3 Meses</option>
                 <option value={365}>Último Ano</option>
@@ -442,6 +501,12 @@ export default function AdminPage() {
               </>
             )}
 
+            {aba === 'contratos' && (
+              <button onClick={() => abrirNovoContrato()} style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                + Novo Contrato
+              </button>
+            )}
+
             <button onClick={alternarTema} style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-medium)", padding: "10px 16px", borderRadius: "10px", cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600, fontSize: 13 }}>
               {tema === 'dark' ? '☀️ Claro' : '🌙 Escuro'}
             </button>
@@ -452,15 +517,15 @@ export default function AdminPage() {
         {aba === "propostas" && (
           <>
             <div className="grid-metrics">
-              <div className="metric-card">
-                <div className="metric-title">MRR (Período)</div>
-                <div className="metric-value">{carregando ? "-" : fmt(mrrPeriodo)}</div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Total Ativo: {fmt(mrrTotalHistorico)}</div>
+              <div className="metric-card" style={{ borderLeft: "4px solid #4A90D9" }}>
+                <div className="metric-title">MRR Ativo (Total da Empresa)</div>
+                <div className="metric-value">{fmt(mrrTotalAtivo)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Leitura da Base de Contratos</div>
               </div>
               <div className="metric-card">
-                <div className="metric-title">Ticket Médio (Fechados)</div>
-                <div className="metric-value" style={{ color: "#4A90D9" }}>{carregando ? "-" : fmt(ticketMedio)}</div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Em {propostasFechadas.length} contratos</div>
+                <div className="metric-title">MRR Adicionado (Período)</div>
+                <div className="metric-value" style={{ color: "#4A90D9" }}>{carregando ? "-" : fmt(mrrAdicionadoPeriodo)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Em {propostasFechadas.length} propostas ganhas</div>
               </div>
               <div className="metric-card">
                 <div className="metric-title">Taxa de Conversão</div>
@@ -468,220 +533,4 @@ export default function AdminPage() {
                 <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>De {totalPropostas} propostas criadas</div>
               </div>
               <div className="metric-card">
-                <div className="metric-title">Ganhos vs Perdidos</div>
-                <div className="metric-value">
-                  <span style={{ color: tema === 'dark' ? '#22c55e' : '#16a34a' }}>{propostasFechadas.length}</span> 
-                  <span style={{ color: "var(--text-tertiary)", margin: "0 8px", fontSize: 20 }}>/</span> 
-                  <span style={{ color: tema === 'dark' ? '#f87171' : '#dc2626' }}>{propostasPerdidas.length}</span>
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Negócios concluídos</div>
-              </div>
-              <div className="metric-card">
-                <div className="metric-title">Total de Leads</div>
-                <div className="metric-value">{carregando ? "-" : leadsFiltrados.length}</div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Capturados no site</div>
-              </div>
-            </div>
-
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Data / Ref</th>
-                    <th>Empresa & Contacto</th>
-                    <th>Mensalidade</th>
-                    <th>Status</th>
-                    <th style={{ textAlign: "right" }}>Gestão</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {propostasFiltradas.length === 0 && !carregando && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhuma proposta encontrada no período.</td></tr>
-                  )}
-                  {propostasFiltradas.map(prop => (
-                    <tr key={prop.id} style={{ opacity: prop.status === 'perdida' ? 0.6 : 1 }}>
-                      <td>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#4A90D9", marginTop: 2 }}>{prop.numero}</div>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{prop.cliente}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{prop.contato || "—"}</div>
-                      </td>
-                      <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? (tema === 'dark' ? '#22c55e' : '#16a34a') : prop.status === 'perdida' ? (tema === 'dark' ? '#f87171' : '#dc2626') : 'var(--text-primary)' }}>
-                        {fmt(prop.valor)}
-                      </td>
-                      <td>
-                        <div>
-                          <span className={`badge-status ${prop.status === 'fechada' ? 'badge-fechada' : prop.status === 'perdida' ? 'badge-perdida' : 'badge-aberta'}`}>
-                            {prop.status === 'fechada' ? 'Ganha' : prop.status === 'perdida' ? 'Perdida' : 'Aberto'}
-                          </span>
-                        </div>
-                        {prop.status_envio === 'enviado' && (
-                          <div style={{ marginTop: 4 }}><span className="badge-status badge-email">Enviado</span></div>
-                        )}
-                      </td>
-                      <td style={{ textAlign: "right", minWidth: 320 }}>
-                        <button className="btn-action btn-view" onClick={() => abrirNovaTarefa(`Follow-up: ${prop.cliente}`, undefined, prop.id)}>+ Tarefa</button>
-                        <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
-                        <button className="btn-action btn-email" disabled={enviando === prop.id} onClick={() => enviarPorEmail(prop)}>
-                          {enviando === prop.id ? "..." : "E-mail"}
-                        </button>
-                        
-                        {(!prop.status || prop.status === 'aberta') ? (
-                          <>
-                            <button className="btn-action btn-win" onClick={() => alterarStatus(prop.id, 'fechada')}>Ganho</button>
-                            <button className="btn-action btn-loss" onClick={() => alterarStatus(prop.id, 'perdida')}>Perdido</button>
-                          </>
-                        ) : (
-                          <button className="btn-action btn-reopen" onClick={() => alterarStatus(prop.id, 'aberta')}>Reabrir</button>
-                        )}
-                        <button className="btn-action btn-delete" onClick={() => excluirProposta(prop.id, prop.cliente)}>Excluir</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {/* ─── ABA: TAREFAS ─── */}
-        {aba === "tarefas" && (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Prazo</th>
-                  <th>Tarefa</th>
-                  <th>Referência (Cliente)</th>
-                  <th>Responsável</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: "right" }}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tarefasFiltradas.length === 0 && !carregando && (
-                  <tr><td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhuma tarefa encontrada.</td></tr>
-                )}
-                {tarefasFiltradas.map(t => {
-                  const statusVisual = getStatusRealTarefa(t);
-                  return (
-                    <tr key={t.id} style={{ opacity: statusVisual === 'Concluído' ? 0.5 : 1 }}>
-                      <td>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: statusVisual === 'Atrasado' ? (tema === 'dark' ? '#f87171' : '#dc2626') : 'var(--text-primary)', fontWeight: statusVisual === 'Atrasado' ? 700 : 400 }}>
-                          {new Date(t.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{t.titulo}</div>
-                        {t.descricao && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 250 }}>{t.descricao}</div>}
-                      </td>
-                      <td>
-                        <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>{t.nome_referencia || "—"}</div>
-                      </td>
-                      <td>
-                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.usuario_email.split('@')[0]}</div>
-                      </td>
-                      <td>
-                        <span className={`badge-status badge-${statusVisual.toLowerCase().replace(' ', '')}`}>
-                          {statusVisual}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: "right", minWidth: 200 }}>
-                        {statusVisual !== 'Concluído' && (
-                          <button className="btn-action btn-view" onClick={() => alterarStatusTarefaRapido(t.id, 'Concluído')} style={{ color: tema === 'dark' ? '#22c55e' : '#16a34a', borderColor: "rgba(34,197,94,0.3)" }}>✓ Concluir</button>
-                        )}
-                        <button className="btn-action btn-view" onClick={() => editarTarefa(t)}>Editar</button>
-                        <button className="btn-action btn-delete" onClick={() => excluirTarefa(t.id)}>✕</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ─── ABA: LEADS ─── */}
-        {aba === "leads" && (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Lead / Empresa</th>
-                  <th>Solução de Interesse</th>
-                  <th style={{ textAlign: "right" }}>Ação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leads.map(lead => (
-                  <tr key={lead.id}>
-                    <td>
-                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{lead.empresa}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
-                    </td>
-                    <td>
-                      <span className="badge-status badge-aberta">{lead.produto} - {lead.plano}</span>
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      <button className="btn-action btn-view" onClick={() => abrirNovaTarefa(`Contato Lead: ${lead.empresa}`, lead.id, undefined)}>+ Tarefa</button>
-                      <button className="btn-action btn-wpp" onClick={() => enviarWhatsAppLead(lead)}>Wpp</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-      </main>
-
-      {/* ─── MODAL NOVA TAREFA ─── */}
-      {modalTarefa && (
-        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 20, color: "var(--text-primary)", marginBottom: 24, borderBottom: "1px solid var(--border-light)", paddingBottom: 16 }}>
-              {formTarefa.id ? "Editar Tarefa" : "Nova Tarefa"}
-            </h2>
-            
-            <form onSubmit={salvarTarefa}>
-              <label className="label-modal">Título da Tarefa</label>
-              <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({...formTarefa, titulo: e.target.value})} placeholder="Ex: Ligar para confirmar recebimento..." />
-              
-              <label className="label-modal">Data e Hora de Vencimento</label>
-              <input type="datetime-local" required className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({...formTarefa, data_vencimento: e.target.value})} />
-              
-              <label className="label-modal">Descrição (Opcional)</label>
-              <textarea className="input-modal" rows={3} value={formTarefa.descricao} onChange={e => setFormTarefa({...formTarefa, descricao: e.target.value})} placeholder="Detalhes do que precisa ser feito..." />
-              
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div>
-                  <label className="label-modal">Status</label>
-                  <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({...formTarefa, status: e.target.value})}>
-                    <option value="Pendente">Pendente</option>
-                    <option value="Em andamento">Em andamento</option>
-                    <option value="Concluído">Concluído</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label-modal">Responsável (E-mail)</label>
-                  <input required type="email" className="input-modal" value={formTarefa.usuario_email} onChange={e => setFormTarefa({...formTarefa, usuario_email: e.target.value})} disabled={!isAdmin} style={{ opacity: !isAdmin ? 0.6 : 1, cursor: !isAdmin ? 'not-allowed' : 'text' }} />
-                </div>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-                <button type="button" onClick={() => setModalTarefa(false)} style={{ background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-medium)", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>Cancelar</button>
-                <button type="submit" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>Gravar Tarefa</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                <div
