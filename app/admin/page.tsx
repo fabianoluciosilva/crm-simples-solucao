@@ -23,9 +23,6 @@ export default function AdminPage() {
 
   // --- ESTADOS DE AUTENTICAÇÃO ---
   const [session, setSession] = useState<any>(null);
-  const [emailLogin, setEmailLogin] = useState("");
-  const [senhaLogin, setSenhaLogin] = useState("");
-  const [erroLogin, setErroLogin] = useState("");
   const [carregandoAuth, setCarregandoAuth] = useState(true);
 
   // --- ESTADOS DO CRM ---
@@ -33,41 +30,31 @@ export default function AdminPage() {
   const [propostas, setPropostas] = useState<PropostaDB[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [carregando, setCarregando] = useState(false);
-  const [filtroDias, setFiltroDias] = useState<number>(30); 
+  const [filtroDias, setFiltroDias] = useState<number>(30); // Filtro inicial: 30 dias
   const [enviando, setEnviando] = useState<number | null>(null);
 
   // ─── LÓGICA DE SESSÃO DO SUPABASE ──────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setCarregandoAuth(false);
+      if (!session) {
+        router.push("/"); // Redireciona para o login se não estiver autenticado
+      } else {
+        setSession(session);
+        setCarregandoAuth(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+      if (!session) router.push("/");
+      else setSession(session);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCarregandoAuth(true);
-    setErroLogin("");
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: emailLogin,
-      password: senhaLogin,
-    });
-
-    if (error) {
-      setErroLogin("E-mail ou senha incorretos.");
-    }
-    setCarregandoAuth(false);
-  };
+  }, [router]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    router.push("/");
   };
 
   // ─── CARREGAMENTO DE DADOS DO CRM ─────────────────────────────────────────
@@ -109,18 +96,19 @@ export default function AdminPage() {
 
   const enviarWhatsApp = (prop: PropostaDB) => {
     const primeiroNome = prop.contato ? prop.contato.split(" ")[0] : "cliente";
-    const texto = `Olá ${primeiroNome}, tudo bem?\n\nSou o Fabiano da Simples Solução TI. Conforme conversamos, estou a enviar em anexo a nossa proposta comercial (cód: ${prop.numero}) para o suporte e gestão da TI da *${prop.cliente}*, no valor mensal de ${fmt(prop.valor)}.\n\nQualquer dúvida, estou à total disposição!`;
+    const texto = `Olá ${primeiroNome}, tudo bem?\n\nSou da Simples Solução TI. Conforme conversámos, estou a enviar a nossa proposta comercial (cód: ${prop.numero}) para o suporte e gestão de TI da *${prop.cliente}*, no valor de ${fmt(prop.valor)} mensais.\n\nQualquer dúvida, estou à total disposição!`;
     const link = `https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`;
     window.open(link, '_blank');
   };
 
   const enviarWhatsAppLead = (lead: any) => {
-    const msg = `Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI. Vi que você se interessou pela nossa solução de ${lead.produto} pelo nosso site. Podemos conversar um pouco sobre o ambiente da ${lead.empresa}?`;
+    const msg = `Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI. Vi que demonstrou interesse na nossa solução de ${lead.produto} pelo nosso site. Podemos conversar um pouco sobre o ambiente da ${lead.empresa}?`;
     window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  // ─── DISPARO DE E-MAIL ─────────────────────────────────────────────
   const enviarPorEmail = async (prop: PropostaDB) => {
-    if (!prop.email) return alert("Esta proposta não possui o e-mail do cliente cadastrado.");
+    if (!prop.email) return alert("Esta proposta não possui o e-mail do cliente registado.");
     if (!confirm(`Confirmar envio de proposta para ${prop.email}?`)) return;
 
     setEnviando(prop.id);
@@ -135,12 +123,12 @@ export default function AdminPage() {
             <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
               <h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2>
               <p>Olá <strong>${prop.contato}</strong>,</p>
-              <p>É um prazer apresentar nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p>
-              <p>Conforme conversamos, segue o detalhamento dos nossos serviços com foco em evolução contínua e segurança do seu ambiente de TI.</p>
+              <p>É um prazer apresentar a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p>
+              <p>Conforme conversámos, segue o detalhamento dos nossos serviços com foco na evolução contínua e segurança do seu ambiente de TI.</p>
               <p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p>
               <br />
               <p>Atenciosamente,</p>
-              <p><strong>Fabiano Lucio</strong><br />Diretor Comercial | Simples Solução TI<br/>(21) 3529-7993 | www.simplessolucao.com.br</p>
+              <p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p>
             </div>
           `,
           fileName: `Proposta_${prop.numero}.pdf`
@@ -161,6 +149,7 @@ export default function AdminPage() {
     }
   };
 
+  // ─── VISUALIZAR PDF ───────────────────────────────────────────────────────
   const visualizarProposta = (prop: PropostaDB) => {
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
     const nomeCliente = prop.cliente || "Empresa Não Identificada";
@@ -202,43 +191,20 @@ export default function AdminPage() {
         <h1>PROPOSTA DE SUPORTE TÉCNICO</h1>
         <p>Rio de Janeiro, ${dataFormatada}</p>
         <p>Prezada(o) <strong>${nomeContato}</strong>,</p>
-        <p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${nomeCliente}</strong>. Agradecemos ainda pela oportunidade de propor, por meio desta, uma parceria na área de tecnologia da informação.</p>
+        <p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${nomeCliente}</strong>.</p>
         <p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${nomeCliente}</strong>. Esse serviço tem o objetivo de auxiliar o ambiente de TI da empresa para uma evolução contínua, minimizando problemas e possíveis riscos existentes.</p>
-        <p>Agradecemos a oportunidade e nos colocamos à sua inteira disposição para eventuais esclarecimentos que forem necessários.</p>
-        <div class="assinatura">Fabiano Lucio<br><span class="assinatura-dados">Diretor Comercial<br>(21) 3529-7993 | (21) 3197-0198<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div>
+        <div class="assinatura">Equipa Comercial<br><span class="assinatura-dados">Simples Solução TI<br>(21) 3529-7993<br>www.simplessolucao.com.br</span></div>
         <div class="page-break"></div>
         <h2>A Empresa</h2>
-        <p>A Simples Solução TI é uma integradora de tecnologia que oferece soluções de apoio à área de TI dos seus clientes. Estamos localizados estrategicamente no Shopping Nova América.</p>
-        <p>Contamos com uma sólida infraestrutura de atendimento, com sistema de help desk, inventário e ainda temos dois links de internet para redundância. Com isso garantimos um atendimento ininterrupto a toda nossa base de clientes.</p>
-        <p>Possuímos um corpo técnico de qualidade, com profissionais experientes. Nossa equipe conta com especialistas nas mais diversas tecnologias:</p>
-        <ul><li>Suporte a Desktops, plataforma Microsoft, Linux, Mac e servidores Windows;</li><li>Suporte para detecção de problemas com Hardware, computadores, impressoras e nobreaks;</li><li>Conhecimento em Banco de Dados Oracle, SQL Server, MySQL, Sybase e PostgreSQL.</li></ul>
-        <p>Tendo iniciado as operações atendendo ao mercado das PMEs (pequenas e médias empresas) e atualmente atendendo clientes de todos os portes, procuramos aliar a alta qualidade exigida pelas grandes empresas a preços competitivos e serviços de alto valor agregado.</p>
-        <h3>Alguns Clientes e Parceiros</h3>
-        <p>Temos orgulho de atender e firmar parcerias com grandes marcas do mercado, como:</p>
-        <div class="logos">
-          <img src="${origin}/PLL - Logo Verde - Fundo transparente.png" alt="PLL" />
-          <img src="${origin}/LogoAgribio.jpg" alt="Agribio" />
-          <img src="${origin}/SAVIOR LOGO.jpg" alt="Savior" />
-          <img src="${origin}/logo_Cbsm.jpg" alt="CBSM" />
-        </div>
-        <div class="page-break"></div>
-        <h2>Detalhamento dos Serviços</h2>
-        <p>No primeiro mês do contrato faremos uma validação do ambiente que produzirá uma documentação resumida do ambiente de TI, produzindo os seguintes artefatos:</p>
-        <ul><li>Inventário de Hardware e Software;</li><li>Documentação da estrutura de Rede;</li><li>Documentação e Validação/Implantação de rotinas de backup;</li><li>Validação do Parque de máquinas e sugestão de investimentos;</li><li>Revisão de backlog de chamados;</li><li>Validação das políticas de segurança e antivírus.</li></ul>
-        <h3>Suporte Continuado</h3>
-        <p>Mão de obra técnica utilizada em visitas à <strong>${nomeCliente}</strong> ou remotamente com o objetivo de prestar suporte ao usuário e atendimentos necessários.</p>
-        <h4>Benefícios:</h4>
-        <ul><li><strong>Garantia de Serviço:</strong> Atendimento remoto (conexão através de TeamViewer ou AnyDesk).</li><li><strong>Políticas de Backup:</strong> A única forma de garantir a qualidade dos backups é testá-los recorrentemente. Além disso, são estabelecidos prazos máximos para retorno dos serviços mais críticos.</li><li><strong>Checklists Preventivos:</strong> De acordo com periodicidades especificadas, configurações de software e hardware são checados de forma a evitar paradas subsequentes.</li><li><strong>Suporte Telefônico:</strong> Resolução ágil de problemas via telefone, evitando perda de tempo dos funcionários.</li><li><strong>Implantação de Novas Soluções:</strong> A Simples Solução TI participa da especificação e implantação de soluções diferenciadas.</li><li><strong>Manutenção de Hardware:</strong> Consertos realizados em laboratório próprio mediante aprovação prévia.</li></ul>
+        <p>A Simples Solução TI é uma integradora de tecnologia que oferece soluções de apoio à área de TI dos seus clientes.</p>
+        <ul><li>Suporte a Desktops, plataforma Microsoft, Linux, Mac e servidores Windows;</li><li>Suporte para deteção de problemas com Hardware, computadores, impressoras e nobreaks;</li></ul>
         <div class="page-break"></div>
         <h2>Proposta Comercial</h2>
-        <p>Contrato de suporte inicial da <strong>${nomeCliente}</strong>:</p>
         <table>
           <tr><th>Descrição do Serviço</th><th style="text-align: right; width: 200px;">Valor Mensal</th></tr>
           <tr class="row-total"><td style="padding: 20px 12px;">Manutenção TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px;">${fmt(prop.valor)}</td></tr>
         </table>
-        ${obs ? `<h3>Escopo Adicional / Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
-        <h2>Considerações Finais</h2>
-        <ul><li>Esta proposta é válida por 30 dias a partir da data de emissão.</li><li>Maiores informações sobre os serviços da Simples Solução TI podem ser encontradas em <strong>www.simplessolucao.com.br</strong>.</li><li>Colocamo-nos à disposição para quaisquer esclarecimentos.</li></ul>
+        ${obs ? `<h3>Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
       </div>
       </body></html>
     `);
@@ -246,6 +212,7 @@ export default function AdminPage() {
     setTimeout(() => { w.document.title = `Proposta_${nomeCliente.replace(/\s+/g, '_')}_${prop.numero}`; w.print(); }, 500);
   };
 
+  // ─── LÓGICA DE FILTRAGEM TEMPORAL ─────────────────────────────────────────
   const propostasFiltradas = propostas.filter(p => {
     if (filtroDias === 0) return true; 
     const dataLimite = new Date();
@@ -256,9 +223,7 @@ export default function AdminPage() {
   const totalPropostas = propostasFiltradas.length;
   const propostasFechadas = propostasFiltradas.filter(p => p.status === 'fechada');
   const propostasPerdidas = propostasFiltradas.filter(p => p.status === 'perdida');
-  
   const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
-  
   const volumeFinanceiro = propostasFiltradas.reduce((acc, p) => acc + (p.valor || 0), 0);
   const receitaFechada = propostasFechadas.reduce((acc, p) => acc + (p.valor || 0), 0);
   const ticketMedio = totalPropostas > 0 ? volumeFinanceiro / totalPropostas : 0;
@@ -266,76 +231,43 @@ export default function AdminPage() {
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   if (carregandoAuth) {
-    return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "sans-serif" }}>Verificando credenciais...</div>;
+    return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "sans-serif" }}>A validar sessão...</div>;
   }
 
-  if (!session) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; }`}</style>
-        <div style={{ width: "100%", maxWidth: 400, background: "rgba(255,255,255,0.04)", border: `1px solid ${erroLogin ? "rgba(248,113,113,0.4)" : "rgba(255,255,255,0.1)"}`, borderRadius: 20, padding: "40px 36px", transition: "border-color 0.2s" }}>
-          <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 10 }}>Simples Solução TI</div>
-            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 8 }}>CRM Comercial</div>
-            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Painel Administrativo Restrito</div>
-          </div>
-          
-          <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: 16 }}>
-              <input 
-                type="email" 
-                value={emailLogin} 
-                onChange={e => setEmailLogin(e.target.value)} 
-                placeholder="Seu E-mail Corporativo" 
-                required
-                style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, color: "#fff", fontFamily: "'Outfit', sans-serif", fontSize: 14, padding: "12px 16px", outline: "none" }} 
-              />
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <input 
-                type="password" 
-                value={senhaLogin} 
-                onChange={e => setSenhaLogin(e.target.value)} 
-                placeholder="Senha" 
-                required
-                style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, color: "#fff", fontFamily: "'DM Mono', monospace", fontSize: 14, padding: "12px 16px", outline: "none", letterSpacing: "0.15em" }} 
-              />
-            </div>
-            
-            {erroLogin && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 16, textAlign: "center", fontFamily: "'Outfit', sans-serif" }}>{erroLogin}</div>}
-
-            <button type="submit" disabled={carregandoAuth} style={{ width: "100%", padding: "13px", borderRadius: 10, background: "#4A90D9", color: "#fff", fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", border: "none", cursor: carregandoAuth ? "not-allowed" : "pointer", opacity: carregandoAuth ? 0.7 : 1 }}>
-              Fazer Login
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
+  // ─── ESTRUTURA DO DASHBOARD (MENU LATERAL + CONTEÚDO) ───────────────────
   return (
-    <div style={{ minHeight: "100vh", background: "#080f1e", color: "#fff", paddingBottom: 60 }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: "#080f1e", color: "#fff" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
         
-        .tabs { display: flex; gap: 24px; margin-top: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .tab-btn { background: transparent; border: none; padding: 12px 0; color: rgba(255,255,255,0.4); font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: color 0.2s; border-bottom: 2px solid transparent; }
-        .tab-btn:hover { color: rgba(255,255,255,0.8); }
-        .tab-btn.active { color: #4A90D9; border-bottom-color: #4A90D9; }
+        /* Layout Principal */
+        .sidebar { width: 260px; background: #050a14; border-right: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 10; }
+        .main-content { flex: 1; margin-left: 260px; padding: 32px 40px; display: flex; flex-direction: column; min-height: 100vh; }
+        
+        /* Menu Lateral */
+        .sidebar-logo { padding: 30px 24px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .nav-menu { padding: 24px 16px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; color: rgba(255,255,255,0.5); font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; background: transparent; text-align: left; width: 100%; }
+        .nav-item:hover { background: rgba(255,255,255,0.03); color: #fff; }
+        .nav-item.active { background: rgba(74,144,217,0.1); color: #4A90D9; }
+        
+        .user-profile { padding: 20px 24px; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2); }
+        .btn-logout { background: transparent; border: 1px solid rgba(248,113,113,0.3); color: #f87171; padding: 8px 0; border-radius: 8px; cursor: pointer; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; width: 100%; margin-top: 12px; transition: 0.2s; }
+        .btn-logout:hover { background: rgba(248,113,113,0.1); }
 
-        .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 32px; margin-bottom: 40px; }
-        .metric-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 8px; }
+        /* Estilos Existentes (Cards, Tabelas) */
+        .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .metric-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 8px; }
         .metric-title { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.4); }
         .metric-value { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: #fff; }
         .metric-value.highlight { color: #4A90D9; }
         .metric-value.success { color: #22c55e; }
         
-        .table-wrapper { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; }
+        .table-wrapper { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; overflow: hidden; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.2); }
-        td { font-family: 'Outfit', sans-serif; font-size: 14px; color: rgba(255,255,255,0.8); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+        th { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2); }
+        td { font-family: 'Outfit', sans-serif; font-size: 14px; color: rgba(255,255,255,0.8); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background: rgba(255,255,255,0.02); }
         
@@ -347,81 +279,88 @@ export default function AdminPage() {
         
         .btn-action { padding: 6px 12px; border-radius: 6px; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
         .btn-view { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.2); margin-right: 8px; }
-        .btn-view:hover { background: rgba(255,255,255,0.2); }
         .btn-wpp { background: rgba(34,197,94,0.1); color: #22c55e; border-color: rgba(34,197,94,0.2); margin-right: 8px; }
-        .btn-wpp:hover { background: rgba(34,197,94,0.2); }
         .btn-email { background: rgba(168,85,247,0.1); color: #a855f7; border-color: rgba(168,85,247,0.2); margin-right: 8px; }
-        .btn-email:hover { background: rgba(168,85,247,0.2); }
-        .btn-email:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-win { background: rgba(74,144,217,0.1); color: #4A90D9; border-color: rgba(74,144,217,0.2); margin-right: 8px; }
-        .btn-win:hover { background: rgba(74,144,217,0.2); }
         .btn-loss { background: rgba(156,163,175,0.1); color: #9ca3af; border-color: rgba(156,163,175,0.2); margin-right: 8px; }
-        .btn-loss:hover { background: rgba(156,163,175,0.2); }
         .btn-reopen { background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2); margin-right: 8px; }
-        .btn-reopen:hover { background: rgba(245,158,11,0.2); }
         .btn-delete { background: transparent; color: #f87171; }
-        .btn-delete:hover { text-decoration: underline; }
         
-        .btn-logout { background: transparent; border: 1px solid rgba(248,113,113,0.3); color: #f87171; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; margin-left: 16px; transition: 0.2s; }
-        .btn-logout:hover { background: rgba(248,113,113,0.1); }
+        /* Mobile adjustment */
+        @media(max-width: 900px) {
+          .sidebar { width: 100%; position: relative; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.05); }
+          .main-content { margin-left: 0; padding: 20px; }
+          div[style*="display: flex"] { flex-direction: column; }
+        }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ paddingTop: "20px" }}>
-        <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      {/* MENU LATERAL (SIDEBAR) */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <img src="/Logo-negativo.webp" alt="SSTI" style={{ maxHeight: "40px", objectFit: "contain" }} />
+        </div>
+        
+        <nav className="nav-menu">
+          <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+            Pipeline de Vendas
+          </button>
+          
+          <button className={`nav-item ${aba === 'leads' ? 'active' : ''}`} onClick={() => setAba('leads')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            Leads Capturados
+            {leads.length > 0 && (
+              <span style={{ marginLeft: "auto", background: "#4A90D9", color: "#fff", fontSize: 10, padding: "2px 8px", borderRadius: 10 }}>{leads.length}</span>
+            )}
+          </button>
+
+          <button className="nav-item" style={{ marginTop: "16px", border: "1px dashed rgba(74,144,217,0.4)", color: "#4A90D9" }} onClick={() => router.push('/preco')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Nova Proposta
+          </button>
+        </nav>
+
+        <div className="user-profile">
+          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Sessão ativa</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#fff", marginTop: 4, wordBreak: "break-all" }}>{session?.user?.email}</div>
+          <button onClick={handleLogout} className="btn-logout">Encerrar Sessão</button>
+        </div>
+      </aside>
+
+      {/* ÁREA CENTRAL DE CONTEÚDO */}
+      <main className="main-content">
+        
+        {/* HEADER DA PÁGINA */}
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 40 }}>
           <div>
-            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 4 }}>Gestão Comercial</div>
-            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff" }}>Painel de Oportunidades</div>
+            <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 28, fontWeight: 800, color: "#fff", margin: 0 }}>
+              {aba === 'propostas' ? "Visão Geral Comercial" : "Gestão de Leads"}
+            </h1>
+            <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+              {aba === 'propostas' ? "Acompanhe as suas métricas e propostas enviadas." : "Potenciais clientes que chegaram através do site."}
+            </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center" }}>
-             <div style={{ textAlign: "right", marginRight: "16px", display: "block" }}>
-               <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", fontFamily: "'Outfit', sans-serif" }}>Logado como:</span><br/>
-               <strong style={{ fontSize: "13px", fontFamily: "'DM Mono', monospace" }}>{session.user.email}</strong>
-            </div>
-            <button onClick={() => router.push('/preco')} style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              + Nova Proposta
-            </button>
-            <button onClick={handleLogout} className="btn-logout">Sair</button>
-          </div>
-        </div>
-      </div>
+          
+          {aba === 'propostas' && (
+            <select 
+              value={filtroDias} 
+              onChange={e => setFiltroDias(Number(e.target.value))}
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer" }}
+            >
+              <option value={30} style={{ color: "#000" }}>Último Mês (30 dias)</option>
+              <option value={90} style={{ color: "#000" }}>Últimos 3 Meses</option>
+              <option value={365} style={{ color: "#000" }}>Último Ano</option>
+              <option value={0} style={{ color: "#000" }}>Todo o Histórico</option>
+            </select>
+          )}
+        </header>
 
-      <div className="container">
-        {/* NAVEGAÇÃO DE ABAS */}
-        <div className="tabs">
-          <button className={`tab-btn ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
-            Propostas Enviadas
-          </button>
-          <button className={`tab-btn ${aba === 'leads' ? 'active' : ''}`} onClick={() => setAba('leads')}>
-            Leads do Site
-          </button>
-        </div>
-
-        {/* ===================== ABA DE PROPOSTAS ===================== */}
+        {/* CONTEÚDO PROPOSTAS */}
         {aba === "propostas" && (
           <>
-            {/* FILTRO DE PERÍODO */}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 24 }}>
-              <select 
-                value={filtroDias} 
-                onChange={e => setFiltroDias(Number(e.target.value))}
-                style={{
-                  background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff",
-                  padding: "10px 16px", borderRadius: "8px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer"
-                }}
-              >
-                <option value={30} style={{ color: "#000" }}>Último Mês (30 dias)</option>
-                <option value={90} style={{ color: "#000" }}>Últimos 3 Meses</option>
-                <option value={180} style={{ color: "#000" }}>Últimos 6 Meses</option>
-                <option value={365} style={{ color: "#000" }}>Último Ano</option>
-                <option value={0} style={{ color: "#000" }}>Todo o Histórico</option>
-              </select>
-            </div>
-
-            {/* CARDS DE MÉTRICAS */}
             <div className="grid-metrics">
               <div className="metric-card">
-                <div className="metric-title">Propostas / Orçado</div>
+                <div className="metric-title">Propostas Criadas</div>
                 <div className="metric-value">{carregando ? "-" : totalPropostas} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(volumeFinanceiro)}</span></div>
               </div>
               <div className="metric-card">
@@ -429,39 +368,25 @@ export default function AdminPage() {
                 <div className="metric-value highlight">{carregando ? "-" : taxaConversao.toFixed(1)}%</div>
               </div>
               <div className="metric-card">
-                <div className="metric-title">Novos Contratos (Fechados)</div>
+                <div className="metric-title">Negócios Fechados</div>
                 <div className="metric-value success">{carregando ? "-" : propostasFechadas.length} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(receitaFechada)}</span></div>
               </div>
-              <div className="metric-card">
-                <div className="metric-title">Ticket Médio Ofertado</div>
-                <div className="metric-value" style={{ color: "#fff" }}>{carregando ? "-" : fmt(ticketMedio)}</div>
-              </div>
-            </div>
-
-            {/* TABELA DE PROPOSTAS */}
-            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
-              Pipeline de Vendas
-              {carregando && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>Carregando dados...</span>}
             </div>
 
             <div className="table-wrapper">
               <table>
                 <thead>
                   <tr>
-                    <th>Data</th>
-                    <th>Empresa (Cliente)</th>
-                    <th>Valor Mensal</th>
+                    <th>Data / Ref</th>
+                    <th>Empresa & Contacto</th>
+                    <th>Mensalidade</th>
                     <th>Status</th>
-                    <th style={{ textAlign: "right" }}>Ações</th>
+                    <th style={{ textAlign: "right" }}>Gestão</th>
                   </tr>
                 </thead>
                 <tbody>
                   {propostasFiltradas.length === 0 && !carregando && (
-                    <tr>
-                      <td colSpan={5} style={{ textAlign: "center", padding: "40px 20px", color: "rgba(255,255,255,0.4)" }}>
-                        Nenhuma proposta encontrada neste período.
-                      </td>
-                    </tr>
+                    <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "rgba(255,255,255,0.4)" }}>Nenhuma proposta encontrada.</td></tr>
                   )}
                   {propostasFiltradas.map(prop => (
                     <tr key={prop.id} style={{ opacity: prop.status === 'perdida' ? 0.6 : 1 }}>
@@ -471,8 +396,8 @@ export default function AdminPage() {
                       </td>
                       <td>
                         <div style={{ fontWeight: 600, color: "#fff" }}>{prop.cliente}</div>
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>Contato: {prop.contato || "—"}</div>
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{prop.email || "Sem e-mail cadastrado"}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{prop.contato || "—"}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{prop.email || "Sem e-mail"}</div>
                       </td>
                       <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? '#22c55e' : prop.status === 'perdida' ? '#9ca3af' : '#fff' }}>
                         {fmt(prop.valor)}
@@ -480,20 +405,18 @@ export default function AdminPage() {
                       <td>
                         <div>
                           <span className={`badge-status ${prop.status === 'fechada' ? 'badge-fechada' : prop.status === 'perdida' ? 'badge-perdida' : 'badge-aberta'}`}>
-                            {prop.status === 'fechada' ? 'Venda Fechada' : prop.status === 'perdida' ? 'Perdida' : 'Aguardando'}
+                            {prop.status === 'fechada' ? 'Ganha' : prop.status === 'perdida' ? 'Perdida' : 'Aberto'}
                           </span>
                         </div>
                         {prop.status_envio === 'enviado' && (
-                          <div style={{ marginTop: 4 }}>
-                            <span className="badge-status badge-email">E-mail Enviado</span>
-                          </div>
+                          <div style={{ marginTop: 4 }}><span className="badge-status badge-email">Enviado</span></div>
                         )}
                       </td>
                       <td style={{ textAlign: "right", minWidth: 320 }}>
                         <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
                         <button className="btn-action btn-wpp" onClick={() => enviarWhatsApp(prop)}>Wpp</button>
                         <button className="btn-action btn-email" disabled={enviando === prop.id} onClick={() => enviarPorEmail(prop)}>
-                          {enviando === prop.id ? "Enviando..." : "E-mail"}
+                          {enviando === prop.id ? "..." : "E-mail"}
                         </button>
                         
                         {(!prop.status || prop.status === 'aberta') ? (
@@ -504,7 +427,6 @@ export default function AdminPage() {
                         ) : (
                           <button className="btn-action btn-reopen" onClick={() => alterarStatus(prop.id, 'aberta')}>Reabrir</button>
                         )}
-
                         <button className="btn-action btn-delete" onClick={() => excluirProposta(prop.id, prop.cliente)}>Excluir</button>
                       </td>
                     </tr>
@@ -515,59 +437,48 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* ===================== ABA DE LEADS ===================== */}
+        {/* CONTEÚDO LEADS */}
         {aba === "leads" && (
-          <div style={{ marginTop: 24 }}>
-             <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
-              Capturas Recentes
-              {carregando && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>Carregando dados...</span>}
-            </div>
-
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Lead</th>
-                    <th>Interesse</th>
-                    <th style={{ textAlign: "right" }}>Ações</th>
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Lead / Empresa</th>
+                  <th>Solução de Interesse</th>
+                  <th style={{ textAlign: "right" }}>Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.length === 0 && !carregando && (
+                  <tr><td colSpan={4} style={{ textAlign: "center", padding: "40px", color: "rgba(255,255,255,0.4)" }}>Nenhum lead capturado.</td></tr>
+                )}
+                {leads.map(lead => (
+                  <tr key={lead.id}>
+                    <td>
+                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: "#fff" }}>{lead.empresa}</div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{lead.email}</div>
+                    </td>
+                    <td>
+                      <span className="badge-status badge-aberta" style={{ background: "rgba(74,144,217,0.15)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)" }}>
+                        {lead.produto} - {lead.plano}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button className="btn-action btn-wpp" onClick={() => enviarWhatsAppLead(lead)}>Chamar no WhatsApp</button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {leads.length === 0 && !carregando && (
-                    <tr>
-                      <td colSpan={4} style={{ textAlign: "center", padding: "40px 20px", color: "rgba(255,255,255,0.4)" }}>
-                        Nenhum lead recebido ainda.
-                      </td>
-                    </tr>
-                  )}
-                  {leads.map(lead => (
-                    <tr key={lead.id}>
-                      <td>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600, color: "#fff" }}>{lead.empresa}</div>
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{lead.email}</div>
-                      </td>
-                      <td>
-                        <span className="badge-status badge-aberta" style={{ background: "rgba(74,144,217,0.15)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)" }}>
-                          {lead.produto} - {lead.plano}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: "right" }}>
-                        <button className="btn-action btn-wpp" onClick={() => enviarWhatsAppLead(lead)}>Chamar no WhatsApp</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
-      </div>
+      </main>
     </div>
   );
 }
