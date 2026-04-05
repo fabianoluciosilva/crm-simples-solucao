@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 // ─── CONSTANTES FINANCEIRAS OCULTAS ──────────────────────────────────────────
@@ -47,6 +48,8 @@ const PRECOS = Object.fromEntries(
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export const CalculadoraSSTI = () => {
+  const router = useRouter();
+
   const [cliente, setCliente] = useState("");
   const [contato, setContato] = useState("");
   const [email, setEmail] = useState(""); 
@@ -163,7 +166,7 @@ export const CalculadoraSSTI = () => {
         <h2>A Empresa</h2>
         <p>A Simples Solução TI é uma integradora de tecnologia que oferece soluções de apoio à área de TI dos seus clientes. Estamos localizados estrategicamente no Shopping Nova América.</p>
         <p>Contamos com uma sólida infraestrutura de atendimento, com sistema de help desk, inventário e ainda temos dois links de internet para redundância. Com isso garantimos um atendimento ininterrupto a toda nossa base de clientes.</p>
-        <p>Possuímos um corpo técnico de qualidade, com profissionais experientes. Nossa equipe conta com especialistas nas mais diversas technologies:</p>
+        <p>Possuímos um corpo técnico de qualidade, com profissionais experientes. Nossa equipe conta com especialistas nas mais diversas tecnologias:</p>
         <ul><li>Suporte a Desktops, plataforma Microsoft, Linux, Mac e servidores Windows;</li><li>Suporte para detecção de problemas com Hardware, computadores, impressoras e nobreaks;</li><li>Conhecimento em Banco de Dados Oracle, SQL Server, MySQL, Sybase e PostgreSQL.</li></ul>
         <p>Tendo iniciado as operações atendendo ao mercado das PMEs (pequenas e médias empresas) e atualmente atendendo clientes de todos os portes, procuramos aliar a alta qualidade exigida pelas grandes empresas a preços competitivos e serviços de alto valor agregado.</p>
         <h3>Alguns Clientes e Parceiros</h3>
@@ -257,7 +260,7 @@ export const CalculadoraSSTI = () => {
           <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 4 }}>Simples Solução TI</div>
           <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 24, fontWeight: 800, color: "#fff" }}>Gerador de Propostas</div>
         </div>
-        <button onClick={() => window.location.href = '/admin'} style={{ background: "transparent", color: "#4A90D9", border: "1px solid rgba(74,144,217,0.3)", padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", transition: "all 0.2s" }} onMouseOver={e => e.currentTarget.style.background = "rgba(74,144,217,0.1)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+        <button onClick={() => router.push('/admin')} style={{ background: "transparent", color: "#4A90D9", border: "1px solid rgba(74,144,217,0.3)", padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", transition: "all 0.2s" }} onMouseOver={e => e.currentTarget.style.background = "rgba(74,144,217,0.1)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
           Voltar ao Admin
         </button>
       </div>
