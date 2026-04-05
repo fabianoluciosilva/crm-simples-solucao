@@ -1,65 +1,144 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
+  const [carregando, setCarregando] = useState(true);
+  const [logando, setLogando] = useState(false);
+
+  // 1. Verifica se o Fabiano/Equipa já está logado
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        // Se já estiver logado, manda direto para o CRM
+        router.push("/admin");
+      } else {
+        setCarregando(false);
+      }
+    });
+  }, [router]);
+
+  // 2. Função de Login
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLogando(true);
+    setErro("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha,
+    });
+
+    if (error) {
+      setErro("Credenciais inválidas. Tente novamente.");
+      setLogando(false);
+    } else {
+      // Login com sucesso, vai para o CRM
+      router.push("/admin");
+    }
+  };
+
+  if (carregando) {
+    return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "'Outfit', sans-serif" }}>A carregar ambiente seguro...</div>;
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        
+        /* Efeitos visuais de fundo para dar um ar mais "tech" */
+        .glow-bg {
+          position: absolute;
+          width: 600px;
+          height: 600px;
+          background: radial-gradient(circle, rgba(74,144,217,0.1) 0%, rgba(8,15,30,0) 70%);
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 0;
+          pointer-events: none;
+        }
+      `}</style>
+
+      <div className="glow-bg"></div>
+
+      <div style={{ width: "100%", maxWidth: 420, background: "rgba(255,255,255,0.03)", border: `1px solid ${erro ? "rgba(248,113,113,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 24, padding: "48px 40px", zIndex: 1, backdropFilter: "blur(10px)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
+        
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          {/* AQUI VOCÊ PODE COLOCAR A LOGO DA SIMPLES SOLUÇÃO TI */}
+          {/* <img src="/logo-ssti.png" alt="Simples Solução TI" style={{ maxHeight: "60px", marginBottom: "20px" }} /> */}
+          
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 64, height: 64, borderRadius: 16, background: "rgba(74,144,217,0.1)", border: "1px solid rgba(74,144,217,0.2)", color: "#4A90D9", marginBottom: 20 }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+          </div>
+
+          <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 26, fontWeight: 800, color: "#fff", margin: "0 0 8px 0" }}>CRM Comercial</h1>
+          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "rgba(255,255,255,0.4)", margin: 0 }}>Simples Solução TI</p>
+        </div>
+
+        <form onSubmit={handleLogin}>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", fontFamily: "'Outfit', sans-serif", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>E-mail Corporativo</label>
+            <input 
+              type="email" 
+              value={email} 
+              onChange={e => setEmail(e.target.value)} 
+              placeholder="exemplo@simplessolucao.com.br" 
+              required
+              style={{ width: "100%", background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", fontFamily: "'Outfit', sans-serif", fontSize: 15, padding: "14px 16px", outline: "none", transition: "border-color 0.2s" }} 
+              onFocus={e => e.target.style.borderColor = "rgba(74,144,217,0.5)"}
+              onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+            />
+          </div>
+          
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: "block", fontFamily: "'Outfit', sans-serif", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Senha de Acesso</label>
+            <input 
+              type="password" 
+              value={senha} 
+              onChange={e => setSenha(e.target.value)} 
+              placeholder="••••••••" 
+              required
+              style={{ width: "100%", background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", fontFamily: "'DM Mono', monospace", fontSize: 15, padding: "14px 16px", outline: "none", transition: "border-color 0.2s", letterSpacing: "0.1em" }} 
+              onFocus={e => e.target.style.borderColor = "rgba(74,144,217,0.5)"}
+              onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+            />
+          </div>
+          
+          {erro && (
+            <div style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, padding: "10px 14px", color: "#f87171", fontSize: 13, marginBottom: 20, textAlign: "center", fontFamily: "'Outfit', sans-serif" }}>
+              {erro}
+            </div>
+          )}
+
+          <button 
+            type="submit" 
+            disabled={logando} 
+            style={{ width: "100%", padding: "16px", borderRadius: 12, background: "#4A90D9", color: "#fff", fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", border: "none", cursor: logando ? "not-allowed" : "pointer", opacity: logando ? 0.7 : 1, transition: "background 0.2s, transform 0.1s" }}
+            onMouseOver={e => !logando && (e.currentTarget.style.background = "#3a7bc8")}
+            onMouseOut={e => !logando && (e.currentTarget.style.background = "#4A90D9")}
+            onMouseDown={e => !logando && (e.currentTarget.style.transform = "scale(0.98)")}
+            onMouseUp={e => !logando && (e.currentTarget.style.transform = "scale(1)")}
+          >
+            {logando ? "A validar credenciais..." : "Entrar no Sistema"}
+          </button>
+        </form>
+        
+        <div style={{ textAlign: "center", marginTop: 32 }}>
+          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 12, color: "rgba(255,255,255,0.3)", margin: 0 }}>
+            &copy; {new Date().getFullYear()} Simples Solução TI.<br/>Sistema de uso restrito.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+
+      </div>
     </div>
   );
 }
