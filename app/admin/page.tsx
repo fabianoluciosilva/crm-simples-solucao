@@ -109,6 +109,7 @@ export default function AdminPage() {
     setCarregando(true);
     const { data, error } = await supabase.from('propostas').select('*').order('created_at', { ascending: false });
     if (!error && data) setPropostas(data);
+    else console.error("Erro ao carregar propostas:", error);
     setCarregando(false);
   };
 
@@ -116,6 +117,7 @@ export default function AdminPage() {
     setCarregando(true);
     const { data, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false });
     if (!error && data) setLeads(data);
+    else console.error("Erro ao carregar leads:", error);
     setCarregando(false);
   };
 
@@ -123,7 +125,7 @@ export default function AdminPage() {
     setCarregando(true);
     let query = supabase.from('tarefas').select('*').order('data_vencimento', { ascending: true });
     
-    if (session?.user?.email !== 'fabiano@simplessolucao.com.br') {
+    if (!isAdmin) {
       query = query.eq('usuario_email', session?.user?.email);
     }
     
@@ -267,12 +269,26 @@ export default function AdminPage() {
     setTimeout(() => { w.print(); }, 500);
   };
 
-  const propostasFiltradas = propostas.filter(p => {
-    if (filtroDias === 0) return true; 
-    const dataLimite = new Date();
-    dataLimite.setDate(dataLimite.getDate() - filtroDias);
-    return new Date(p.created_at) >= dataLimite;
-  });
+  // ─── LÓGICA DO DASHBOARD (MÉTRICAS E FILTROS) ───────────────────────────
+  const limiteFiltro = new Date();
+  if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
+
+  // Propostas filtradas
+  const propostasFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
+  const totalPropostas = propostasFiltradas.length;
+  const propostasFechadas = propostasFiltradas.filter(p => p.status === 'fechada');
+  const propostasPerdidas = propostasFiltradas.filter(p => p.status === 'perdida');
+  
+  // Leads filtrados
+  const leadsFiltrados = leads.filter(l => filtroDias === 0 || new Date(l.created_at) >= limiteFiltro);
+
+  // Fórmulas
+  const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
+  
+  const mrrPeriodo = propostasFechadas.reduce((acc, p) => acc + (p.valor || 0), 0);
+  const ticketMedio = propostasFechadas.length > 0 ? mrrPeriodo / propostasFechadas.length : 0;
+  
+  const mrrTotalHistorico = propostas.filter(p => p.status === 'fechada').reduce((acc, p) => acc + (p.valor || 0), 0);
 
   if (carregandoAuth) return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "sans-serif" }}>A validar sessão...</div>;
 
@@ -313,7 +329,7 @@ export default function AdminPage() {
         .btn-logout { background: transparent; border: 1px solid rgba(248,113,113,0.3); color: #f87171; padding: 8px 0; border-radius: 8px; cursor: pointer; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; width: 100%; margin-top: 12px; transition: 0.2s; }
         .btn-logout:hover { background: rgba(248,113,113,0.1); }
 
-        .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
         .metric-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-card); transition: all 0.3s; }
         .metric-title { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); }
         .metric-value { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-primary); }
@@ -361,7 +377,7 @@ export default function AdminPage() {
 
           <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-            Pipeline de Vendas
+            Dashboard / Pipeline
           </button>
           
           <button className={`nav-item ${aba === 'leads' ? 'active' : ''}`} onClick={() => setAba('leads')}>
@@ -389,14 +405,28 @@ export default function AdminPage() {
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 40, flexWrap: "wrap", gap: "20px" }}>
           <div>
             <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
-              {aba === 'propostas' ? "Visão Geral Comercial" : aba === 'leads' ? "Gestão de Leads" : "Minhas Tarefas"}
+              {aba === 'propostas' ? "Dashboard Comercial" : aba === 'leads' ? "Gestão de Leads" : "Minhas Tarefas"}
             </h1>
             <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, color: "var(--text-secondary)", marginTop: 4 }}>
-              {aba === 'propostas' ? "Acompanhe as propostas." : aba === 'leads' ? "Potenciais clientes do site." : "Organize as suas rotinas e follow-ups."}
+              {aba === 'propostas' ? "Métricas e pipeline de vendas." : aba === 'leads' ? "Potenciais clientes do site." : "Organize as suas rotinas e follow-ups."}
             </p>
           </div>
           
           <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            
+            {aba === 'propostas' && (
+              <select 
+                value={filtroDias} 
+                onChange={e => setFiltroDias(Number(e.target.value))}
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-medium)", color: "var(--text-primary)", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer" }}
+              >
+                <option value={30}>Último Mês (30 dias)</option>
+                <option value={90}>Últimos 3 Meses</option>
+                <option value={365}>Último Ano</option>
+                <option value={0}>Todo o Histórico</option>
+              </select>
+            )}
+
             {aba === 'tarefas' && (
               <>
                 <select value={filtroStatusTarefa} onChange={e => setFiltroStatusTarefa(e.target.value)} style={{ background: "var(--bg-card)", border: "1px solid var(--border-medium)", color: "var(--text-primary)", padding: "10px 16px", borderRadius: "10px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none" }}>
@@ -417,6 +447,104 @@ export default function AdminPage() {
             </button>
           </div>
         </header>
+
+        {/* ─── ABA: DASHBOARD / PROPOSTAS ─── */}
+        {aba === "propostas" && (
+          <>
+            <div className="grid-metrics">
+              <div className="metric-card">
+                <div className="metric-title">MRR (Período)</div>
+                <div className="metric-value">{carregando ? "-" : fmt(mrrPeriodo)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Total Ativo: {fmt(mrrTotalHistorico)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Ticket Médio (Fechados)</div>
+                <div className="metric-value" style={{ color: "#4A90D9" }}>{carregando ? "-" : fmt(ticketMedio)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Em {propostasFechadas.length} contratos</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Taxa de Conversão</div>
+                <div className="metric-value">{carregando ? "-" : taxaConversao.toFixed(1)}%</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>De {totalPropostas} propostas criadas</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Ganhos vs Perdidos</div>
+                <div className="metric-value">
+                  <span style={{ color: tema === 'dark' ? '#22c55e' : '#16a34a' }}>{propostasFechadas.length}</span> 
+                  <span style={{ color: "var(--text-tertiary)", margin: "0 8px", fontSize: 20 }}>/</span> 
+                  <span style={{ color: tema === 'dark' ? '#f87171' : '#dc2626' }}>{propostasPerdidas.length}</span>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Negócios concluídos</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Total de Leads</div>
+                <div className="metric-value">{carregando ? "-" : leadsFiltrados.length}</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "auto" }}>Capturados no site</div>
+              </div>
+            </div>
+
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data / Ref</th>
+                    <th>Empresa & Contacto</th>
+                    <th>Mensalidade</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: "right" }}>Gestão</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {propostasFiltradas.length === 0 && !carregando && (
+                    <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>Nenhuma proposta encontrada no período.</td></tr>
+                  )}
+                  {propostasFiltradas.map(prop => (
+                    <tr key={prop.id} style={{ opacity: prop.status === 'perdida' ? 0.6 : 1 }}>
+                      <td>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#4A90D9", marginTop: 2 }}>{prop.numero}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{prop.cliente}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{prop.contato || "—"}</div>
+                      </td>
+                      <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? (tema === 'dark' ? '#22c55e' : '#16a34a') : prop.status === 'perdida' ? (tema === 'dark' ? '#f87171' : '#dc2626') : 'var(--text-primary)' }}>
+                        {fmt(prop.valor)}
+                      </td>
+                      <td>
+                        <div>
+                          <span className={`badge-status ${prop.status === 'fechada' ? 'badge-fechada' : prop.status === 'perdida' ? 'badge-perdida' : 'badge-aberta'}`}>
+                            {prop.status === 'fechada' ? 'Ganha' : prop.status === 'perdida' ? 'Perdida' : 'Aberto'}
+                          </span>
+                        </div>
+                        {prop.status_envio === 'enviado' && (
+                          <div style={{ marginTop: 4 }}><span className="badge-status badge-email">Enviado</span></div>
+                        )}
+                      </td>
+                      <td style={{ textAlign: "right", minWidth: 320 }}>
+                        <button className="btn-action btn-view" onClick={() => abrirNovaTarefa(`Follow-up: ${prop.cliente}`, undefined, prop.id)}>+ Tarefa</button>
+                        <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
+                        <button className="btn-action btn-email" disabled={enviando === prop.id} onClick={() => enviarPorEmail(prop)}>
+                          {enviando === prop.id ? "..." : "E-mail"}
+                        </button>
+                        
+                        {(!prop.status || prop.status === 'aberta') ? (
+                          <>
+                            <button className="btn-action btn-win" onClick={() => alterarStatus(prop.id, 'fechada')}>Ganho</button>
+                            <button className="btn-action btn-loss" onClick={() => alterarStatus(prop.id, 'perdida')}>Perdido</button>
+                          </>
+                        ) : (
+                          <button className="btn-action btn-reopen" onClick={() => alterarStatus(prop.id, 'aberta')}>Reabrir</button>
+                        )}
+                        <button className="btn-action btn-delete" onClick={() => excluirProposta(prop.id, prop.cliente)}>Excluir</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         {/* ─── ABA: TAREFAS ─── */}
         {aba === "tarefas" && (
@@ -441,7 +569,7 @@ export default function AdminPage() {
                   return (
                     <tr key={t.id} style={{ opacity: statusVisual === 'Concluído' ? 0.5 : 1 }}>
                       <td>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: statusVisual === 'Atrasado' ? '#f87171' : 'var(--text-primary)', fontWeight: statusVisual === 'Atrasado' ? 700 : 400 }}>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: statusVisual === 'Atrasado' ? (tema === 'dark' ? '#f87171' : '#dc2626') : 'var(--text-primary)', fontWeight: statusVisual === 'Atrasado' ? 700 : 400 }}>
                           {new Date(t.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </td>
@@ -460,9 +588,9 @@ export default function AdminPage() {
                           {statusVisual}
                         </span>
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "right", minWidth: 200 }}>
                         {statusVisual !== 'Concluído' && (
-                          <button className="btn-action btn-view" onClick={() => alterarStatusTarefaRapido(t.id, 'Concluído')} style={{ color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }}>✓ Concluir</button>
+                          <button className="btn-action btn-view" onClick={() => alterarStatusTarefaRapido(t.id, 'Concluído')} style={{ color: tema === 'dark' ? '#22c55e' : '#16a34a', borderColor: "rgba(34,197,94,0.3)" }}>✓ Concluir</button>
                         )}
                         <button className="btn-action btn-view" onClick={() => editarTarefa(t)}>Editar</button>
                         <button className="btn-action btn-delete" onClick={() => excluirTarefa(t.id)}>✕</button>
@@ -470,48 +598,6 @@ export default function AdminPage() {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ─── ABA: PROPOSTAS ─── */}
-        {aba === "propostas" && (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Data / Ref</th>
-                  <th>Empresa & Contacto</th>
-                  <th>Mensalidade</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: "right" }}>Gestão</th>
-                </tr>
-              </thead>
-              <tbody>
-                {propostasFiltradas.map(prop => (
-                  <tr key={prop.id}>
-                    <td>
-                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "var(--text-secondary)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
-                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#4A90D9", marginTop: 2 }}>{prop.numero}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{prop.cliente}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{prop.contato || "—"}</div>
-                    </td>
-                    <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: "var(--text-primary)" }}>{fmt(prop.valor)}</td>
-                    <td>
-                      <span className={`badge-status ${prop.status === 'fechada' ? 'badge-fechada' : prop.status === 'perdida' ? 'badge-perdida' : 'badge-aberta'}`}>
-                        {prop.status === 'fechada' ? 'Ganha' : prop.status === 'perdida' ? 'Perdida' : 'Aberto'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      <button className="btn-action btn-view" onClick={() => abrirNovaTarefa(`Follow-up Proposta: ${prop.cliente}`, undefined, prop.id)}>+ Tarefa</button>
-                      <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
-                      <button className="btn-action btn-view" style={{ color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }} onClick={() => enviarWhatsApp(prop)}>Wpp</button>
-                    </td>
-                  </tr>
-                ))}
               </tbody>
             </table>
           </div>
@@ -537,14 +623,14 @@ export default function AdminPage() {
                     </td>
                     <td>
                       <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{lead.empresa}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{lead.nome} • {lead.telefone}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
                     </td>
                     <td>
-                      <span className="badge-status badge-aberta">{lead.produto}</span>
+                      <span className="badge-status badge-aberta">{lead.produto} - {lead.plano}</span>
                     </td>
                     <td style={{ textAlign: "right" }}>
                       <button className="btn-action btn-view" onClick={() => abrirNovaTarefa(`Contato Lead: ${lead.empresa}`, lead.id, undefined)}>+ Tarefa</button>
-                      <button className="btn-action btn-view" style={{ color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)" }} onClick={() => enviarWhatsAppLead(lead)}>Wpp</button>
+                      <button className="btn-action btn-wpp" onClick={() => enviarWhatsAppLead(lead)}>Wpp</button>
                     </td>
                   </tr>
                 ))}
