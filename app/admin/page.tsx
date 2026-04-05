@@ -375,7 +375,7 @@ export default function AdminPage() {
       <div style={{ paddingTop: "20px" }}>
         <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBotttom: 4 }}>Gestão Comercial</div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 4 }}>Gestão Comercial</div>
             <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff" }}>Painel de Oportunidades</div>
           </div>
           <div style={{ display: "flex", alignItems: "center" }}>
