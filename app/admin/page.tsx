@@ -57,6 +57,9 @@ export default function AdminPage() {
     titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: ""
   });
 
+  // Utilitário de formatação de moeda
+  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
   // ─── LÓGICA DO TEMA (DARK/LIGHT MODE) ────────────────────────────────────
   useEffect(() => {
     const temaSalvo = localStorage.getItem("tema_ssti");
@@ -120,7 +123,6 @@ export default function AdminPage() {
     setCarregando(true);
     let query = supabase.from('tarefas').select('*').order('data_vencimento', { ascending: true });
     
-    // Se não for o Fabiano, mostra só as tarefas do utilizador logado
     if (session?.user?.email !== 'fabiano@simplessolucao.com.br') {
       query = query.eq('usuario_email', session?.user?.email);
     }
@@ -141,7 +143,6 @@ export default function AdminPage() {
   };
 
   const editarTarefa = (t: TarefaDB) => {
-    // Formata a data para o input datetime-local (YYYY-MM-DDThh:mm)
     const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16);
     setFormTarefa({ ...t, data_vencimento: dataFormatada });
     setModalTarefa(true);
@@ -151,12 +152,11 @@ export default function AdminPage() {
     e.preventDefault();
     const isUpdate = !!formTarefa.id;
     
-    // Regra: Se mudar para concluído agora, regista a data de conclusão
     let data_conclusao = formTarefa.data_conclusao;
     if (formTarefa.status === 'Concluído' && !data_conclusao) {
       data_conclusao = new Date().toISOString();
     } else if (formTarefa.status !== 'Concluído') {
-      data_conclusao = undefined; // Limpa se for reaberta
+      data_conclusao = undefined;
     }
 
     const payload = {
@@ -195,7 +195,6 @@ export default function AdminPage() {
     carregarTarefas();
   };
 
-  // Inteligência de Status: Se passou da data e não concluiu, é Atrasado
   const getStatusRealTarefa = (t: TarefaDB) => {
     if (t.status === 'Concluído') return 'Concluído';
     const vencimento = new Date(t.data_vencimento);
@@ -212,7 +211,7 @@ export default function AdminPage() {
     return true;
   });
 
-  // ─── AÇÕES DE PROPOSTAS E LEADS (MANTIDAS) ────────────────────────────────
+  // ─── AÇÕES DE PROPOSTAS E LEADS ────────────────────────────────
   const excluirProposta = async (id: number, clienteNome: string) => {
     if (confirm(`Tem a certeza que deseja excluir a proposta de ${clienteNome}?`)) {
       await supabase.from('propostas').delete().eq('id', id);
@@ -223,6 +222,18 @@ export default function AdminPage() {
   const alterarStatus = async (id: number, novoStatus: string) => {
     await supabase.from('propostas').update({ status: novoStatus }).eq('id', id);
     setPropostas(prev => prev.map(p => p.id === id ? { ...p, status: novoStatus } : p));
+  };
+
+  const enviarWhatsApp = (prop: PropostaDB) => {
+    const primeiroNome = prop.contato ? prop.contato.split(" ")[0] : "cliente";
+    const texto = `Olá ${primeiroNome}, tudo bem?\n\nSou da Simples Solução TI. Conforme conversámos, estou a enviar a nossa proposta comercial (cód: ${prop.numero}) para o suporte e gestão de TI da *${prop.cliente}*, no valor de ${fmt(prop.valor)} mensais.\n\nQualquer dúvida, estou à total disposição!`;
+    const link = `https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`;
+    window.open(link, '_blank');
+  };
+
+  const enviarWhatsAppLead = (lead: any) => {
+    const msg = `Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI. Vi que demonstrou interesse na nossa solução de ${lead.produto} pelo nosso site. Podemos conversar um pouco sobre o ambiente da ${lead.empresa}?`;
+    window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   const enviarPorEmail = async (prop: PropostaDB) => {
@@ -249,7 +260,6 @@ export default function AdminPage() {
   };
 
   const visualizarProposta = (prop: PropostaDB) => {
-    // Mantém a visualização PDF original
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR");
     const w = window.open("", "_blank")!;
     w.document.write(`<html><head><title>Proposta - ${prop.cliente}</title></head><body style="font-family: sans-serif; padding: 40px;"><h2>Proposta Simples Solução TI</h2><p>Cliente: ${prop.cliente}</p><p>Valor: ${fmt(prop.valor)}</p></body></html>`);
@@ -263,8 +273,6 @@ export default function AdminPage() {
     dataLimite.setDate(dataLimite.getDate() - filtroDias);
     return new Date(p.created_at) >= dataLimite;
   });
-
-  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   if (carregandoAuth) return <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", color: "#4A90D9", fontFamily: "sans-serif" }}>A validar sessão...</div>;
 
@@ -500,6 +508,7 @@ export default function AdminPage() {
                     <td style={{ textAlign: "right" }}>
                       <button className="btn-action btn-view" onClick={() => abrirNovaTarefa(`Follow-up Proposta: ${prop.cliente}`, undefined, prop.id)}>+ Tarefa</button>
                       <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
+                      <button className="btn-action btn-view" style={{ color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }} onClick={() => enviarWhatsApp(prop)}>Wpp</button>
                     </td>
                   </tr>
                 ))}
