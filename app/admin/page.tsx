@@ -1,148 +1,151 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
-// ─── CONSTANTES FINANCEIRAS OCULTAS ──────────────────────────────────────────
-const CUSTO_OPERACIONAL_MENSAL = 35000;
-const FATURAMENTO_ATUAL = 55000;
-const CLIENTES_ATIVOS = 51;
-const CUSTO_MEDIO_POR_CLIENTE = CUSTO_OPERACIONAL_MENSAL / CLIENTES_ATIVOS;
+// ⚠️ MESMA SENHA DA CALCULADORA
+const SENHA = "Simples@923";
 
-// ─── TIPOS ───────────────────────────────────────────────────────────────────
-interface ItensMeta { label: string; unidade: string; }
-interface Qtd {
-  computador: number; servidor: number; backupLocalEst: number; backupLocalSrv: number;
-  backupNuvemEst: number; backupNuvemSrv: number; firewall: number; cftv: number;
-  pabx: number; tecnicoHora: number; deslocamentoKm: number; deslocamentoVisitas: number;
-}
-interface LicencaCustom {
-  id: string; nome: string; preco: number; qtd: number;
-}
 interface PropostaDB {
-  id: number; created_at: string; numero: string; cliente: string; contato: string; email?: string; valor: number; dados: any;
+  id: number;
+  created_at: string;
+  numero: string;
+  cliente: string;
+  contato: string;
+  telefone?: string;
+  email: string;
+  valor: number;
+  status: string;
+  status_envio: string;
+  dados: any;
 }
 
-const ITENS_META: Record<string, ItensMeta> = {
-  computador:     { label: "Computador / Estação",     unidade: "por estação/mês"  },
-  servidor:       { label: "Servidor",                 unidade: "por servidor/mês" },
-  backupLocalEst: { label: "Backup local – Estações",  unidade: "por estação/mês"  },
-  backupLocalSrv: { label: "Backup local – Servidor",  unidade: "por servidor/mês" },
-  backupNuvemEst: { label: "Backup nuvem – Estações",  unidade: "por estação/mês"  },
-  backupNuvemSrv: { label: "Backup nuvem – Servidor",  unidade: "por servidor/mês" },
-  firewall:       { label: "Firewall Gerenciado",      unidade: "fixo/mês"         },
-  cftv:           { label: "CFTV – Câmeras",           unidade: "por câmera/mês"   },
-  pabx:           { label: "PABX em Nuvem",            unidade: "fixo/mês"         },
-  tecnicoHora:    { label: "Técnico Presencial",       unidade: "por hora/mês"     },
-  deslocamento:   { label: "Deslocamento (km/visita)", unidade: "R$/km ida+volta"  },
-};
+export default function AdminPage() {
+  const [input, setInput] = useState("");
+  const [autenticado, setAutenticado] = useState(false);
+  const [erro, setErro] = useState(false);
 
-const PRECOS_BASE = {
-  computador: 65, servidor: 300, backupLocalEst: 15, backupLocalSrv: 60,
-  backupNuvemEst: 25, backupNuvemSrv: 90, firewall: 350, cftv: 25,
-  pabx: 250, tecnicoHora: 120, deslocamento: 1.5,
-};
+  const [aba, setAba] = useState<"propostas" | "leads">("propostas");
+  const [propostas, setPropostas] = useState<PropostaDB[]>([]);
+  const [leads, setLeads] = useState<any[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [filtroDias, setFiltroDias] = useState<number>(30);
+  const [enviando, setEnviando] = useState<number | null>(null);
 
-const COR_TEMA = "#4A90D9";
-const PRECOS = Object.fromEntries(
-  Object.entries(ITENS_META).map(([k, v]) => [k, { ...v, valor: PRECOS_BASE[k as keyof typeof PRECOS_BASE] }])
-);
-const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const pct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+  const handleLogin = () => {
+    if (input === SENHA) {
+      setAutenticado(true);
+      setErro(false);
+    } else {
+      setErro(true);
+      setInput("");
+    }
+  };
 
-export const CalculadoraSSTI = () => {
-  const [cliente, setCliente] = useState("");
-  const [contato, setContato] = useState("");
-  const [email, setEmail] = useState(""); // <-- NOVO: Integração com o CRM
-  const [precos, setPrecos] = useState<Record<string, number>>({ ...PRECOS_BASE });
-  const [qtd, setQtd] = useState<Qtd>({
-    computador: 0, servidor: 0, backupLocalEst: 0, backupLocalSrv: 0, backupNuvemEst: 0,
-    backupNuvemSrv: 0, firewall: 0, cftv: 0, pabx: 0, tecnicoHora: 0,
-    deslocamentoKm: 0, deslocamentoVisitas: 1,
-  });
-  
-  const [licencasCustom, setLicencasCustom] = useState<LicencaCustom[]>([]);
-
-  const [desconto, setDesconto] = useState(0);
-  const [obs, setObs] = useState("");
-  const [historico, setHistorico] = useState<PropostaDB[]>([]);
-  const [carregandoBanco, setCarregandoBanco] = useState(true);
-
-  // 1. CARREGAR DADOS DO SUPABASE AO ABRIR
   useEffect(() => {
-    async function carregarPropostas() {
-      const { data, error } = await supabase
-        .from('propostas')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(15); 
-
-      if (!error && data) {
-        setHistorico(data);
-      }
-      setCarregandoBanco(false);
+    if (autenticado) {
+      if (aba === "propostas") carregarDados();
+      if (aba === "leads") carregarLeads();
     }
-    carregarPropostas();
-  }, []);
+  }, [autenticado, aba]);
 
-  // CÁLCULOS
-  const linhas = [
-    { key: "computador", qty: qtd.computador, preco: precos.computador },
-    { key: "servidor", qty: qtd.servidor, preco: precos.servidor },
-    { key: "backupLocalEst", qty: qtd.backupLocalEst, preco: precos.backupLocalEst },
-    { key: "backupLocalSrv", qty: qtd.backupLocalSrv, preco: precos.backupLocalSrv },
-    { key: "backupNuvemEst", qty: qtd.backupNuvemEst, preco: precos.backupNuvemEst },
-    { key: "backupNuvemSrv", qty: qtd.backupNuvemSrv, preco: precos.backupNuvemSrv },
-    { key: "firewall", qty: qtd.firewall, preco: precos.firewall },
-    { key: "cftv", qty: qtd.cftv, preco: precos.cftv },
-    { key: "pabx", qty: qtd.pabx, preco: precos.pabx },
-    { key: "tecnicoHora", qty: qtd.tecnicoHora, preco: precos.tecnicoHora },
-  ].map(l => ({ ...l, subtotal: l.qty * l.preco }));
-
-  const custoDeslocamento = qtd.deslocamentoKm * precos.deslocamento * 2 * qtd.deslocamentoVisitas;
-  const subtotalLicencas = licencasCustom.reduce((acc, lic) => acc + ((lic.preco || 0) * (lic.qtd || 0)), 0);
-  
-  const subtotalServicos = linhas.reduce((a, l) => a + l.subtotal, 0) + custoDeslocamento + subtotalLicencas;
-  const valorDesconto = subtotalServicos * (desconto / 100);
-  const valorFinal = subtotalServicos - valorDesconto;
-  
-  const custoRateado = CUSTO_MEDIO_POR_CLIENTE;
-  const lucroAbsoluto = valorFinal - custoRateado;
-  const margemPct = valorFinal > 0 ? (lucroAbsoluto / valorFinal) * 100 : 0;
-  const ticketMedioAtual = FATURAMENTO_ATUAL / CLIENTES_ATIVOS;
-  const sinalMargem = margemPct >= 40 ? "excelente" : margemPct >= 25 ? "ok" : "atencao";
-  const margemCor = sinalMargem === "excelente" ? "#22c55e" : sinalMargem === "ok" ? "#f59e0b" : "#ef4444";
-
-  // 2. SALVAR NO BANCO E IMPRIMIR
-  const imprimirESalvar = useCallback(async () => {
-    const d = new Date();
-    const numeroProposta = `SSTI-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${Math.floor(Math.random() * 1000)}`;
-    const dataFormatada = d.toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
-    const nomeCliente = cliente || "Empresa Não Identificada";
-    const nomeContato = contato || "Cliente";
-
-    const { data: novaProp, error } = await supabase
+  const carregarDados = async () => {
+    setCarregando(true);
+    const { data, error } = await supabase
       .from('propostas')
-      .insert([{
-        numero: numeroProposta,
-        cliente: nomeCliente,
-        contato: nomeContato,
-        email: email, // <-- NOVO: Salva o e-mail no banco
-        valor: valorFinal,
-        status: 'aberta', // <-- NOVO: Para integrar com a tela Admin
-        origem: 'calculadora',
-        dados: { qtd, precos, desconto, obs, licencasCustom } 
-      }])
-      .select();
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (error) {
-      alert("ERRO AO SALVAR NO SUPABASE: " + error.message);
-      console.error(error);
-    } else if (novaProp) {
-      setHistorico(prev => [novaProp[0], ...prev].slice(0, 15)); 
+    if (!error && data) setPropostas(data);
+    else console.error("Erro ao carregar propostas:", error);
+    setCarregando(false);
+  };
+
+  const carregarLeads = async () => {
+    setCarregando(true);
+    const { data, error } = await supabase
+      .from('leads')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) setLeads(data);
+    else console.error("Erro ao carregar leads:", error);
+    setCarregando(false);
+  };
+
+  const excluirProposta = async (id: number, clienteNome: string) => {
+    if (confirm(`Tem a certeza que deseja excluir permanentemente a proposta de ${clienteNome}?`)) {
+      const { error } = await supabase.from('propostas').delete().eq('id', id);
+      if (!error) setPropostas(prev => prev.filter(p => p.id !== id));
     }
+  };
 
+  const alterarStatus = async (id: number, novoStatus: string) => {
+    const { error } = await supabase.from('propostas').update({ status: novoStatus }).eq('id', id);
+    if (!error) setPropostas(prev => prev.map(p => p.id === id ? { ...p, status: novoStatus } : p));
+  };
+
+  const enviarWhatsApp = (prop: PropostaDB) => {
+    const primeiroNome = prop.contato ? prop.contato.split(" ")[0] : "cliente";
+    const texto = `Olá ${primeiroNome}, tudo bem?\n\nSou o Fabiano da Simples Solução TI. Conforme conversamos, estou a enviar em anexo a nossa proposta comercial (cód: ${prop.numero}) para o suporte e gestão da TI da *${prop.cliente}*, no valor mensal de ${fmt(prop.valor)}.\n\nQualquer dúvida, estou à total disposição!`;
+    const link = `https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`;
+    window.open(link, '_blank');
+  };
+
+  const enviarWhatsAppLead = (lead: any) => {
+    const msg = `Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI. Vi que você se interessou pela nossa solução de ${lead.produto} pelo nosso site. Podemos conversar um pouco sobre o ambiente da ${lead.empresa}?`;
+    window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  const enviarPorEmail = async (prop: PropostaDB) => {
+    if (!prop.email) return alert("Esta proposta não possui o e-mail do cliente cadastrado.");
+    if (!confirm(`Confirmar envio de proposta para ${prop.email}?`)) return;
+
+    setEnviando(prop.id);
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: prop.email,
+          subject: `Proposta Comercial SSTI - ${prop.cliente}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+              <h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2>
+              <p>Olá <strong>${prop.contato}</strong>,</p>
+              <p>É um prazer apresentar nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p>
+              <p>Conforme conversamos, segue o detalhamento dos nossos serviços com foco em evolução contínua e segurança do seu ambiente de TI.</p>
+              <p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p>
+              <br />
+              <p>Atenciosamente,</p>
+              <p><strong>Fabiano Lucio</strong><br />Diretor Comercial | Simples Solução TI<br/>(21) 3529-7993 | www.simplessolucao.com.br</p>
+            </div>
+          `,
+          fileName: `Proposta_${prop.numero}.pdf`
+        }),
+      });
+
+      if (response.ok) {
+        alert("E-mail enviado com sucesso!");
+        await supabase.from('propostas').update({ status_envio: 'enviado' }).eq('id', prop.id);
+        carregarDados();
+      } else {
+        alert("Falha ao enviar e-mail. Verifique a API.");
+      }
+    } catch (error) {
+      alert("Erro na conexão com o servidor de e-mail.");
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  const visualizarProposta = (prop: PropostaDB) => {
+    const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
+    const nomeCliente = prop.cliente || "Empresa Não Identificada";
+    const nomeContato = prop.contato || "Cliente";
+    const obs = prop.dados?.obs || "";
     const origin = window.location.origin;
+
     const w = window.open("", "_blank")!;
     w.document.write(`
       <html><head><title>Proposta Comercial - ${nomeCliente}</title>
@@ -172,7 +175,7 @@ export const CalculadoraSSTI = () => {
       <div class="page">
         <div class="header">
           <div><h2 style="margin: 0; color: #0a1628;">Simples Solução TI</h2></div>
-          <div class="info-doc"><strong>Proposta:</strong> ${numeroProposta}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${nomeCliente}</div>
+          <div class="info-doc"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${nomeCliente}</div>
         </div>
         <h1>PROPOSTA DE SUPORTE TÉCNICO</h1>
         <p>Rio de Janeiro, ${dataFormatada}</p>
@@ -209,7 +212,7 @@ export const CalculadoraSSTI = () => {
         <p>Contrato de suporte inicial da <strong>${nomeCliente}</strong>:</p>
         <table>
           <tr><th>Descrição do Serviço</th><th style="text-align: right; width: 200px;">Valor Mensal</th></tr>
-          <tr class="row-total"><td style="padding: 20px 12px;">Manutenção TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px;">${fmt(valorFinal)}</td></tr>
+          <tr class="row-total"><td style="padding: 20px 12px;">Manutenção TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px;">${fmt(prop.valor)}</td></tr>
         </table>
         ${obs ? `<h3>Escopo Adicional / Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
         <h2>Considerações Finais</h2>
@@ -218,226 +221,276 @@ export const CalculadoraSSTI = () => {
       </body></html>
     `);
     w.document.close();
-    setTimeout(() => { w.document.title = `Proposta_${nomeCliente.replace(/\s+/g, '_')}_${numeroProposta}`; w.print(); }, 500);
-  }, [cliente, contato, email, obs, valorFinal, qtd, precos, desconto, licencasCustom]);
-
-  // 3. FUNÇÃO PARA CARREGAR PROPOSTA ANTIGA
-  const carregarProposta = (prop: PropostaDB) => {
-    if (!prop.dados) {
-      alert("Atenção: Esta proposta foi gerada antes da atualização do sistema e não possui os itens detalhados salvos para recarregar.");
-      return;
-    }
-    
-    setCliente(prop.cliente);
-    setContato(prop.contato || "");
-    setEmail(prop.email || ""); // <-- NOVO: Restaura o e-mail se existir
-    setQtd(prop.dados.qtd);
-    setPrecos(prop.dados.precos);
-    setDesconto(prop.dados.desconto || 0);
-    setObs(prop.dados.obs || "");
-    setLicencasCustom(prop.dados.licencasCustom || []);
-    
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => { w.document.title = `Proposta_${nomeCliente.replace(/\s+/g, '_')}_${prop.numero}`; w.print(); }, 500);
   };
 
-  const setQ = (key: string, val: string) => setQtd(q => ({ ...q, [key]: Math.max(0, Number(val)) }));
-  const setP = (key: string, val: string) => setPrecos(p => ({ ...p, [key]: Math.max(0, Number(val)) }));
+  const propostasFiltradas = propostas.filter(p => {
+    if (filtroDias === 0) return true; 
+    const dataLimite = new Date();
+    dataLimite.setDate(dataLimite.getDate() - filtroDias);
+    return new Date(p.created_at) >= dataLimite;
+  });
 
-  // Helpers para as licenças dinâmicas
-  const addLicenca = () => {
-    setLicencasCustom([...licencasCustom, { id: Math.random().toString(36).substr(2, 9), nome: "", preco: 0, qtd: 1 }]);
-  };
-  const updateLicenca = (id: string, field: keyof LicencaCustom, value: string | number) => {
-    setLicencasCustom(prev => prev.map(lic => lic.id === id ? { ...lic, [field]: value } : lic));
-  };
-  const removeLicenca = (id: string) => {
-    setLicencasCustom(prev => prev.filter(lic => lic.id !== id));
-  };
+  const totalPropostas = propostasFiltradas.length;
+  const propostasFechadas = propostasFiltradas.filter(p => p.status === 'fechada');
+  const propostasPerdidas = propostasFiltradas.filter(p => p.status === 'perdida');
+  
+  const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
+  const volumeFinanceiro = propostasFiltradas.reduce((acc, p) => acc + (p.valor || 0), 0);
+  const receitaFechada = propostasFechadas.reduce((acc, p) => acc + (p.valor || 0), 0);
+  const ticketMedio = totalPropostas > 0 ? volumeFinanceiro / totalPropostas : 0;
 
-  const inputStyle: React.CSSProperties = { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, color: "#fff", fontFamily: "'DM Mono', monospace", fontSize: 14, padding: "8px 12px", width: "100%", outline: "none", transition: "border-color 0.2s" };
-  const labelStyle: React.CSSProperties = { fontFamily: "'Outfit', sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 6, display: "block" };
+  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  const renderRow = (key: string, label: string, sub: string = "") => (
-    <div className="item-row" key={key}>
-      <div><div className="item-label">{label}</div><div className="item-sub">{sub || ITENS_META[key].unidade}</div></div>
-      <div><label style={{ ...labelStyle, fontSize: 10, marginBottom: 4 }}>Valor (R$)</label><input type="number" min="0" step="1" style={{...inputStyle, color: COR_TEMA}} value={precos[key] ?? ""} onChange={e => setP(key, e.target.value)} /></div>
-      <div><label style={{ ...labelStyle, fontSize: 10, marginBottom: 4 }}>Qtd</label><input type="number" min="0" style={inputStyle} value={qtd[key as keyof Qtd] || ""} placeholder="0" onChange={e => setQ(key, e.target.value)} /></div>
-    </div>
-  );
+  if (!autenticado) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; }`}</style>
+        <div style={{ width: "100%", maxWidth: 400, background: "rgba(255,255,255,0.04)", border: `1px solid ${erro ? "rgba(248,113,113,0.4)" : "rgba(255,255,255,0.1)"}`, borderRadius: 20, padding: "40px 36px", transition: "border-color 0.2s" }}>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 10 }}>Simples Solução TI</div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff", marginBottom: 8 }}>CRM Comercial</div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Painel Administrativo Restrito</div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <input type="password" value={input} onChange={e => { setInput(e.target.value); setErro(false); }} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="••••••••" autoFocus style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${erro ? "rgba(248,113,113,0.5)" : "rgba(255,255,255,0.12)"}`, borderRadius: 10, color: "#fff", fontFamily: "'DM Mono', monospace", fontSize: 16, padding: "12px 16px", outline: "none", letterSpacing: "0.15em", textAlign: "center" }} />
+          </div>
+          <button onClick={handleLogin} style={{ width: "100%", padding: "13px", borderRadius: 10, background: "#4A90D9", color: "#fff", fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", border: "none", cursor: "pointer" }}>Acessar Painel</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080f1e", color: "#fff" }}>
+    <div style={{ minHeight: "100vh", background: "#080f1e", color: "#fff", paddingBottom: 60 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #080f1e; } ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
-        input:focus { border-color: rgba(74,144,217,0.6) !important; } input[type=number]::-webkit-inner-spin-button { opacity: 0.4; }
-        .calc-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; max-width: 1200px; margin: 0 auto; padding: 32px 24px 60px; }
-        @media(max-width:900px){ .calc-grid { grid-template-columns: 1fr; } }
-        .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 28px; margin-bottom: 20px; }
-        .section-title { font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4A90D9; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-        .section-title::after { content: ''; flex: 1; height: 1px; background: rgba(74,144,217,0.2); margin-left: 8px;}
-        .item-row { display: grid; grid-template-columns: 1fr 100px 90px; gap: 12px; align-items: end; margin-bottom: 16px; }
-        .item-label { font-family: 'Outfit', sans-serif; font-size: 14px; color: rgba(255,255,255,0.8); }
-        .item-sub { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 2px; }
-        .desloc-row { display: grid; grid-template-columns: 1fr 80px 80px; gap: 12px; align-items: end; margin-bottom: 14px; }
-        .resumo-linha { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: 'Outfit', sans-serif; font-size: 14px; }
-        .resumo-linha:last-child { border-bottom: none; }
-        .resumo-key { color: rgba(255,255,255,0.6); }
-        .resumo-val { color: #fff; font-family: 'DM Mono', monospace; font-weight: 500; }
-        .resumo-val.destaque { color: #4A90D9; font-size: 22px; font-weight: 600; }
-        .btn { font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 12px 20px; border-radius: 9px; border: none; cursor: pointer; transition: all 0.2s; width: 100%; margin-bottom: 10px; }
-        .btn-primary { background: #4A90D9; color: #fff; } .btn-primary:hover { background: #3a7bc8; }
-        .btn-outline { background: transparent; color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.15); } .btn-outline:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
-        .tag-item { display: inline-flex; align-items: center; gap: 6px; background: rgba(74,144,217,0.1); border: 1px solid rgba(74,144,217,0.2); border-radius: 6px; padding: 3px 10px; font-family: 'DM Mono', monospace; font-size: 12px; color: #7db8f0; margin: 3px; }
-        .margem-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; }
-        .tooltip { position: relative; cursor: help; } .tooltip:hover .tip { display: block; }
-        .tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #1e3a5f; color: #fff; font-size: 11px; padding: 6px 10px; border-radius: 6px; white-space: nowrap; font-family: 'Outfit', sans-serif; z-index: 10; }
-        
-        .historico-item { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; transition: background 0.2s; border-radius: 8px; margin-bottom: 2px; } 
-        .historico-item:last-child { border-bottom: none; }
-        .historico-item:hover { background: rgba(74,144,217,0.1); border-bottom-color: transparent; }
-        
-        .historico-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-        .historico-id { font-family: 'DM Mono', monospace; font-size: 11px; color: #4A90D9; }
-        .historico-data { font-family: 'Outfit', sans-serif; font-size: 11px; color: rgba(255,255,255,0.4); }
-        .historico-bottom { display: flex; justify-content: space-between; align-items: center; }
-        .historico-cliente { font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
-        .historico-valor { font-family: 'DM Mono', monospace; font-size: 13px; color: rgba(255,255,255,0.8); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+        .tabs { display: flex; gap: 24px; margin-top: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .tab-btn { background: transparent; border: none; padding: 12px 0; color: rgba(255,255,255,0.4); font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: color 0.2s; border-bottom: 2px solid transparent; }
+        .tab-btn:hover { color: rgba(255,255,255,0.8); }
+        .tab-btn.active { color: #4A90D9; border-bottom-color: #4A90D9; }
+        .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 32px; margin-bottom: 40px; }
+        .metric-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 8px; }
+        .metric-title { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.4); }
+        .metric-value { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: #fff; }
+        .metric-value.highlight { color: #4A90D9; }
+        .metric-value.success { color: #22c55e; }
+        .table-wrapper { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.2); }
+        td { font-family: 'Outfit', sans-serif; font-size: 14px; color: rgba(255,255,255,0.8); padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        .badge-status { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-family: 'Outfit', sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+        .badge-aberta { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+        .badge-fechada { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+        .badge-perdida { background: rgba(156,163,175,0.15); color: #9ca3af; border: 1px solid rgba(156,163,175,0.3); }
+        .badge-email { background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.3); margin-top: 4px;}
+        .btn-action { padding: 6px 12px; border-radius: 6px; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+        .btn-view { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.2); margin-right: 8px; }
+        .btn-view:hover { background: rgba(255,255,255,0.2); }
+        .btn-wpp { background: rgba(34,197,94,0.1); color: #22c55e; border-color: rgba(34,197,94,0.2); margin-right: 8px; }
+        .btn-wpp:hover { background: rgba(34,197,94,0.2); }
+        .btn-email { background: rgba(168,85,247,0.1); color: #a855f7; border-color: rgba(168,85,247,0.2); margin-right: 8px; }
+        .btn-email:hover { background: rgba(168,85,247,0.2); }
+        .btn-email:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-win { background: rgba(74,144,217,0.1); color: #4A90D9; border-color: rgba(74,144,217,0.2); margin-right: 8px; }
+        .btn-win:hover { background: rgba(74,144,217,0.2); }
+        .btn-loss { background: rgba(156,163,175,0.1); color: #9ca3af; border-color: rgba(156,163,175,0.2); margin-right: 8px; }
+        .btn-loss:hover { background: rgba(156,163,175,0.2); }
+        .btn-reopen { background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2); margin-right: 8px; }
+        .btn-reopen:hover { background: rgba(245,158,11,0.2); }
+        .btn-delete { background: transparent; color: #f87171; }
+        .btn-delete:hover { text-decoration: underline; }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto" }}>
-        <div>
-          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 4 }}>Simples Solução TI</div>
-          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff" }}>Gerador de Propostas</div>
+      <div style={{ paddingTop: "20px" }}>
+        <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#4A90D9", marginBottom: 4 }}>Gestão Comercial</div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff" }}>Painel de Oportunidades</div>
+          </div>
+          <button onClick={() => window.location.href = '/preco'} style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            + Nova Proposta
+          </button>
         </div>
       </div>
 
-      <div className="calc-grid">
-        {/* COLUNA ESQUERDA */}
-        <div>
-          <div className="card">
-            <div className="section-title">Dados do Cliente</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-              <div><label style={labelStyle}>Nome da Empresa</label><input style={{ ...inputStyle, fontSize: 16, fontFamily: "'Outfit', sans-serif" }} placeholder="Ex: Empresa Gerastar Ltda." value={cliente} onChange={e => setCliente(e.target.value)} /></div>
-              <div><label style={labelStyle}>Nome do Contato</label><input style={{ ...inputStyle, fontSize: 16, fontFamily: "'Outfit', sans-serif" }} placeholder="Ex: João Silva" value={contato} onChange={e => setContato(e.target.value)} /></div>
-              <div><label style={labelStyle}>E-mail do Cliente</label><input type="email" style={{ ...inputStyle, fontSize: 16, fontFamily: "'Outfit', sans-serif" }} placeholder="Ex: joao@empresa.com" value={email} onChange={e => setEmail(e.target.value)} /></div>
-            </div>
-          </div>
-
-          <div className="card"><div className="section-title">Infraestrutura</div>{renderRow("computador", "Computadores / Estações", "Gestão + suporte por estação")}{renderRow("servidor", "Servidores", "Gestão por servidor")}</div>
-          
-          {/* LICENCIAMENTO CUSTOMIZÁVEL */}
-          <div className="card">
-            <div className="section-title">Licenciamento de Software</div>
-            {licencasCustom.map(lic => (
-              <div className="item-row" key={lic.id} style={{ gridTemplateColumns: "1fr 100px 90px 30px" }}>
-                <div>
-                  <label style={{ ...labelStyle, fontSize: 10, marginBottom: 4 }}>Nome / Versão</label>
-                  <input type="text" style={{ ...inputStyle, fontFamily: "'Outfit', sans-serif" }} placeholder="Ex: Office 365..." value={lic.nome} onChange={e => updateLicenca(lic.id, "nome", e.target.value)} />
-                </div>
-                <div>
-                  <label style={{ ...labelStyle, fontSize: 10, marginBottom: 4 }}>Valor (R$)</label>
-                  <input type="number" min="0" step="1" style={{ ...inputStyle, color: COR_TEMA }} value={lic.preco || ""} onChange={e => updateLicenca(lic.id, "preco", Number(e.target.value))} />
-                </div>
-                <div>
-                  <label style={{ ...labelStyle, fontSize: 10, marginBottom: 4 }}>Qtd</label>
-                  <input type="number" min="0" style={inputStyle} value={lic.qtd || ""} placeholder="0" onChange={e => updateLicenca(lic.id, "qtd", Number(e.target.value))} />
-                </div>
-                <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 8 }}>
-                  <button onClick={() => removeLicenca(lic.id)} style={{ background: "transparent", border: "none", color: "rgba(248,113,113,0.8)", cursor: "pointer", fontSize: 24, lineHeight: 1 }}>×</button>
-                </div>
-              </div>
-            ))}
-            <button className="btn btn-outline" style={{ marginTop: 10, padding: "10px", fontSize: 11, marginBottom: 0, borderStyle: "dashed" }} onClick={addLicenca}>
-              + Adicionar Software/Licença
-            </button>
-          </div>
-
-          <div className="card"><div className="section-title">Backup</div>{renderRow("backupLocalEst", "Backup Local – Estações")}{renderRow("backupLocalSrv", "Backup Local – Servidores")}{renderRow("backupNuvemEst", "Backup Nuvem – Estações")}{renderRow("backupNuvemSrv", "Backup Nuvem – Servidores")}</div>
-          <div className="card">
-            <div className="section-title">Serviços Adicionais</div>
-            {renderRow("firewall", "Firewall Gerenciado")}{renderRow("cftv", "CFTV – Câmeras")}{renderRow("pabx", "PABX em Nuvem")}{renderRow("tecnicoHora", "Técnico Presencial", "Horas mensais avulsas")}
-            <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-              <div className="item-label" style={{ ...labelStyle, marginBottom: 10, color: "#fff" }}>Deslocamento</div>
-              <div className="desloc-row">
-                <div><div style={{ ...labelStyle, fontSize: 11 }}>Dist. (km ida)</div><input type="number" min="0" style={inputStyle} value={qtd.deslocamentoKm || ""} placeholder="0" onChange={e => setQ("deslocamentoKm", e.target.value)} /></div>
-                <div><div style={{ ...labelStyle, fontSize: 11 }}>Visitas/mês</div><input type="number" min="1" style={inputStyle} value={qtd.deslocamentoVisitas || ""} placeholder="1" onChange={e => setQ("deslocamentoVisitas", e.target.value)} /></div>
-                <div><div style={{ ...labelStyle, fontSize: 11 }}>R$/km</div><input type="number" min="0" step="0.1" style={{...inputStyle, color: COR_TEMA}} value={precos.deslocamento || ""} placeholder="1.5" onChange={e => setP("deslocamento", e.target.value)} /></div>
-              </div>
-              {qtd.deslocamentoKm > 0 && (<div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 6 }}>{qtd.deslocamentoKm}km × 2 × {qtd.deslocamentoVisitas}x = {qtd.deslocamentoKm * 2 * qtd.deslocamentoVisitas}km totais · {fmt(custoDeslocamento)}</div>)}
-            </div>
-          </div>
-          <div className="card">
-            <div className="section-title">Ajustes Finais</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-              <div><label style={labelStyle}>Desconto (%)</label><input type="number" min="0" max="50" style={inputStyle} value={desconto || ""} placeholder="0" onChange={e => setDesconto(Math.min(50, Math.max(0, Number(e.target.value))))} /></div>
-              <div style={{ display: "flex", alignItems: "flex-end" }}><div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: desconto > 0 ? "#f87171" : "rgba(255,255,255,0.3)", padding: "9px 0" }}>{desconto > 0 ? `− ${fmt(valorDesconto)} no total` : "Sem desconto aplicado"}</div></div>
-            </div>
-            <label style={labelStyle}>Observações / Escopo adicional</label>
-            <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "'Outfit', sans-serif", fontSize: 13 }} placeholder="Ex: inclui suporte ao sistema ERP..." value={obs} onChange={e => setObs(e.target.value)} />
-          </div>
+      <div className="container">
+        <div className="tabs">
+          <button className={`tab-btn ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
+            Propostas Enviadas
+          </button>
+          <button className={`tab-btn ${aba === 'leads' ? 'active' : ''}`} onClick={() => setAba('leads')}>
+            Leads do Site
+          </button>
         </div>
 
-        {/* COLUNA DIREITA */}
-        <div style={{ position: "sticky", top: 24, alignSelf: "start" }}>
-          
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="section-title">Resumo do Contrato</div>
-            <div style={{ marginBottom: 16, minHeight: 30 }}>
-              {linhas.filter(l => l.qty > 0).map(l => (<span key={l.key} className="tag-item">{PRECOS[l.key].label.split("–")[0].trim()} ×{l.qty}</span>))}
-              {licencasCustom.filter(l => l.qtd > 0 && l.nome.trim() !== "").map(l => (<span key={l.id} className="tag-item">{l.nome} ×{l.qtd}</span>))}
-              {qtd.deslocamentoKm > 0 && <span className="tag-item">Deslocamento</span>}
-              {linhas.every(l => l.qty === 0) && licencasCustom.every(l => l.qtd === 0) && qtd.deslocamentoKm === 0 && (<span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 12, color: "rgba(255,255,255,0.25)" }}>Nenhum item adicionado ainda</span>)}
+        {aba === "propostas" && (
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 24 }}>
+              <select 
+                value={filtroDias} 
+                onChange={e => setFiltroDias(Number(e.target.value))}
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff", padding: "10px 16px", borderRadius: "8px", fontFamily: "'Outfit', sans-serif", fontSize: "13px", fontWeight: 600, outline: "none", cursor: "pointer" }}
+              >
+                <option value={30} style={{ color: "#000" }}>Último Mês (30 dias)</option>
+                <option value={90} style={{ color: "#000" }}>Últimos 3 Meses</option>
+                <option value={180} style={{ color: "#000" }}>Últimos 6 Meses</option>
+                <option value={365} style={{ color: "#000" }}>Último Ano</option>
+                <option value={0} style={{ color: "#000" }}>Todo o Histórico</option>
+              </select>
             </div>
-            <div style={{ marginTop: 24, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 16 }}>
-              <div className="resumo-linha"><span className="resumo-key">Subtotal serviços</span><span className="resumo-val">{fmt(subtotalServicos)}</span></div>
-              {desconto > 0 && (<div className="resumo-linha"><span className="resumo-key">Desconto ({desconto}%)</span><span className="resumo-val" style={{ color: "#f87171" }}>− {fmt(valorDesconto)}</span></div>)}
-              <div className="resumo-linha" style={{ paddingTop: 14, paddingBottom: 14 }}><span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 15, fontWeight: 700, color: "#fff" }}>Valor Mensal</span><span className="resumo-val destaque">{fmt(valorFinal)}</span></div>
-            </div>
-          </div>
 
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="section-title">Análise Interna (Margem)</div>
-            <div className="resumo-linha"><span className="resumo-key tooltip">Custo rateado<span className="tip">Custo operacional ÷ nº de clientes</span></span><span className="resumo-val">{fmt(custoRateado)}</span></div>
-            <div className="resumo-linha"><span className="resumo-key">Lucro estimado</span><span className="resumo-val" style={{ color: lucroAbsoluto >= 0 ? "#22c55e" : "#f87171" }}>{fmt(lucroAbsoluto)}</span></div>
-            <div className="resumo-linha" style={{ paddingTop: 14 }}>
-              <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: 14, fontWeight: 600, color: "#fff" }}>Margem</span>
-              <span className="margem-badge" style={{ background: `${margemCor}18`, border: `1px solid ${margemCor}40`, color: margemCor }}>{margemPct.toFixed(1)}% {sinalMargem === "excelente" && " ✓ Excelente"} {sinalMargem === "ok" && " ⚠ Aceitável"} {sinalMargem === "atencao" && " ✕ Atenção"}</span>
-            </div>
-          </div>
-
-          <button className="btn btn-primary" onClick={imprimirESalvar}>↓ Gerar Proposta & Salvar</button>
-          <button className="btn btn-outline" onClick={() => { setCliente(""); setContato(""); setEmail(""); setDesconto(0); setObs(""); setLicencasCustom([]); setQtd({ computador: 0, servidor: 0, backupLocalEst: 0, backupLocalSrv: 0, backupNuvemEst: 0, backupNuvemSrv: 0, firewall: 0, cftv: 0, pabx: 0, tecnicoHora: 0, deslocamentoKm: 0, deslocamentoVisitas: 1 }); }}>↺ Limpar Gerador</button>
-
-          {/* HISTÓRICO DE PROPOSTAS BANCO DE DADOS */}
-          <div className="card" style={{ marginTop: 24, padding: "20px 24px" }}>
-            <div className="section-title">Histórico (Nuvem)</div>
-            {carregandoBanco ? (
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>Sincronizando...</div>
-            ) : historico.length > 0 ? (
-              <div>
-                {historico.map((prop) => (
-                  <div key={prop.id} className="historico-item" onClick={() => carregarProposta(prop)} title="Clique para abrir os detalhes">
-                    <div className="historico-top">
-                      <span className="historico-id">{prop.numero}</span>
-                      <span className="historico-data">{new Date(prop.created_at).toLocaleDateString('pt-BR')}</span>
-                    </div>
-                    <div className="historico-bottom">
-                      <span className="historico-cliente">{prop.cliente}</span>
-                      <span className="historico-valor">{fmt(prop.valor)}</span>
-                    </div>
-                  </div>
-                ))}
+            <div className="grid-metrics">
+              <div className="metric-card">
+                <div className="metric-title">Propostas / Orçado</div>
+                <div className="metric-value">{carregando ? "-" : totalPropostas} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(volumeFinanceiro)}</span></div>
               </div>
-            ) : (
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>Nenhuma proposta gerada.</div>
-            )}
-          </div>
+              <div className="metric-card">
+                <div className="metric-title">Taxa de Conversão</div>
+                <div className="metric-value highlight">{carregando ? "-" : taxaConversao.toFixed(1)}%</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Novos Contratos (Fechados)</div>
+                <div className="metric-value success">{carregando ? "-" : propostasFechadas.length} <span style={{fontSize: 14, color: "rgba(255,255,255,0.4)", fontWeight: 400}}>| {fmt(receitaFechada)}</span></div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-title">Ticket Médio Ofertado</div>
+                <div className="metric-value" style={{ color: "#fff" }}>{carregando ? "-" : fmt(ticketMedio)}</div>
+              </div>
+            </div>
 
-        </div>
+            <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+              Pipeline de Vendas
+              {carregando && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>Carregando dados...</span>}
+            </div>
+
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Empresa (Cliente)</th>
+                    <th>Valor Mensal</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: "right" }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {propostasFiltradas.length === 0 && !carregando && (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "40px 20px", color: "rgba(255,255,255,0.4)" }}>
+                        Nenhuma proposta encontrada neste período.
+                      </td>
+                    </tr>
+                  )}
+                  {propostasFiltradas.map(prop => (
+                    <tr key={prop.id} style={{ opacity: prop.status === 'perdida' ? 0.6 : 1 }}>
+                      <td>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(prop.created_at).toLocaleDateString('pt-BR')}</div>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "#4A90D9", marginTop: 2 }}>{prop.numero}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "#fff" }}>{prop.cliente}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>Contato: {prop.contato || "—"}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{prop.email || "Sem e-mail cadastrado"}</div>
+                      </td>
+                      <td style={{ fontFamily: "'DM Mono', monospace", fontWeight: 600, color: prop.status === 'fechada' ? '#22c55e' : prop.status === 'perdida' ? '#9ca3af' : '#fff' }}>
+                        {fmt(prop.valor)}
+                      </td>
+                      <td>
+                        <div>
+                          <span className={`badge-status ${prop.status === 'fechada' ? 'badge-fechada' : prop.status === 'perdida' ? 'badge-perdida' : 'badge-aberta'}`}>
+                            {prop.status === 'fechada' ? 'Venda Fechada' : prop.status === 'perdida' ? 'Perdida' : 'Aguardando'}
+                          </span>
+                        </div>
+                        {prop.status_envio === 'enviado' && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="badge-status badge-email">E-mail Enviado</span>
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ textAlign: "right", minWidth: 320 }}>
+                        <button className="btn-action btn-view" onClick={() => visualizarProposta(prop)}>PDF</button>
+                        <button className="btn-action btn-wpp" onClick={() => enviarWhatsApp(prop)}>Wpp</button>
+                        <button className="btn-action btn-email" disabled={enviando === prop.id} onClick={() => enviarPorEmail(prop)}>
+                          {enviando === prop.id ? "Enviando..." : "E-mail"}
+                        </button>
+                        
+                        {(!prop.status || prop.status === 'aberta') ? (
+                          <>
+                            <button className="btn-action btn-win" onClick={() => alterarStatus(prop.id, 'fechada')}>Ganho</button>
+                            <button className="btn-action btn-loss" onClick={() => alterarStatus(prop.id, 'perdida')}>Perdido</button>
+                          </>
+                        ) : (
+                          <button className="btn-action btn-reopen" onClick={() => alterarStatus(prop.id, 'aberta')}>Reabrir</button>
+                        )}
+
+                        <button className="btn-action btn-delete" onClick={() => excluirProposta(prop.id, prop.cliente)}>Excluir</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {aba === "leads" && (
+          <div style={{ marginTop: 24 }}>
+             <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+              Capturas Recentes
+              {carregando && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>Carregando dados...</span>}
+            </div>
+
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Lead</th>
+                    <th>Interesse</th>
+                    <th style={{ textAlign: "right" }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.length === 0 && !carregando && (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center", padding: "40px 20px", color: "rgba(255,255,255,0.4)" }}>
+                        Nenhum lead recebido ainda.
+                      </td>
+                    </tr>
+                  )}
+                  {leads.map(lead => (
+                    <tr key={lead.id}>
+                      <td>
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "#fff" }}>{lead.empresa}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{lead.nome} • {lead.telefone}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{lead.email}</div>
+                      </td>
+                      <td>
+                        <span className="badge-status badge-aberta" style={{ background: "rgba(74,144,217,0.15)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)" }}>
+                          {lead.produto} - {lead.plano}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <button className="btn-action btn-wpp" onClick={() => enviarWhatsAppLead(lead)}>Chamar no WhatsApp</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
-};
+}
