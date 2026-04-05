@@ -73,11 +73,11 @@ export default function LoginPage() {
       <div style={{ width: "100%", maxWidth: 420, background: "rgba(255,255,255,0.03)", border: `1px solid ${erro ? "rgba(248,113,113,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 24, padding: "48px 40px", zIndex: 1, backdropFilter: "blur(10px)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
         
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          {/* LOGO OFICIAL NEGATIVA DA SIMPLES SOLUÇÃO TI */}
+          {/* LOGO OFICIAL NEGATIVA DA SIMPLES SOLUÇÃO TI (AGORA CENTRALIZADA) */}
           <img 
             src="/Logo-negativo.webp" 
             alt="Simples Solução TI" 
-            style={{ maxHeight: "80px", objectFit: "contain", marginBottom: "20px" }} 
+            style={{ display: "block", margin: "0 auto 20px auto", maxHeight: "80px", objectFit: "contain" }} 
           />
 
           <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 26, fontWeight: 800, color: "#fff", margin: "0 0 8px 0" }}>CRM Comercial</h1>
