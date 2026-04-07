@@ -12,11 +12,17 @@ interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string;
 export default function AdminPage() {
   const router = useRouter();
 
-  // --- ESTADOS GERAIS ---
+  // --- ESTADOS GERAIS E NOTIFICAÇÕES ---
   const [session, setSession] = useState<any>(null);
   const [carregandoAuth, setCarregandoAuth] = useState(true);
   const [tema, setTema] = useState<"dark" | "light">("dark");
+  const [toast, setToast] = useState<{msg: string, tipo: 'sucesso' | 'erro' | 'info'} | null>(null);
   const isAdmin = session?.user?.email === 'fabiano@simplessolucao.com.br';
+
+  const showToast = (msg: string, tipo: 'sucesso' | 'erro' | 'info' = 'sucesso') => {
+    setToast({ msg, tipo });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // --- ESTADOS DO CRM ---
   const [aba, setAba] = useState<"propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates">("propostas");
@@ -128,9 +134,9 @@ export default function AdminPage() {
 
   // ─── AÇÕES DE PROPOSTAS ───────────────────────────────────────────────────
   const enviarPorEmail = async (prop: PropostaDB) => {
-    if (!prop.email) return alert("E-mail não registado nesta proposta.");
-    if (!confirm(`Confirmar envio de proposta para ${prop.email}?`)) return;
-    setEnviando(prop.id);
+    if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
+    
+    setEnviando(prop.id); // Inicia o loading imediatamente, sem confirm()
     
     const tplEmail = templates.find(t => t.tipo === 'Email');
     let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>É um prazer apresentar a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,</p><p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p></div>`;
@@ -151,7 +157,6 @@ export default function AdminPage() {
         }),
       });
 
-      // LÊ A MENSAGEM EXATA DE ERRO VINDA DA API
       const data = await response.json();
 
       if (response.ok) {
@@ -165,13 +170,16 @@ export default function AdminPage() {
           }
         } catch (autoErr) { console.error(autoErr); }
 
-        alert("E-mail enviado e Follow-up agendado automaticamente!");
+        showToast("E-mail enviado com sucesso e Follow-up agendado!", "sucesso");
         carregarTudo();
       } else {
-        // MOSTRA O ERRO TÉCNICO EXATO (Ex: "Invalid login", "Senha Incorreta")
-        alert(`Falha ao enviar e-mail.\n\nERRO TÉCNICO: ${data.error}`);
+        showToast(`Erro na API: ${data.error}`, "erro");
       }
-    } catch (e) { alert("Erro de conexão ao tentar comunicar com a API."); } finally { setEnviando(null); }
+    } catch (e) { 
+      showToast("Erro de conexão ao tentar enviar o e-mail.", "erro"); 
+    } finally { 
+      setEnviando(null); 
+    }
   };
 
   const enviarWhatsApp = (prop: PropostaDB) => {
@@ -192,30 +200,39 @@ export default function AdminPage() {
           await supabase.from('automacoes_log').insert([{ tipo_regra: 'ONBOARDING_PROPOSTA_GANHA', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Onboarding Inicializado' }]);
           await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente (Onboarding)' }]);
           await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado! Iniciar inventário da rede.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-          alert("🎉 Negócio Fechado! Contrato ativado e Onboarding iniciado.");
+          showToast("Negócio Fechado! Contrato ativado e Onboarding iniciado.", "sucesso");
         }
       } catch (e) { console.error(e) }
+    } else {
+      showToast(`Proposta marcada como ${novoStatus}.`, "info");
     }
     carregarTudo();
   };
 
-  const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); carregarTudo(); }};
+  const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
   // ─── AÇÕES DE CONTRATOS, TAREFAS E TEMPLATES ──────────────────────────────
   const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Originado da Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
   const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
-  const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return alert("Motivo obrigatório."); const payload = { ...formContrato, updated_at: new Date().toISOString() }; if (formContrato.id) await supabase.from('contratos').update(payload).eq('id', formContrato.id); else await supabase.from('contratos').insert([payload]); setModalContrato(false); carregarTudo(); };
+  const salvarContrato = async (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); 
+    const payload = { ...formContrato, updated_at: new Date().toISOString() }; 
+    if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); }
+    else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); }
+    setModalContrato(false); carregarTudo(); 
+  };
 
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
   const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
-  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); setModalTarefa(false); carregarTudo(); };
-  const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); carregarTudo(); } };
-  const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); carregarTudo(); };
+  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
+  const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
+  const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
 
   const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
 
-  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); setModalTemplate(false); carregarTudo(); };
-  const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); carregarTudo(); }};
+  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
+  const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
 
   // ─── CÁLCULOS DO DASHBOARD ──────────────────────────────────────────────
   const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
@@ -252,7 +269,14 @@ export default function AdminPage() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif}`}</style>
+      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
+
+      {/* TOAST FLUTUANTE */}
+      {toast && (
+        <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>
+          {toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}
+        </div>
+      )}
 
       <aside className="sidebar">
         <div style={{padding:"30px",textAlign:"center"}}><img src={tema==='dark'?'/Logo-negativo.webp':'/logo-ssti.webp'} style={{maxHeight:"40px"}}/></div>
@@ -305,7 +329,7 @@ export default function AdminPage() {
                       <td style={{textAlign:"right"}}>
                         <button className="btn-action" onClick={()=>visualizarProposta(p)}>PDF</button>
                         <button className="btn-action" onClick={()=>enviarWhatsApp(p)}>Wpp</button>
-                        <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmail(p)}>{enviando===p.id?'...':'E-mail'}</button>
+                        <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmail(p)}>{enviando===p.id?'A enviar...':'E-mail'}</button>
                         {p.status !== 'fechada' && <button className="btn-action" style={{color:"#22c55e",borderColor:"#22c55e"}} onClick={()=>alterarStatusComAutomacao(p,'fechada')}>✓ Ganhou</button>}
                         {p.status !== 'perdida' && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>alterarStatusComAutomacao(p,'perdida')}>Perdeu</button>}
                         <button className="btn-action" style={{color:"#f87171", border:"none"}} onClick={()=>excluirProposta(p.id,p.cliente)}>X</button>
