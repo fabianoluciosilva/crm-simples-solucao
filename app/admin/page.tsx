@@ -132,7 +132,6 @@ export default function AdminPage() {
       .replace(/\{\{valor\}\}/g, fmt(valor));
   };
 
-  // Função que monta o HTML limpo da proposta para virar o PDF anexo
   const gerarHtmlProposta = (prop: PropostaDB) => {
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
     const obs = prop.dados?.obs || "";
@@ -175,15 +174,14 @@ export default function AdminPage() {
   // ─── AÇÕES DE PROPOSTAS ───────────────────────────────────────────────────
   const enviarPorEmail = async (prop: PropostaDB) => {
     if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
-    if (!confirm(`Confirmar envio de e-mail com a Proposta em anexo para ${prop.email}?`)) return;
     
+    // Inicia o processo direto, sem confirm()
     setEnviando(prop.id);
-    showToast("A gerar a Proposta em PDF... Por favor aguarde.", "info");
+    showToast("A processar PDF e a enviar e-mail...", "info");
     
     let pdfBase64 = "";
 
     try {
-      // Carrega a biblioteca de gerar PDF de forma dinâmica (invisível)
       if (!(window as any).html2pdf) {
         await new Promise((resolve) => {
           const script = document.createElement('script');
@@ -193,7 +191,6 @@ export default function AdminPage() {
         });
       }
 
-      // Cria um elemento invisível com o HTML do PDF
       const elemento = document.createElement('div');
       elemento.innerHTML = gerarHtmlProposta(prop);
       
@@ -205,7 +202,6 @@ export default function AdminPage() {
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      // Converte para Base64
       const pdfDataUri = await (window as any).html2pdf().set(opt).from(elemento).outputPdf('datauristring');
       pdfBase64 = pdfDataUri.split(',')[1];
     } catch (err) {
@@ -213,7 +209,6 @@ export default function AdminPage() {
       showToast("Falha ao processar o PDF. Tentando enviar apenas o e-mail...", "erro");
     }
 
-    // Processa o template do e-mail
     const tplEmail = templates.find(t => t.tipo === 'Email');
     let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,</p><p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p></div>`;
     
@@ -222,7 +217,6 @@ export default function AdminPage() {
       corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${htmlDoTemplate}</div>`;
     }
 
-    // Envia para a Vercel com o Anexo
     try {
       const response = await fetch('/api/send-email', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -248,7 +242,7 @@ export default function AdminPage() {
           }
         } catch (autoErr) { console.error(autoErr); }
 
-        showToast("E-mail com anexo enviado e Follow-up agendado!", "sucesso");
+        showToast("E-mail com anexo enviado com sucesso!", "sucesso");
         carregarTudo();
       } else {
         showToast(`Erro na API: ${data.error}`, "erro");
@@ -293,6 +287,7 @@ export default function AdminPage() {
     carregarTudo();
   };
 
+  // Mantido o confirm() nativo apenas para EXCLUSÃO (por segurança de dados)
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
   // ─── AÇÕES DE CONTRATOS, TAREFAS E TEMPLATES ──────────────────────────────
@@ -556,12 +551,12 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL TAREFAS */}
+      {/* MODAL TAREFAS E CONTRATOS */}
       {modalTarefa && (
         <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{formTarefa.id ? "Editar Tarefa" : "Nova Tarefa"}</h2>
-            <form onSubmit={salvarTarefa} style={{marginTop:"15px"}}>
+            <form onSubmit={salvarTarefa} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
               <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({...formTarefa, titulo: e.target.value})} placeholder="Título da tarefa..." />
               <input type="datetime-local" required className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({...formTarefa, data_vencimento: e.target.value})} />
               <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({...formTarefa, status: e.target.value})}>
@@ -569,19 +564,18 @@ export default function AdminPage() {
               </select>
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff"}}>Gravar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL CONTRATOS */}
       {modalContrato && (
         <div className="modal-overlay" onClick={() => setModalContrato(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{formContrato.id ? "Editar Contrato" : "Novo Contrato"}</h2>
-            <form onSubmit={salvarContrato} style={{marginTop:"15px"}}>
+            <form onSubmit={salvarContrato} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
               <input required className="input-modal" value={formContrato.cliente_nome} onChange={e => setFormContrato({...formContrato, cliente_nome: e.target.value})} placeholder="Nome do Cliente..." />
               <input type="number" step="0.01" required className="input-modal" value={formContrato.valor_mensal || ""} onChange={e => setFormContrato({...formContrato, valor_mensal: Number(e.target.value)})} placeholder="Valor Mensal..." />
               <input type="date" required className="input-modal" value={formContrato.data_inicio} onChange={e => setFormContrato({...formContrato, data_inicio: e.target.value})} />
@@ -593,7 +587,7 @@ export default function AdminPage() {
               )}
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff"}}>Gravar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
               </div>
             </form>
           </div>
@@ -614,7 +608,7 @@ export default function AdminPage() {
               <textarea required className="input-modal" rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff"}}>Gravar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
               </div>
             </form>
           </div>
