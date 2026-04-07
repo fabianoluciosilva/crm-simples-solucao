@@ -65,35 +65,7 @@ export default function AdminPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
-  // ─── CARREGAMENTO DE DADOS E GATILHOS DE AUTOMAÇÃO ────────────────────────
-  const verificarAutomacoesDeTempo = async (listaLeads: any[], listaContratos: any[]) => {
-    try {
-      const hoje = new Date();
-      const doisDiasAtras = new Date(); doisDiasAtras.setDate(hoje.getDate() - 2);
-      const onzeMesesAtras = new Date(); onzeMesesAtras.setMonth(hoje.getMonth() - 11);
-
-      for (const lead of listaLeads) {
-        if (new Date(lead.created_at) < doisDiasAtras) {
-          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'LEAD_SEM_RESPOSTA_2_DIAS').eq('referencia_id', lead.id);
-          if (!log || log.length === 0) {
-            await supabase.from('automacoes_log').insert([{ tipo_regra: 'LEAD_SEM_RESPOSTA_2_DIAS', referencia_id: lead.id, tabela_referencia: 'leads', acao_executada: 'Tarefa de Resgate Criada' }]);
-            await supabase.from('tarefas').insert([{ titulo: `🔥 Resgatar Lead Frio: ${lead.empresa}`, descricao: `Lead sem interação há mais de 48h.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: lead.empresa, lead_id: lead.id }]);
-          }
-        }
-      }
-
-      for (const contrato of listaContratos) {
-        if (contrato.status === 'Ativo' && new Date(contrato.data_inicio) <= onzeMesesAtras) {
-          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'REAJUSTE_CONTRATO_11M').eq('referencia_id', contrato.id);
-          if (!log || log.length === 0) {
-            await supabase.from('automacoes_log').insert([{ tipo_regra: 'REAJUSTE_CONTRATO_11M', referencia_id: contrato.id, tabela_referencia: 'contratos', acao_executada: 'Tarefa de Reajuste Criada' }]);
-            await supabase.from('tarefas').insert([{ titulo: `📈 Preparar Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `O contrato fará 1 ano no próximo mês. Preparar documentação de reajuste.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: contrato.cliente_nome }]);
-          }
-        }
-      }
-    } catch (e) {}
-  };
-
+  // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = async () => {
     if (!session) return;
     setCarregando(true);
@@ -112,123 +84,117 @@ export default function AdminPage() {
     if (t.data) setTarefas(isAdmin ? t.data : t.data.filter(x => x.usuario_email === session.user.email));
     
     setCarregando(false);
-    if (l.data && c.data) verificarAutomacoesDeTempo(l.data, c.data);
   };
 
   useEffect(() => { carregarTudo(); }, [session, filtroDias]);
 
-  // ─── MOTOR DE TEMPLATES ───────────────────────────────────────────────────
+  // ─── MOTOR DE TEMPLATES (Variáveis Inteligentes) ──────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
+    if (!conteudo) return "";
     return conteudo
       .replace(/\{\{nome\}\}/g, nome || "Cliente")
       .replace(/\{\{empresa\}\}/g, empresa || "Empresa")
       .replace(/\{\{valor\}\}/g, fmt(valor));
   };
 
-  const salvarTemplate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id);
-    else await supabase.from('templates').insert([formTemplate]);
-    setModalTemplate(false); carregarTudo();
-  };
-
-  const excluirTemplate = async (id: number) => {
-    if (confirm("Excluir este template?")) { await supabase.from('templates').delete().eq('id', id); carregarTudo(); }
-  };
-
   // ─── AÇÕES DE PROPOSTAS ───────────────────────────────────────────────────
   const enviarPorEmail = async (prop: PropostaDB) => {
-    if (!prop.email) return alert("E-mail não registado.");
-    if (!confirm(`Enviar proposta para ${prop.email}?`)) return;
+    if (!prop.email) return alert("E-mail não registado nesta proposta.");
+    if (!confirm(`Confirmar envio de proposta para ${prop.email}?`)) return;
     setEnviando(prop.id);
     
-    // Busca template de E-mail
+    // 1. Prepara o conteúdo (Verifica se existe template, senão usa o padrão que sabemos que funciona)
     const tplEmail = templates.find(t => t.tipo === 'Email');
-    let corpoEmail = `<div style="font-family:sans-serif;color:#333;"><h2>Proposta Comercial - SSTI</h2><p>Olá <strong>${prop.contato}</strong>, segue a proposta para a <strong>${prop.cliente}</strong>.</p><p>Valor: ${fmt(prop.valor)}</p></div>`;
+    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>É um prazer apresentar a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,</p><p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p></div>`;
     
-    if (tplEmail) {
-      corpoEmail = `<div style="font-family:sans-serif;color:#333;white-space:pre-wrap;">${processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor)}</div>`;
+    if (tplEmail && tplEmail.conteudo) {
+      // Converte quebras de linha do template em tags <br/> para o E-mail não perder a formatação
+      const htmlDoTemplate = processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>');
+      corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${htmlDoTemplate}</div>`;
     }
 
     try {
+      // 2. Dispara a Rota API
       const response = await fetch('/api/send-email', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_${prop.numero}.pdf` }),
+        body: JSON.stringify({
+          to: prop.email,
+          subject: `Proposta Comercial SSTI - ${prop.cliente}`,
+          html: corpoEmail,
+          fileName: `Proposta_${prop.numero}.pdf`
+        }),
       });
+
       if (response.ok) {
+        // Atualiza status para enviado
         await supabase.from('propostas').update({ status_envio: 'enviado' }).eq('id', prop.id);
-        const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
-        if (!log || log.length === 0) {
-          await supabase.from('automacoes_log').insert([{ tipo_regra: 'PROPOSTA_ENVIADA_FOLLOWUP', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Tarefa de Follow-up Criada' }]);
-          const dataVenc = new Date(); dataVenc.setDate(dataVenc.getDate() + 3); dataVenc.setHours(10, 0, 0, 0);
-          await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar o retorno da proposta ${prop.numero} enviada por e-mail.`, data_vencimento: dataVenc.toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-        }
-        alert("E-mail enviado e Follow-up agendado automaticamente!");
+        
+        // Automação: Tarefa de Follow-up (Sem dar erro se a tabela log não existir)
+        try {
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
+          if (!log || log.length === 0) {
+            await supabase.from('automacoes_log').insert([{ tipo_regra: 'PROPOSTA_ENVIADA_FOLLOWUP', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Tarefa de Follow-up Criada' }]);
+            const dataVenc = new Date(); dataVenc.setDate(dataVenc.getDate() + 3); dataVenc.setHours(10, 0, 0, 0);
+            await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar o retorno da proposta ${prop.numero} enviada por e-mail.`, data_vencimento: dataVenc.toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+          }
+        } catch (autoErr) { console.error("Log automação ignorado:", autoErr); }
+
+        alert("E-mail enviado e Follow-up agendado com sucesso!");
         carregarTudo();
-      } else alert("Falha ao enviar e-mail.");
-    } catch (e) { alert("Erro de conexão."); } finally { setEnviando(null); }
+      } else {
+        alert("Falha ao enviar e-mail. A API da Vercel retornou um erro.");
+      }
+    } catch (e) { alert("Erro de conexão ao tentar comunicar com a API."); } finally { setEnviando(null); }
   };
 
   const enviarWhatsApp = (prop: PropostaDB) => {
     const tplWpp = templates.find(t => t.tipo === 'WhatsApp');
     let texto = `Olá ${prop.contato}, envio a nossa proposta (cód: ${prop.numero}) no valor de ${fmt(prop.valor)} mensais.`;
     
-    if (tplWpp) {
+    if (tplWpp && tplWpp.conteudo) {
       texto = processarTemplate(tplWpp.conteudo, prop.contato, prop.cliente, prop.valor);
     }
+    
     window.open(`https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
+  const visualizarProposta = (prop: PropostaDB) => { const w = window.open("", "_blank")!; w.document.write(`<html><body style="font-family:sans-serif;padding:40px;"><h2>Proposta Simples Solução TI</h2><hr/><p>Cliente: ${prop.cliente}</p><p>Valor: ${fmt(prop.valor)}</p></body></html>`); w.document.close(); setTimeout(() => w.print(), 500); };
+  
   const alterarStatusComAutomacao = async (prop: PropostaDB, novoStatus: string) => {
     await supabase.from('propostas').update({ status: novoStatus }).eq('id', prop.id);
     if (novoStatus === 'fechada') {
-      const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'ONBOARDING_PROPOSTA_GANHA').eq('referencia_id', prop.id);
-      if (!log || log.length === 0) {
-        await supabase.from('automacoes_log').insert([{ tipo_regra: 'ONBOARDING_PROPOSTA_GANHA', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Onboarding Inicializado' }]);
-        await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente (Onboarding)' }]);
-        await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado! Iniciar inventário da rede e deploy do RustDesk.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-        if (prop.email) {
-          fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Bem-vindo(a) à Simples Solução TI, ${prop.cliente}!`, html: `<div style="font-family:sans-serif;color:#333;"><h2>Obrigado pela confiança, ${prop.contato}!</h2><p>Estamos muito felizes em ter a <strong>${prop.cliente}</strong> como nossa parceira. A nossa equipa técnica entrará em contacto nas próximas horas para iniciar o processo de Onboarding.</p><br/><p>Simples Solução TI</p></div>` }) });
+      try {
+        const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'ONBOARDING_PROPOSTA_GANHA').eq('referencia_id', prop.id);
+        if (!log || log.length === 0) {
+          await supabase.from('automacoes_log').insert([{ tipo_regra: 'ONBOARDING_PROPOSTA_GANHA', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Onboarding Inicializado' }]);
+          await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente (Onboarding)' }]);
+          await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado! Iniciar inventário da rede.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+          alert("🎉 Negócio Fechado! Contrato ativado e Onboarding iniciado.");
         }
-        alert("🎉 Negócio Fechado! Contrato ativado e Onboarding iniciado.");
-      }
+      } catch (e) { console.error(e) }
     }
     carregarTudo();
   };
 
-  const visualizarProposta = (prop: PropostaDB) => { const w = window.open("", "_blank")!; w.document.write(`<html><body style="font-family:sans-serif;padding:40px;"><h2>Proposta Simples Solução TI</h2><hr/><p>Cliente: ${prop.cliente}</p><p>Valor: ${fmt(prop.valor)}</p></body></html>`); w.document.close(); setTimeout(() => w.print(), 500); };
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); carregarTudo(); }};
 
-  // ─── AÇÕES DE CONTRATOS E TAREFAS ─────────────────────────────────────────
-  const abrirNovoContrato = (prop?: PropostaDB) => {
-    if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Originado da Proposta ${prop.numero}`, motivo_cancelamento: "" });
-    else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
-    setModalContrato(true);
-  };
+  // ─── AÇÕES DE CONTRATOS, TAREFAS E TEMPLATES ──────────────────────────────
+  const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Originado da Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
   const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
-  const salvarContrato = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return alert("Motivo obrigatório.");
-    const payload = { ...formContrato, updated_at: new Date().toISOString() };
-    if (formContrato.id) await supabase.from('contratos').update(payload).eq('id', formContrato.id);
-    else await supabase.from('contratos').insert([payload]);
-    setModalContrato(false); carregarTudo();
-  };
+  const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return alert("Motivo obrigatório."); const payload = { ...formContrato, updated_at: new Date().toISOString() }; if (formContrato.id) await supabase.from('contratos').update(payload).eq('id', formContrato.id); else await supabase.from('contratos').insert([payload]); setModalContrato(false); carregarTudo(); };
 
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
   const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
-  const salvarTarefa = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const payload = { ...formTarefa, updated_at: new Date().toISOString() };
-    if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]);
-    setModalTarefa(false); carregarTudo();
-  };
+  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); setModalTarefa(false); carregarTudo(); };
   const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); carregarTudo(); } };
   const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); carregarTudo(); };
 
   const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
 
-  // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTO DE CLIENTES ──────────────────────
+  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); setModalTemplate(false); carregarTudo(); };
+  const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); carregarTudo(); }};
+
+  // ─── CÁLCULOS E AGRUPAMENTOS ──────────────────────────────────────────────
   const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
   const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
   const totalPropostas = pFiltradas.length;
@@ -265,7 +231,6 @@ export default function AdminPage() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif}`}</style>
 
-      {/* SIDEBAR */}
       <aside className="sidebar">
         <div style={{padding:"30px",textAlign:"center"}}><img src={tema==='dark'?'/Logo-negativo.webp':'/logo-ssti.webp'} style={{maxHeight:"40px"}}/></div>
         <nav className="nav-menu">
@@ -296,7 +261,6 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {/* DASHBOARD */}
         {aba === 'propostas' && (
           <>
             <div className="grid-metrics">
@@ -331,7 +295,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* CLIENTES 360º */}
         {aba === 'clientes' && (
           <div className="table-wrapper">
             <table>
@@ -351,7 +314,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* CONTRATOS */}
         {aba === 'contratos' && (
           <>
             <button onClick={()=>abrirNovoContrato()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Contrato</button>
@@ -374,7 +336,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* TAREFAS */}
         {aba === 'tarefas' && (
           <>
             <button onClick={()=>abrirNovaTarefa()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Nova Tarefa</button>
@@ -401,7 +362,6 @@ export default function AdminPage() {
           </>
         )}
         
-        {/* LEADS */}
         {aba === 'leads' && (
           <div className="table-wrapper">
             <table>
@@ -423,7 +383,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* TEMPLATES */}
         {aba === 'templates' && (
           <>
             <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
@@ -449,7 +408,7 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* MODAL DETALHE CLIENTE 360º */}
+      {/* MODAL DETALHE CLIENTE */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={()=>setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e=>e.stopPropagation()}>
@@ -459,8 +418,6 @@ export default function AdminPage() {
             {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} ({p.status})</div>)}
             <h4 style={{marginTop:"15px"}}>CONTRATOS</h4>
             {clienteDetalhe.contratos.map((c:any)=><div key={c.id} style={{fontSize:"13px",padding:"5px 0"}}>{fmt(c.valor_mensal)} - {c.status}</div>)}
-            <h4 style={{marginTop:"15px"}}>TAREFAS PENDENTES</h4>
-            {clienteDetalhe.tarefas.filter((t:any)=>t.status!=='Concluído').map((t:any)=><div key={t.id} style={{fontSize:"13px",padding:"5px 0"}}>{t.titulo} - {new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</div>)}
             <button className="btn-action" style={{marginTop:"20px",width:"100%"}} onClick={()=>setClienteDetalhe(null)}>Fechar</button>
           </div>
         </div>
@@ -515,13 +472,13 @@ export default function AdminPage() {
         <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{formTemplate.id ? "Editar Template" : "Novo Template"}</h2>
-            <p style={{fontSize:"12px",color:"var(--text-secondary)",marginBottom:"15px"}}>Variáveis disponíveis: {'{{nome}}'}, {'{{empresa}}'}, {'{{valor}}'}</p>
+            <p style={{fontSize:"12px",color:"var(--text-secondary)",marginBottom:"15px"}}>Use as variáveis: {'{{nome}}'}, {'{{empresa}}'}, {'{{valor}}'}</p>
             <form onSubmit={salvarTemplate}>
-              <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({...formTemplate, nome: e.target.value})} placeholder="Nome (Ex: Padrão Fechamento)" />
+              <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({...formTemplate, nome: e.target.value})} placeholder="Nome do Template..." />
               <select className="input-modal" value={formTemplate.tipo} onChange={e => setFormTemplate({...formTemplate, tipo: e.target.value})}>
-                <option value="WhatsApp">WhatsApp</option><option value="Email">E-mail</option>
+                <option value="WhatsApp">WhatsApp</option><option value="Email">Email</option>
               </select>
-              <textarea required className="input-modal" rows={5} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}, segue a proposta para a {{empresa}} no valor de {{valor}}..." />
+              <textarea required className="input-modal" rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
                 <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff"}}>Gravar</button>
