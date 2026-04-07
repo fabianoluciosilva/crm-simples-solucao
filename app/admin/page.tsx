@@ -31,8 +31,10 @@ export default function AdminPage() {
   const [modalTarefa, setModalTarefa] = useState(false);
   const [filtroStatusTarefa, setFiltroStatusTarefa] = useState("Todos");
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "" });
+
   const [modalContrato, setModalContrato] = useState(false);
   const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
+
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -86,7 +88,6 @@ export default function AdminPage() {
   // ─── AUTOMAÇÃO IMEDIATA: CRIAR FOLLOW-UP AUTOMÁTICO ──────────────────────
   const dispararAutomacaoFollowUp = async (prop: PropostaDB) => {
     try {
-      // 1. Tentar registar no log (A chave única no DB impede duplicados)
       const { error: logError } = await supabase.from('automacoes_log').insert([{
         tipo_regra: 'PROPOSTA_ENVIADA_FOLLOWUP',
         referencia_id: prop.id,
@@ -94,12 +95,11 @@ export default function AdminPage() {
         acao_executada: 'Tarefa de Follow-up Criada'
       }]);
 
-      if (logError) return; // Se já existir, sai para não duplicar a tarefa
+      if (logError) return;
 
-      // 2. Criar a Tarefa para daqui a 3 dias
       const dataVenc = new Date();
       dataVenc.setDate(dataVenc.getDate() + 3);
-      dataVenc.setHours(10, 0, 0, 0); // Define para as 10h da manhã
+      dataVenc.setHours(10, 0, 0, 0);
 
       await supabase.from('tarefas').insert([{
         titulo: `📞 Follow-up: ${prop.cliente}`,
@@ -110,8 +110,6 @@ export default function AdminPage() {
         nome_referencia: prop.cliente,
         proposta_id: prop.id
       }]);
-
-      console.log("Automação executada: Follow-up criado.");
     } catch (e) {
       console.error("Falha na automação:", e);
     }
@@ -135,12 +133,8 @@ export default function AdminPage() {
       });
 
       if (response.ok) {
-        // ATUALIZA STATUS
         await supabase.from('propostas').update({ status_envio: 'enviado' }).eq('id', prop.id);
-        
-        // EXECUTA AUTOMAÇÃO IMEDIATA
         await dispararAutomacaoFollowUp(prop);
-        
         alert("E-mail enviado e Follow-up agendado automaticamente!");
         carregarTudo();
       } else alert("Falha ao enviar e-mail.");
@@ -159,9 +153,15 @@ export default function AdminPage() {
     window.open(`https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
-  // ─── OUTRAS FUNÇÕES (LEADS, CONTRATOS, TAREFAS) ───────────────────────────
   const alterarStatus = async (id: number, novoStatus: string) => { await supabase.from('propostas').update({ status: novoStatus }).eq('id', id); carregarTudo(); };
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); carregarTudo(); }};
+
+  // ─── AÇÕES DE CONTRATOS E TAREFAS ─────────────────────────────────────────
+  const abrirNovoContrato = (prop?: PropostaDB) => {
+    if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Contrato originado da Proposta ${prop.numero}`, motivo_cancelamento: "" });
+    else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
+    setModalContrato(true);
+  };
 
   const salvarContrato = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,6 +172,13 @@ export default function AdminPage() {
     setModalContrato(false); carregarTudo();
   };
 
+  const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
+
+  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => {
+    setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId });
+    setModalTarefa(true);
+  };
+
   const salvarTarefa = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = { ...formTarefa, updated_at: new Date().toISOString() };
@@ -180,9 +187,36 @@ export default function AdminPage() {
     setModalTarefa(false); carregarTudo();
   };
 
-  // ─── CÁLCULOS DO DASHBOARD ────────────────────────────────────────────────
-  const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
-  const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
+  const editarTarefa = (t: TarefaDB) => {
+    const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16);
+    setFormTarefa({ ...t, data_vencimento: dataFormatada });
+    setModalTarefa(true);
+  };
+
+  const excluirTarefa = async (id: number) => {
+    if (confirm("Deseja excluir esta tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); carregarTudo(); }
+  };
+
+  const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => {
+    const data_conclusao = novoStatus === 'Concluído' ? new Date().toISOString() : null;
+    await supabase.from('tarefas').update({ status: novoStatus, data_conclusao, updated_at: new Date().toISOString() }).eq('id', id);
+    carregarTudo();
+  };
+
+  const enviarWhatsAppLead = (lead: any) => {
+    window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank');
+  };
+
+  // ─── CÁLCULOS DO DASHBOARD E MÉTRICAS ──────────────────────────────────────
+  const limiteFiltro = new Date(); 
+  if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
+  
+  const propostasFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
+  const totalPropostas = propostasFiltradas.length;
+  const propostasFechadas = propostasFiltradas.filter(p => p.status === 'fechada');
+  const propostasPerdidas = propostasFiltradas.filter(p => p.status === 'perdida');
+  
+  const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
   const mrrAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
 
   // ─── AGRUPAMENTO CLIENTES 360º ───────────────────────────────────────────
@@ -211,7 +245,7 @@ export default function AdminPage() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:500px}`}</style>
+      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}`}</style>
 
       {/* SIDEBAR */}
       <aside className="sidebar">
@@ -249,23 +283,26 @@ export default function AdminPage() {
             <div className="grid-metrics">
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>MRR ATIVO</div><div style={{fontSize:"24px",fontWeight:800}}>{fmt(mrrAtivo)}</div></div>
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>CONVERSÃO</div><div style={{fontSize:"24px",fontWeight:800}}>{taxaConversao.toFixed(1)}%</div></div>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>PROPOSTAS GANHAS</div><div style={{fontSize:"24px",fontWeight:800,color:"#22c55e"}}>{propostasFechadas.length}</div></div>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>PROPOSTAS PERDIDAS</div><div style={{fontSize:"24px",fontWeight:800,color:"#f87171"}}>{propostasPerdidas.length}</div></div>
             </div>
             <div className="table-wrapper">
               <table>
                 <thead><tr><th>Data</th><th>Cliente</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>
                 <tbody>
-                  {pFiltradas.map(p => (
+                  {propostasFiltradas.map(p => (
                     <tr key={p.id}>
                       <td>{new Date(p.created_at).toLocaleDateString('pt-BR')}</td>
                       <td><strong>{p.cliente}</strong><br/><small>{p.contato}</small></td>
                       <td>{fmt(p.valor)}</td>
-                      <td><span className="badge-status" style={{background:p.status==='fechada'?'#22c55e22':'#f59e0b22',color:p.status==='fechada'?'#22c55e':'#f59e0b'}}>{p.status||'aberta'}</span></td>
+                      <td><span className="badge-status" style={{background:p.status==='fechada'?'#22c55e22':p.status==='perdida'?'#f8717122':'#f59e0b22',color:p.status==='fechada'?'#22c55e':p.status==='perdida'?'#f87171':'#f59e0b'}}>{p.status||'aberta'}</span></td>
                       <td>
                         <button className="btn-action" onClick={()=>visualizarProposta(p)}>PDF</button>
                         <button className="btn-action" onClick={()=>enviarWhatsApp(p)}>Wpp</button>
                         <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmail(p)}>{enviando===p.id?'...':'E-mail'}</button>
+                        {p.status === 'fechada' && <button className="btn-action" style={{color:"#4A90D9",borderColor:"#4A90D9"}} onClick={()=>abrirNovoContrato(p)}>+ Contrato</button>}
                         {p.status !== 'fechada' && <button className="btn-action" style={{color:"#22c55e"}} onClick={()=>alterarStatus(p.id,'fechada')}>Ganhou</button>}
-                        <button className="btn-action" style={{color:"#f87171"}} onClick={()=>excluirProposta(p.id,p.cliente)}>X</button>
+                        {p.status !== 'perdida' && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>alterarStatus(p.id,'perdida')}>Perdeu</button>}
                       </td>
                     </tr>
                   ))}
@@ -295,24 +332,51 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* TAREFAS */}
-        {aba === 'tarefas' && (
+        {/* CONTRATOS */}
+        {aba === 'contratos' && (
           <div className="table-wrapper">
             <table>
-              <thead><tr><th>Prazo</th><th>Tarefa</th><th>Cliente</th><th>Status</th><th>Ação</th></tr></thead>
+              <thead><tr><th>Início</th><th>Cliente</th><th>Valor MRR</th><th>Status</th><th>Ações</th></tr></thead>
               <tbody>
-                {tarefas.map(t => (
-                  <tr key={t.id} style={{opacity:t.status==='Concluído'?0.5:1}}>
-                    <td>{new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</td>
-                    <td><strong>{t.titulo}</strong></td>
-                    <td>{t.nome_referencia}</td>
-                    <td>{t.status}</td>
-                    <td>{t.status !== 'Concluído' && <button className="btn-action" onClick={()=>alterarStatusTarefaRapido(t.id,'Concluído')}>✓</button>}</td>
+                {contratos.map(c => (
+                  <tr key={c.id}>
+                    <td>{new Date(c.data_inicio).toLocaleDateString('pt-BR')}</td>
+                    <td><strong>{c.cliente_nome}</strong></td>
+                    <td>{fmt(c.valor_mensal)}</td>
+                    <td><span className="badge-status" style={{background:c.status==='Ativo'?'#22c55e22':'#f8717122',color:c.status==='Ativo'?'#22c55e':'#f87171'}}>{c.status}</span></td>
+                    <td><button className="btn-action" onClick={()=>editarContrato(c)}>Gerir</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+
+        {/* TAREFAS */}
+        {aba === 'tarefas' && (
+          <>
+            <button onClick={()=>abrirNovaTarefa()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Nova Tarefa</button>
+            <div className="table-wrapper">
+              <table>
+                <thead><tr><th>Prazo</th><th>Tarefa</th><th>Cliente</th><th>Status</th><th>Ação</th></tr></thead>
+                <tbody>
+                  {tarefas.map(t => (
+                    <tr key={t.id} style={{opacity:t.status==='Concluído'?0.5:1}}>
+                      <td>{new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</td>
+                      <td><strong>{t.titulo}</strong></td>
+                      <td>{t.nome_referencia}</td>
+                      <td>{t.status}</td>
+                      <td>
+                        {t.status !== 'Concluído' && <button className="btn-action" onClick={()=>alterarStatusTarefaRapido(t.id,'Concluído')}>✓ Concluir</button>}
+                        <button className="btn-action" onClick={()=>editarTarefa(t)}>Editar</button>
+                        <button className="btn-action" style={{color:"#f87171"}} onClick={()=>excluirTarefa(t.id)}>X</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
         
         {/* LEADS */}
@@ -326,7 +390,10 @@ export default function AdminPage() {
                     <td>{new Date(l.created_at).toLocaleDateString('pt-BR')}</td>
                     <td><strong>{l.empresa}</strong><br/>{l.nome}</td>
                     <td>{l.produto}</td>
-                    <td><button className="btn-action" onClick={()=>enviarWhatsAppLead(l)}>Chamar Wpp</button></td>
+                    <td>
+                      <button className="btn-action" onClick={()=>enviarWhatsAppLead(l)}>Wpp</button>
+                      <button className="btn-action" onClick={()=>abrirNovaTarefa(`Contato Lead: ${l.empresa}`, l.id)}>+ Tarefa</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -345,7 +412,53 @@ export default function AdminPage() {
             {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} ({p.status})</div>)}
             <h4 style={{marginTop:"15px"}}>CONTRATOS</h4>
             {clienteDetalhe.contratos.map((c:any)=><div key={c.id} style={{fontSize:"13px",padding:"5px 0"}}>{fmt(c.valor_mensal)} - {c.status}</div>)}
+            <h4 style={{marginTop:"15px"}}>TAREFAS PENDENTES</h4>
+            {clienteDetalhe.tarefas.filter((t:any)=>t.status!=='Concluído').map((t:any)=><div key={t.id} style={{fontSize:"13px",padding:"5px 0"}}>{t.titulo} - {new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</div>)}
             <button className="btn-action" style={{marginTop:"20px",width:"100%"}} onClick={()=>setClienteDetalhe(null)}>Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAREFAS */}
+      {modalTarefa && (
+        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formTarefa.id ? "Editar Tarefa" : "Nova Tarefa"}</h2>
+            <form onSubmit={salvarTarefa} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
+              <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({...formTarefa, titulo: e.target.value})} placeholder="Título da tarefa..." />
+              <input type="datetime-local" required className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({...formTarefa, data_vencimento: e.target.value})} />
+              <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({...formTarefa, status: e.target.value})}>
+                <option value="Pendente">Pendente</option><option value="Em andamento">Em andamento</option><option value="Concluído">Concluído</option>
+              </select>
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
+                <button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONTRATOS */}
+      {modalContrato && (
+        <div className="modal-overlay" onClick={() => setModalContrato(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formContrato.id ? "Editar Contrato" : "Novo Contrato"}</h2>
+            <form onSubmit={salvarContrato} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
+              <input required className="input-modal" value={formContrato.cliente_nome} onChange={e => setFormContrato({...formContrato, cliente_nome: e.target.value})} placeholder="Nome do Cliente..." />
+              <input type="number" step="0.01" required className="input-modal" value={formContrato.valor_mensal || ""} onChange={e => setFormContrato({...formContrato, valor_mensal: Number(e.target.value)})} placeholder="Valor Mensal..." />
+              <input type="date" required className="input-modal" value={formContrato.data_inicio} onChange={e => setFormContrato({...formContrato, data_inicio: e.target.value})} />
+              <select className="input-modal" value={formContrato.status} onChange={e => setFormContrato({...formContrato, status: e.target.value})}>
+                <option value="Ativo">Ativo</option><option value="Suspenso">Suspenso</option><option value="Cancelado">Cancelado</option>
+              </select>
+              {formContrato.status === 'Cancelado' && (
+                <input required className="input-modal" style={{borderColor:"#f87171"}} value={formContrato.motivo_cancelamento} onChange={e => setFormContrato({...formContrato, motivo_cancelamento: e.target.value})} placeholder="Motivo do Cancelamento..." />
+              )}
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
+                <button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
