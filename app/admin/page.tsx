@@ -8,9 +8,8 @@ interface PropostaDB { id: number; created_at: string; numero: string; cliente: 
 interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; }
 interface ContratoDB { id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string; valor_mensal: number; status: string; data_inicio: string; data_fim?: string; motivo_cancelamento?: string; filial?: string; created_at: string; }
 interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; }
-interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; whatsapp?: string; documento?: string; tipo: string; codigo?: string; filial?: string; created_at?: string; }
+interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; whatsapp?: string; documento?: string; tipo: string; codigo?: string; filial?: string; created_at?: string; score?: number; }
 
-// Tipagem de Perfis (Sem SaaS)
 interface PerfilUsuario { email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string; }
 
 export default function AdminPage() {
@@ -23,18 +22,16 @@ export default function AdminPage() {
   const [tema, setTema] = useState<"dark" | "light">("dark");
   const [toast, setToast] = useState<{msg: string, tipo: 'sucesso' | 'erro' | 'info'} | null>(null);
 
-  // Variáveis de atalho para permissões
   const isAdmin = perfilAtivo.perfil === 'Admin';
   const isComercial = perfilAtivo.perfil === 'Comercial' || isAdmin;
   const isSuporte = perfilAtivo.perfil === 'Suporte' || isAdmin;
 
   const showToast = (msg: string, tipo: 'sucesso' | 'erro' | 'info' = 'sucesso') => {
-    setToast({ msg, tipo });
-    setTimeout(() => setToast(null), 4000);
+    setToast({ msg, tipo }); setTimeout(() => setToast(null), 4000);
   };
 
   // --- ESTADOS DO CRM ---
-  const [aba, setAba] = useState<"propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates">("tarefas"); // Default fallback
+  const [aba, setAba] = useState<"propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates">("tarefas");
   const [propostas, setPropostas] = useState<PropostaDB[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [tarefas, setTarefas] = useState<TarefaDB[]>([]);
@@ -73,33 +70,25 @@ export default function AdminPage() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.push("/"); return; }
       setSession(session);
-      
       let emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
-      
       let perfilFinal: PerfilUsuario = { email: emailUser, perfil: 'Comercial', filial: 'Matriz' };
-      
-      if (perfilData) {
-        perfilFinal = { email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial };
-      } else {
+      if (perfilData) { perfilFinal = { email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial }; } 
+      else {
         const isDono = emailUser === 'fabiano@simplessolucao.com.br';
         perfilFinal = { email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz' };
         await supabase.from('perfis').insert([{ id: session.user.id, email: emailUser, perfil: perfilFinal.perfil, filial: 'Matriz' }]);
       }
-      
       setPerfilAtivo(perfilFinal);
       setFormTarefa(prev => ({ ...prev, usuario_email: emailUser }));
-      
-      if (perfilFinal.perfil === 'Admin' || perfilFinal.perfil === 'Comercial') setAba('propostas');
-      else setAba('tarefas');
-      
+      if (perfilFinal.perfil === 'Admin' || perfilFinal.perfil === 'Comercial') setAba('propostas'); else setAba('tarefas');
       setCarregandoAuth(false);
     });
   }, [router]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
-  // ─── CARREGAMENTO DE DADOS SEGREGADO POR PERFIL ──────────────────────────
+  // ─── CARREGAMENTO DE DADOS ───────────────────────────────────────────────
   const verificarAutomacoesDeTempo = async (listaLeads: any[], listaContratos: any[]) => {
     try {
       const hoje = new Date(); const doisDiasAtras = new Date(); doisDiasAtras.setDate(hoje.getDate() - 2); const onzeMesesAtras = new Date(); onzeMesesAtras.setMonth(hoje.getMonth() - 11);
@@ -117,7 +106,7 @@ export default function AdminPage() {
           const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'REAJUSTE_CONTRATO_11M').eq('referencia_id', contrato.id);
           if (!log || log.length === 0) {
             await supabase.from('automacoes_log').insert([{ tipo_regra: 'REAJUSTE_CONTRATO_11M', referencia_id: contrato.id, tabela_referencia: 'contratos', acao_executada: 'Tarefa de Reajuste Criada' }]);
-            await supabase.from('tarefas').insert([{ titulo: `📈 Preparar Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `O contrato fará 1 ano no próximo mês. Preparar documentação de reajuste.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: contrato.cliente_nome }]);
+            await supabase.from('tarefas').insert([{ titulo: `📈 Preparar Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `O contrato fará 1 ano no próximo mês.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: contrato.cliente_nome }]);
           }
         }
       }
@@ -127,25 +116,16 @@ export default function AdminPage() {
   const carregarTudo = async () => {
     if (!session || carregandoAuth) return;
     setCarregando(true);
-    
-    // Regras de Bloqueio de Download (Segurança de Dados)
     let queryPropostas = supabase.from('propostas').select('*').order('created_at', { ascending: false });
     let queryClientes = supabase.from('clientes').select('*').order('nome', { ascending: true });
     let queryContratos = supabase.from('contratos').select('*').order('created_at', { ascending: false });
     let queryTarefas = supabase.from('tarefas').select('*').order('data_vencimento', { ascending: true });
     let queryLeads = supabase.from('leads').select('*').order('created_at', { ascending: false });
     
-    // Filtro de Filiais
     if (!isAdmin && perfilAtivo.filial !== 'Matriz') {
-      queryPropostas = queryPropostas.eq('filial', perfilAtivo.filial);
-      queryClientes = queryClientes.eq('filial', perfilAtivo.filial);
-      queryContratos = queryContratos.eq('filial', perfilAtivo.filial);
+      queryPropostas = queryPropostas.eq('filial', perfilAtivo.filial); queryClientes = queryClientes.eq('filial', perfilAtivo.filial); queryContratos = queryContratos.eq('filial', perfilAtivo.filial);
     }
-    
-    // Filtro de Tarefas por Usuário
-    if (!isAdmin) {
-      queryTarefas = queryTarefas.eq('usuario_email', perfilAtivo.email);
-    }
+    if (!isAdmin) queryTarefas = queryTarefas.eq('usuario_email', perfilAtivo.email);
 
     const [p, l, t, c, tpl, cliBase] = await Promise.all([
       isComercial ? queryPropostas : Promise.resolve({ data: [] }),
@@ -156,12 +136,8 @@ export default function AdminPage() {
       queryClientes 
     ]);
     
-    if (p.data) setPropostas(p.data);
-    if (l.data) setLeads(l.data);
-    if (c.data) setContratos(c.data);
-    if (tpl.data) setTemplates(tpl.data);
-    if (cliBase.data) setClientesBase(cliBase.data);
-    if (t.data) setTarefas(t.data);
+    if (p.data) setPropostas(p.data); if (l.data) setLeads(l.data); if (c.data) setContratos(c.data);
+    if (tpl.data) setTemplates(tpl.data); if (cliBase.data) setClientesBase(cliBase.data); if (t.data) setTarefas(t.data);
     
     setCarregando(false);
     if (l.data && c.data && isAdmin) verificarAutomacoesDeTempo(l.data, c.data);
@@ -209,7 +185,11 @@ export default function AdminPage() {
     let enviados = 0;
     for (const cli of alvos) {
       try {
-        const htmlCorpo = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;"><div style="background: #0a1628; padding: 20px; text-align: center; color: #fff;"><h2 style="margin: 0;">Aviso Importante</h2></div><div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none;"><p>Olá <strong>${cli.nome}</strong>,</p><div style="white-space: pre-wrap; font-size: 15px; margin: 20px 0;">${formComunicado.mensagem}</div><hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" /><p style="font-size: 13px; color: #666;">Atenciosamente,<br/><strong>Equipa | Simples Solução TI</strong></p></div></div>`;
+        // Tracker Inteligente (Pixel 1x1)
+        const trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${cli.id}" width="1" height="1" style="display:none;" />`;
+        
+        let htmlCorpo = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;"><div style="background: #0a1628; padding: 20px; text-align: center; color: #fff;"><h2 style="margin: 0;">Aviso Importante</h2></div><div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none;"><p>Olá <strong>${cli.nome}</strong>,</p><div style="white-space: pre-wrap; font-size: 15px; margin: 20px 0;">${formComunicado.mensagem}</div><hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" /><p style="font-size: 13px; color: #666;">Atenciosamente,<br/><strong>Equipa | Simples Solução TI</strong></p></div>${trackingPixel}</div>`;
+        
         await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: cli.email, subject: formComunicado.assunto, html: htmlCorpo }) });
         enviados++; setProgressoEmail(p => ({ ...p, enviado: enviados })); await new Promise(r => setTimeout(r, 500));
       } catch (e) {}
@@ -243,9 +223,16 @@ export default function AdminPage() {
       pdfBase64 = pdfDataUri.split(',')[1];
     } catch (err) {}
 
+    // Tracking Pixel se o cliente estiver na base
+    const clienteBase = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    const trackingPixel = clienteBase ? `<img src="${window.location.origin}/api/track?action=open&id=${clienteBase.id}" width="1" height="1" style="display:none;" />` : '';
+
     const tplEmail = templates.find(t => t.tipo === 'Email');
     let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal:</strong> ${fmt(prop.valor)}</p><br /><p>Simples Solução TI</p></div>`;
     if (tplEmail && tplEmail.conteudo) { corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>')}</div>`; }
+
+    // Injeta o Pixel
+    corpoEmail += trackingPixel;
 
     try {
       const response = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64: pdfBase64 }) });
@@ -323,12 +310,12 @@ export default function AdminPage() {
     clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [] }); });
     propostas.forEach(p => {
       const key = p.cliente.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, tipo: 'Lead', propostas: [], contratos: [], tarefas: [] });
+      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [] });
       mapa.get(key).propostas.push(p);
     });
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', propostas: [], contratos: [], tarefas: [] });
+      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, propostas: [], contratos: [], tarefas: [] });
       mapa.get(key).contratos.push(c);
       mapa.get(key).tipo = 'Cliente';
     });
@@ -336,7 +323,8 @@ export default function AdminPage() {
       if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
     });
 
-    let lista = Array.from(mapa.values()).sort((a,b) => a.nome.localeCompare(b.nome));
+    // Ordena por SCORE (maior para menor) e depois por Nome
+    let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente]);
@@ -353,7 +341,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* FILA DO WHATSAPP */}
       {filaWpp.length > 0 && (
         <div style={{ position: "fixed", bottom: 20, left: 280, width: 380, background: "var(--bg-sidebar)", border: "1px solid #4A90D9", borderRadius: 16, zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", maxHeight: 500 }}>
           <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
@@ -459,16 +446,17 @@ export default function AdminPage() {
             )}
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Nome / Cód</th><th>Contatos</th><th>Status</th>{isComercial && <th>Documentos</th>}<th>Ação</th></tr></thead>
+                <thead><tr><th>Nome / Cód</th><th>Contatos</th><th>Status</th><th>🔥 Score</th>{isComercial && <th>Documentos</th>}<th>Ação</th></tr></thead>
                 <tbody>
                   {clientesAgrupados.map(c => (
                     <tr key={c.nome}>
                       <td><strong>{c.nome}</strong>{c.codigo && <div style={{fontSize:11, color:"var(--text-tertiary)"}}>{c.codigo}</div>}</td>
                       <td><div style={{fontSize: 12, color:"var(--text-secondary)"}}>📞 {c.telefone || c.contato || '—'}</div><div style={{fontSize: 12, color:"var(--text-secondary)"}}>💬 {c.whatsapp || '—'}</div><div style={{fontSize: 11, color:"var(--text-tertiary)", marginTop: 2}}>{c.email}</div></td>
                       <td><span className="badge-status" style={{background: c.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: c.tipo==='Cliente' ? '#22c55e' : '#f59e0b'}}>{c.tipo}</span></td>
+                      <td><span style={{ fontWeight: 'bold', color: (c.score || 0) > 30 ? '#f87171' : (c.score || 0) > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>{c.score || 0} pts</span></td>
                       {isComercial && <td><span style={{fontSize:12, color:"var(--text-secondary)"}}>{c.propostas.length} Propostas<br/>{c.contratos.filter((x:any)=>x.status==='Ativo').length} Contratos Ativos</span></td>}
                       <td style={{textAlign: "right"}}>
-                        <button className="btn-action" onClick={()=>setClienteDetalhe(c)}>Ver Ficha Completa</button>
+                        <button className="btn-action" onClick={()=>setClienteDetalhe(c)}>Ver Ficha</button>
                         {c.id && isComercial && <button className="btn-action" onClick={()=>{setFormCliente(c); setModalClienteForm(true);}}>Editar</button>}
                       </td>
                     </tr>
@@ -598,7 +586,7 @@ export default function AdminPage() {
           <div className="modal-content" onClick={e=>e.stopPropagation()}>
             <h2>{clienteDetalhe.nome} <span className="badge-status" style={{background: clienteDetalhe.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: clienteDetalhe.tipo==='Cliente' ? '#22c55e' : '#f59e0b', marginLeft: 10}}>{clienteDetalhe.tipo}</span></h2>
             <hr style={{margin:"15px 0", opacity:0.1}}/>
-
+            
             {isComercial && <>
               <h4>HISTÓRICO DE PROPOSTAS</h4>
               {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} <span style={{color: p.status==='perdida'?'#f87171':'inherit'}}>({p.status})</span> {p.motivo_perda && <span style={{fontSize:10, color:"var(--text-tertiary)"}}> - {p.motivo_perda}</span>}</div>)}
