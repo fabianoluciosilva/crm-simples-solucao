@@ -71,7 +71,7 @@ export default function AdminPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
-  // ─── CARREGAMENTO DE DADOS E AUTOMAÇÕES ────────────────────────────────────
+  // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const verificarAutomacoesDeTempo = async (listaLeads: any[], listaContratos: any[]) => {
     try {
       const hoje = new Date();
@@ -123,7 +123,7 @@ export default function AdminPage() {
 
   useEffect(() => { carregarTudo(); }, [session, filtroDias]);
 
-  // ─── MOTOR DE TEMPLATES ───────────────────────────────────────────────────
+  // ─── MOTOR DE TEMPLATES E GERADOR DE HTML ─────────────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
     if (!conteudo) return "";
     return conteudo
@@ -132,106 +132,97 @@ export default function AdminPage() {
       .replace(/\{\{valor\}\}/g, fmt(valor));
   };
 
-  // ─── GERADOR DE PDF DE PROPOSTA PROFISSIONAL (RESTAURADO) ─────────────────
-  const visualizarProposta = (prop: PropostaDB) => {
+  // Função que monta o HTML limpo da proposta para virar o PDF anexo
+  const gerarHtmlProposta = (prop: PropostaDB) => {
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
-    const origin = window.location.origin;
     const obs = prop.dados?.obs || "";
     
-    const html = `
-      <html><head><title>Proposta Comercial - ${prop.cliente}</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
-        body { font-family: 'Montserrat', Arial, sans-serif; color: #333; padding: 0; margin: 0; font-size: 14px; line-height: 1.6; }
-        .page { max-width: 800px; margin: 0 auto; padding: 40px; }
-        h1 { color: #0a1628; font-size: 26px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; }
-        h2 { color: #4A90D9; font-size: 20px; margin-top: 40px; margin-bottom: 15px; }
-        h3 { color: #0a1628; font-size: 16px; margin-top: 25px; }
-        p { margin-bottom: 15px; text-align: justify; }
-        ul { margin-bottom: 20px; }
-        li { margin-bottom: 8px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px; }
-        th { background: #0a1628; color: #fff; padding: 12px; text-align: left; }
-        td { padding: 10px 12px; border-bottom: 1px solid #ddd; }
-        .row-total td { font-size: 18px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628; }
-        .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px; }
-        .info-doc { text-align: right; font-size: 12px; color: #666; }
-        .assinatura { margin-top: 60px; font-weight: bold; }
-        .assinatura-dados { font-weight: normal; font-size: 13px; color: #555; }
-        .logos { display: flex; gap: 30px; flex-wrap: wrap; margin-top: 15px; align-items: center; }
-        .logos img { max-height: 50px; max-width: 140px; object-fit: contain; filter: grayscale(100%); transition: filter 0.3s; }
-        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page-break { page-break-before: always; } .logos img { filter: grayscale(0%); } }
-      </style></head><body>
-
-      <div class="page">
-        <div class="header">
-          <div><h2 style="margin: 0; color: #0a1628;">Simples Solução TI</h2></div>
-          <div class="info-doc"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div>
+    return `
+      <div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;">
+          <div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">Simples Solução TI</h2></div>
+          <div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div>
         </div>
-        <h1>PROPOSTA DE SUPORTE TÉCNICO</h1>
+        <h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SUPORTE TÉCNICO</h1>
         <p>Rio de Janeiro, ${dataFormatada}</p>
         <p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p>
         <p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>. Agradecemos ainda pela oportunidade de propor, por meio desta, uma parceria na área de tecnologia da informação.</p>
         <p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>. Esse serviço tem o objetivo de auxiliar o ambiente de TI da empresa para uma evolução contínua, minimizando problemas e possíveis riscos existentes.</p>
         <p>Agradecemos a oportunidade e nos colocamos à sua inteira disposição para eventuais esclarecimentos que forem necessários.</p>
-        <div class="assinatura">Fabiano Lucio<br><span class="assinatura-dados">Diretor Comercial<br>(21) 3529-7993 | (21) 3197-0198<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div>
-        <div class="page-break"></div>
-        <h2>A Empresa</h2>
+        <div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993 | (21) 3197-0198<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div>
+        
+        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">A Empresa</h2>
         <p>A Simples Solução TI é uma integradora de tecnologia que oferece soluções de apoio à área de TI dos seus clientes. Estamos localizados estrategicamente no Shopping Nova América.</p>
         <p>Contamos com uma sólida infraestrutura de atendimento, com sistema de help desk, inventário e ainda temos dois links de internet para redundância. Com isso garantimos um atendimento ininterrupto a toda nossa base de clientes.</p>
-        <p>Possuímos um corpo técnico de qualidade, com profissionais experientes. Nossa equipe conta com especialistas nas mais diversas tecnologias:</p>
-        <ul><li>Suporte a Desktops, plataforma Microsoft, Linux, Mac e servidores Windows;</li><li>Suporte para detecção de problemas com Hardware, computadores, impressoras e nobreaks;</li><li>Conhecimento em Banco de Dados Oracle, SQL Server, MySQL, Sybase e PostgreSQL.</li></ul>
-        <p>Tendo iniciado as operações atendendo ao mercado das PMEs (pequenas e médias empresas) e atualmente atendendo clientes de todos os portes, procuramos aliar a alta qualidade exigida pelas grandes empresas a preços competitivos e serviços de alto valor agregado.</p>
-        <h3>Alguns Clientes e Parceiros</h3>
-        <p>Temos orgulho de atender e firmar parcerias com grandes marcas do mercado, como:</p>
-        <div class="logos">
-          <img src="${origin}/PLL - Logo Verde - Fundo transparente.png" alt="PLL" />
-          <img src="${origin}/LogoAgribio.jpg" alt="Agribio" />
-          <img src="${origin}/SAVIOR LOGO.jpg" alt="Savior" />
-          <img src="${origin}/logo_Cbsm.jpg" alt="CBSM" />
-        </div>
-        <div class="page-break"></div>
-        <h2>Detalhamento dos Serviços</h2>
+        
+        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Detalhamento dos Serviços</h2>
         <p>No primeiro mês do contrato faremos uma validação do ambiente que produzirá uma documentação resumida do ambiente de TI, produzindo os seguintes artefatos:</p>
-        <ul><li>Inventário de Hardware e Software;</li><li>Documentação da estrutura de Rede;</li><li>Documentação e Validação/Implantação de rotinas de backup;</li><li>Validação do Parque de máquinas e sugestão de investimentos;</li><li>Revisão de backlog de chamados;</li><li>Validação das políticas de segurança e antivírus.</li></ul>
-        <h3>Suporte Continuado</h3>
-        <p>Mão de obra técnica utilizada em visitas à <strong>${prop.cliente}</strong> ou remotamente com o objetivo de prestar suporte ao usuário e atendimentos necessários.</p>
-        <h4>Benefícios:</h4>
-        <ul><li><strong>Garantia de Serviço:</strong> Atendimento remoto (conexão através de TeamViewer ou AnyDesk).</li><li><strong>Políticas de Backup:</strong> A única forma de garantir a qualidade dos backups é testá-los recorrentemente. Além disso, são estabelecidos prazos máximos para retorno dos serviços mais críticos.</li><li><strong>Checklists Preventivos:</strong> De acordo com periodicidades especificadas, configurações de software e hardware são checados de forma a evitar paradas subsequentes.</li><li><strong>Suporte Telefônico:</strong> Resolução ágil de problemas via telefone, evitando perda de tempo dos funcionários.</li><li><strong>Implantação de Novas Soluções:</strong> A Simples Solução TI participa da especificação e implantação de soluções diferenciadas.</li><li><strong>Manutenção de Hardware:</strong> Consertos realizados em laboratório próprio mediante aprovação prévia.</li></ul>
-        <div class="page-break"></div>
-        <h2>Proposta Comercial</h2>
+        <ul style="margin-bottom: 20px;"><li>Inventário de Hardware e Software;</li><li>Documentação da estrutura de Rede;</li><li>Documentação e Validação/Implantação de rotinas de backup;</li><li>Validação do Parque de máquinas e sugestão de investimentos;</li><li>Revisão de backlog de chamados;</li><li>Validação das políticas de segurança e antivírus.</li></ul>
+        
+        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2>
         <p>Contrato de suporte inicial da <strong>${prop.cliente}</strong>:</p>
-        <table>
-          <tr><th>Descrição do Serviço</th><th style="text-align: right; width: 200px;">Valor Mensal</th></tr>
-          <tr class="row-total"><td style="padding: 20px 12px;">Manutenção TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px;">${fmt(prop.valor)}</td></tr>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;">
+          <tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr>
+          <tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr>
         </table>
-        ${obs ? `<h3>Escopo Adicional / Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
-        <h2>Considerações Finais</h2>
+        ${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Escopo Adicional / Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
+        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Considerações Finais</h2>
         <ul><li>Esta proposta é válida por 30 dias a partir da data de emissão.</li><li>Maiores informações sobre os serviços da Simples Solução TI podem ser encontradas em <strong>www.simplessolucao.com.br</strong>.</li><li>Colocamo-nos à disposição para quaisquer esclarecimentos.</li></ul>
       </div>
-      </body></html>
     `;
-
-    const w = window.open("", "_blank")!;
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => { w.document.title = `Proposta_${prop.cliente.replace(/\s+/g, '_')}_${prop.numero}`; w.print(); }, 500);
   };
 
-  // ─── AÇÕES DE PROPOSTAS (E-MAIL E WPP) ────────────────────────────────────
+  // ─── AÇÕES DE PROPOSTAS ───────────────────────────────────────────────────
   const enviarPorEmail = async (prop: PropostaDB) => {
     if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
+    if (!confirm(`Confirmar envio de e-mail com a Proposta em anexo para ${prop.email}?`)) return;
     
-    setEnviando(prop.id); 
+    setEnviando(prop.id);
+    showToast("A gerar a Proposta em PDF... Por favor aguarde.", "info");
     
+    let pdfBase64 = "";
+
+    try {
+      // Carrega a biblioteca de gerar PDF de forma dinâmica (invisível)
+      if (!(window as any).html2pdf) {
+        await new Promise((resolve) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+          script.onload = resolve;
+          document.body.appendChild(script);
+        });
+      }
+
+      // Cria um elemento invisível com o HTML do PDF
+      const elemento = document.createElement('div');
+      elemento.innerHTML = gerarHtmlProposta(prop);
+      
+      const opt = {
+        margin: 10,
+        filename: `Proposta_SSTI_${prop.cliente.replace(/[^a-z0-9]/gi, '_')}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      // Converte para Base64
+      const pdfDataUri = await (window as any).html2pdf().set(opt).from(elemento).outputPdf('datauristring');
+      pdfBase64 = pdfDataUri.split(',')[1];
+    } catch (err) {
+      console.error(err);
+      showToast("Falha ao processar o PDF. Tentando enviar apenas o e-mail...", "erro");
+    }
+
+    // Processa o template do e-mail
     const tplEmail = templates.find(t => t.tipo === 'Email');
-    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>É um prazer apresentar a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,</p><p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p></div>`;
+    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,</p><p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p></div>`;
     
     if (tplEmail && tplEmail.conteudo) {
       const htmlDoTemplate = processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>');
       corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${htmlDoTemplate}</div>`;
     }
 
+    // Envia para a Vercel com o Anexo
     try {
       const response = await fetch('/api/send-email', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -239,7 +230,8 @@ export default function AdminPage() {
           to: prop.email,
           subject: `Proposta Comercial SSTI - ${prop.cliente}`,
           html: corpoEmail,
-          fileName: `Proposta_${prop.numero}.pdf`
+          fileName: `Proposta_SSTI_${prop.cliente.replace(/[^a-z0-9]/gi, '_')}.pdf`,
+          pdfBase64: pdfBase64
         }),
       });
 
@@ -256,7 +248,7 @@ export default function AdminPage() {
           }
         } catch (autoErr) { console.error(autoErr); }
 
-        showToast("E-mail enviado com sucesso e Follow-up agendado!", "sucesso");
+        showToast("E-mail com anexo enviado e Follow-up agendado!", "sucesso");
         carregarTudo();
       } else {
         showToast(`Erro na API: ${data.error}`, "erro");
@@ -273,6 +265,14 @@ export default function AdminPage() {
     let texto = `Olá ${prop.contato}, envio a nossa proposta (cód: ${prop.numero}) no valor de ${fmt(prop.valor)} mensais.`;
     if (tplWpp && tplWpp.conteudo) { texto = processarTemplate(tplWpp.conteudo, prop.contato, prop.cliente, prop.valor); }
     window.open(`https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`, '_blank');
+  };
+
+  const visualizarProposta = (prop: PropostaDB) => { 
+    const htmlVis = gerarHtmlProposta(prop);
+    const w = window.open("", "_blank")!; 
+    w.document.write(`<html><body>${htmlVis}</body></html>`); 
+    w.document.close(); 
+    setTimeout(() => w.print(), 500); 
   };
   
   const alterarStatusComAutomacao = async (prop: PropostaDB, novoStatus: string) => {
@@ -318,7 +318,7 @@ export default function AdminPage() {
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
 
-  // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTOS ──────────────────────────────
+  // ─── CÁLCULOS DO DASHBOARD ──────────────────────────────────────────────
   const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
   const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
   const totalPropostas = pFiltradas.length;
@@ -392,7 +392,6 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {/* DASHBOARD */}
         {aba === 'propostas' && (
           <>
             <div className="grid-metrics">
@@ -427,7 +426,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* CLIENTES 360º */}
         {aba === 'clientes' && (
           <div className="table-wrapper">
             <table>
@@ -447,7 +445,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* CONTRATOS */}
         {aba === 'contratos' && (
           <>
             <button onClick={()=>abrirNovoContrato()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Contrato</button>
@@ -470,7 +467,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* TAREFAS */}
         {aba === 'tarefas' && (
           <>
             <button onClick={()=>abrirNovaTarefa()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Nova Tarefa</button>
@@ -497,7 +493,6 @@ export default function AdminPage() {
           </>
         )}
         
-        {/* LEADS */}
         {aba === 'leads' && (
           <div className="table-wrapper">
             <table>
@@ -519,7 +514,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* TEMPLATES */}
         {aba === 'templates' && (
           <>
             <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
@@ -555,17 +549,19 @@ export default function AdminPage() {
             {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} ({p.status})</div>)}
             <h4 style={{marginTop:"15px"}}>CONTRATOS</h4>
             {clienteDetalhe.contratos.map((c:any)=><div key={c.id} style={{fontSize:"13px",padding:"5px 0"}}>{fmt(c.valor_mensal)} - {c.status}</div>)}
+            <h4 style={{marginTop:"15px"}}>TAREFAS PENDENTES</h4>
+            {clienteDetalhe.tarefas.filter((t:any)=>t.status!=='Concluído').map((t:any)=><div key={t.id} style={{fontSize:"13px",padding:"5px 0"}}>{t.titulo} - {new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</div>)}
             <button className="btn-action" style={{marginTop:"20px",width:"100%"}} onClick={()=>setClienteDetalhe(null)}>Fechar</button>
           </div>
         </div>
       )}
 
-      {/* MODAL TAREFAS E CONTRATOS */}
+      {/* MODAL TAREFAS */}
       {modalTarefa && (
         <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{formTarefa.id ? "Editar Tarefa" : "Nova Tarefa"}</h2>
-            <form onSubmit={salvarTarefa} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
+            <form onSubmit={salvarTarefa} style={{marginTop:"15px"}}>
               <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({...formTarefa, titulo: e.target.value})} placeholder="Título da tarefa..." />
               <input type="datetime-local" required className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({...formTarefa, data_vencimento: e.target.value})} />
               <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({...formTarefa, status: e.target.value})}>
@@ -573,18 +569,19 @@ export default function AdminPage() {
               </select>
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff"}}>Gravar</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* MODAL CONTRATOS */}
       {modalContrato && (
         <div className="modal-overlay" onClick={() => setModalContrato(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{formContrato.id ? "Editar Contrato" : "Novo Contrato"}</h2>
-            <form onSubmit={salvarContrato} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
+            <form onSubmit={salvarContrato} style={{marginTop:"15px"}}>
               <input required className="input-modal" value={formContrato.cliente_nome} onChange={e => setFormContrato({...formContrato, cliente_nome: e.target.value})} placeholder="Nome do Cliente..." />
               <input type="number" step="0.01" required className="input-modal" value={formContrato.valor_mensal || ""} onChange={e => setFormContrato({...formContrato, valor_mensal: Number(e.target.value)})} placeholder="Valor Mensal..." />
               <input type="date" required className="input-modal" value={formContrato.data_inicio} onChange={e => setFormContrato({...formContrato, data_inicio: e.target.value})} />
@@ -596,7 +593,7 @@ export default function AdminPage() {
               )}
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff"}}>Gravar</button>
               </div>
             </form>
           </div>
@@ -617,7 +614,7 @@ export default function AdminPage() {
               <textarea required className="input-modal" rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff"}}>Gravar</button>
               </div>
             </form>
           </div>
