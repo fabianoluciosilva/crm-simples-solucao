@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-interface PropostaDB { id: number; created_at: string; numero: string; cliente: string; contato: string; telefone?: string; email: string; valor: number; status: string; status_envio: string; dados: any; }
+interface PropostaDB { id: number; created_at: string; numero: string; cliente: string; contato: string; telefone?: string; email: string; valor: number; status: string; status_envio: string; dados: any; motivo_perda?: string; obs_perda?: string; }
 interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; }
 interface ContratoDB { id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string; valor_mensal: number; status: string; data_inicio: string; data_fim?: string; motivo_cancelamento?: string; created_at: string; }
 interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; }
@@ -44,7 +44,7 @@ export default function AdminPage() {
   const [progressoEmail, setProgressoEmail] = useState({ ativo: false, total: 0, enviado: 0 });
   const [filaWpp, setFilaWpp] = useState<ClienteDB[]>([]);
 
-  // --- ESTADOS DE MODAIS GERAIS ---
+  // --- ESTADOS DE MODAIS GERAIS E PERDA ---
   const [modalTarefa, setModalTarefa] = useState(false);
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "" });
   const [modalContrato, setModalContrato] = useState(false);
@@ -54,6 +54,9 @@ export default function AdminPage() {
   const [modalClienteForm, setModalClienteForm] = useState(false);
   const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "" });
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
+
+  const [modalPerda, setModalPerda] = useState(false);
+  const [formPerda, setFormPerda] = useState({ id: 0, motivo: "", obs: "" });
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -203,15 +206,13 @@ export default function AdminPage() {
         
         enviados++;
         setProgressoEmail(p => ({ ...p, enviado: enviados }));
-        
-        // Pequeno atraso (500ms) para não bloquear o servidor SMTP
         await new Promise(r => setTimeout(r, 500));
       } catch (e) { console.error(`Falha ao enviar para ${cli.email}`); }
     }
 
     setProgressoEmail({ ativo: false, total: 0, enviado: 0 });
     setModalComunicado(false);
-    showToast(`Disparo concluído! ${enviados} e-mails enviados com sucesso.`, "sucesso");
+    showToast(`Disparo concluído! ${enviados} e-mails enviados.`, "sucesso");
   };
 
   const gerarFilaWhatsapp = () => {
@@ -219,26 +220,18 @@ export default function AdminPage() {
         ? clientesBase.filter(c => c.whatsapp || c.telefone)
         : clientesBase.filter(c => c.tipo === formComunicado.publico && (c.whatsapp || c.telefone));
 
-    if (alvos.length === 0) return showToast("Nenhum cliente com número de telefone ou WhatsApp válido encontrado.", "erro");
-    
-    setFilaWpp(alvos);
-    setModalComunicado(false); // Fecha o modal de redação e mostra o painel da fila
-    showToast(`Fila gerada com ${alvos.length} clientes.`, "info");
+    if (alvos.length === 0) return showToast("Nenhum cliente com número válido encontrado.", "erro");
+    setFilaWpp(alvos); setModalComunicado(false); showToast(`Fila gerada com ${alvos.length} clientes.`, "info");
   };
 
   const enviarWhatsAppDaFila = (cli: ClienteDB) => {
-    const numeroBruto = cli.whatsapp || cli.telefone || "";
-    const numero = numeroBruto.replace(/\D/g, "");
+    const numero = (cli.whatsapp || cli.telefone || "").replace(/\D/g, "");
     const texto = `Olá *${cli.nome}*,\n\n*Aviso SSTI:*\n${formComunicado.mensagem}`;
-    
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank');
-    
-    // Remove o cliente da fila visualmente para ajudar no controle
     setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
-
-  // ─── AÇÕES DE PROPOSTAS (NORMAIS) ─────────────────────────────────────────
+  // ─── AÇÕES DE PROPOSTAS E PERDA DE NEGÓCIO ────────────────────────────────
   const enviarPorEmailNormal = async (prop: PropostaDB) => {
     if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
     setEnviando(prop.id);
@@ -275,7 +268,7 @@ export default function AdminPage() {
         showToast("E-mail enviado com sucesso!", "sucesso");
         carregarTudo();
       } else { showToast(`Erro: ${data.error}`, "erro"); }
-    } catch (e) { showToast("Erro de conexão ao tentar enviar o e-mail.", "erro"); } finally { setEnviando(null); }
+    } catch (e) { showToast("Erro de conexão.", "erro"); } finally { setEnviando(null); }
   };
 
   const enviarWhatsAppNormal = (prop: PropostaDB) => {
@@ -287,29 +280,41 @@ export default function AdminPage() {
 
   const visualizarProposta = (prop: PropostaDB) => { 
     const htmlVis = gerarHtmlProposta(prop);
-    const w = window.open("", "_blank")!; 
-    w.document.write(`<html><body>${htmlVis}</body></html>`); 
-    w.document.close(); 
-    setTimeout(() => w.print(), 500); 
+    const w = window.open("", "_blank")!; w.document.write(`<html><body>${htmlVis}</body></html>`); w.document.close(); setTimeout(() => w.print(), 500); 
   };
   
-  const alterarStatusComAutomacao = async (prop: PropostaDB, novoStatus: string) => {
-    await supabase.from('propostas').update({ status: novoStatus }).eq('id', prop.id);
-    if (novoStatus === 'fechada') {
-      try {
-        await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente' }]);
-        await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-        
-        // Inteligência: Converte o Lead em Cliente na Tabela Mestre
-        const clienteExiste = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-        if (!clienteExiste) { await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente' }]); } 
-        else if (clienteExiste.tipo === 'Lead') { await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', clienteExiste.id); }
-        
-        showToast("Negócio Fechado! Contrato ativado e Onboarding iniciado.", "sucesso");
-      } catch (e) { console.error(e) }
-    } else {
-      showToast(`Proposta marcada como ${novoStatus}.`, "info");
-    }
+  const alterarStatusParaGanho = async (prop: PropostaDB) => {
+    await supabase.from('propostas').update({ status: 'fechada' }).eq('id', prop.id);
+    try {
+      await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente' }]);
+      await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+      
+      const clienteExiste = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+      if (!clienteExiste) { await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente' }]); } 
+      else if (clienteExiste.tipo === 'Lead') { await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', clienteExiste.id); }
+      
+      showToast("Negócio Fechado! Contrato ativado e Onboarding iniciado.", "sucesso");
+    } catch (e) { console.error(e) }
+    carregarTudo();
+  };
+
+  const abrirModalPerda = (prop: PropostaDB) => {
+    setFormPerda({ id: prop.id, motivo: "", obs: "" });
+    setModalPerda(true);
+  };
+
+  const confirmarPerda = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formPerda.motivo) return showToast("Selecione um motivo de perda.", "erro");
+    
+    await supabase.from('propostas').update({ 
+      status: 'perdida',
+      motivo_perda: formPerda.motivo,
+      obs_perda: formPerda.obs
+    }).eq('id', formPerda.id);
+    
+    showToast("Proposta marcada como perdida e motivo registado.", "info");
+    setModalPerda(false);
     carregarTudo();
   };
 
@@ -320,9 +325,7 @@ export default function AdminPage() {
     e.preventDefault();
     if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id);
     else await supabase.from('clientes').insert([formCliente]);
-    showToast("Registo guardado com sucesso.", "sucesso");
-    setModalClienteForm(false);
-    carregarTudo();
+    showToast("Registo guardado com sucesso.", "sucesso"); setModalClienteForm(false); carregarTudo();
   };
 
   // ─── AÇÕES DE CONTRATOS E TAREFAS ─────────────────────────────────────────
@@ -386,6 +389,7 @@ export default function AdminPage() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
 
+      {/* TOAST FLUTUANTE */}
       {toast && (
         <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>
           {toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}
@@ -450,6 +454,7 @@ export default function AdminPage() {
           </div>
         </header>
 
+        {/* DASHBOARD */}
         {aba === 'propostas' && (
           <>
             <div className="grid-metrics">
@@ -463,17 +468,20 @@ export default function AdminPage() {
                 <thead><tr><th>Data</th><th>Cliente</th><th>Valor</th><th>Status</th><th style={{minWidth:"300px", textAlign:"right"}}>Ações</th></tr></thead>
                 <tbody>
                   {pFiltradas.map(p => (
-                    <tr key={p.id}>
+                    <tr key={p.id} style={{ opacity: p.status === 'perdida' ? 0.6 : 1 }}>
                       <td>{new Date(p.created_at).toLocaleDateString('pt-BR')}</td>
                       <td><strong>{p.cliente}</strong><br/><small>{p.contato}</small></td>
                       <td>{fmt(p.valor)}</td>
-                      <td><span className="badge-status" style={{background:p.status==='fechada'?'#22c55e22':p.status==='perdida'?'#f8717122':'#f59e0b22',color:p.status==='fechada'?'#22c55e':p.status==='perdida'?'#f87171':'#f59e0b'}}>{p.status||'aberta'}</span></td>
+                      <td title={p.motivo_perda ? `Motivo: ${p.motivo_perda}` : ""}>
+                        <span className="badge-status" style={{background:p.status==='fechada'?'#22c55e22':p.status==='perdida'?'#f8717122':'#f59e0b22',color:p.status==='fechada'?'#22c55e':p.status==='perdida'?'#f87171':'#f59e0b'}}>{p.status||'aberta'}</span>
+                        {p.motivo_perda && <div style={{fontSize: 10, color: "var(--text-tertiary)", marginTop: 4}}>{p.motivo_perda}</div>}
+                      </td>
                       <td style={{textAlign:"right"}}>
                         <button className="btn-action" onClick={()=>visualizarProposta(p)}>PDF</button>
                         <button className="btn-action" onClick={()=>enviarWhatsAppNormal(p)}>Wpp</button>
                         <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmailNormal(p)}>{enviando===p.id?'A enviar...':'E-mail'}</button>
-                        {p.status !== 'fechada' && <button className="btn-action" style={{color:"#22c55e",borderColor:"#22c55e"}} onClick={()=>alterarStatusComAutomacao(p,'fechada')}>✓ Ganhou</button>}
-                        {p.status !== 'perdida' && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>alterarStatusComAutomacao(p,'perdida')}>Perdeu</button>}
+                        {p.status !== 'fechada' && <button className="btn-action" style={{color:"#22c55e",borderColor:"#22c55e"}} onClick={()=>alterarStatusParaGanho(p)}>✓ Ganhou</button>}
+                        {p.status !== 'perdida' && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>abrirModalPerda(p)}>Perdeu</button>}
                         <button className="btn-action" style={{color:"#f87171", border:"none"}} onClick={()=>excluirProposta(p.id,p.cliente)}>X</button>
                       </td>
                     </tr>
@@ -484,6 +492,7 @@ export default function AdminPage() {
           </>
         )}
 
+        {/* CLIENTES 360º */}
         {aba === 'clientes' && (
           <>
             <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
@@ -522,6 +531,7 @@ export default function AdminPage() {
           </>
         )}
 
+        {/* CONTRATOS */}
         {aba === 'contratos' && (
           <>
             <button onClick={()=>abrirNovoContrato()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Contrato</button>
@@ -544,6 +554,7 @@ export default function AdminPage() {
           </>
         )}
 
+        {/* TAREFAS */}
         {aba === 'tarefas' && (
           <>
             <button onClick={()=>abrirNovaTarefa()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Nova Tarefa</button>
@@ -570,6 +581,7 @@ export default function AdminPage() {
           </>
         )}
         
+        {/* LEADS */}
         {aba === 'leads' && (
           <div className="table-wrapper">
             <table>
@@ -591,6 +603,7 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* TEMPLATES */}
         {aba === 'templates' && (
           <>
             <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
@@ -616,6 +629,36 @@ export default function AdminPage() {
         )}
       </main>
 
+      {/* MODAL MOTIVO DE PERDA */}
+      {modalPerda && (
+        <div className="modal-overlay" onClick={() => setModalPerda(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>Análise de Lead Perdido</h2>
+            <p style={{fontSize:"13px",color:"var(--text-secondary)",marginBottom:"20px"}}>Por favor, informe o motivo da perda desta proposta para melhorar as futuras negociações.</p>
+            <form onSubmit={confirmarPerda} style={{display:"flex",flexDirection:"column",gap:"15px"}}>
+              <div>
+                <label style={{display:"block", fontSize:12, color:"var(--text-secondary)", marginBottom:5}}>Motivo da Perda *</label>
+                <select required className="input-modal" value={formPerda.motivo} onChange={e => setFormPerda({...formPerda, motivo: e.target.value})}>
+                  <option value="" disabled>Selecione um motivo...</option>
+                  <option value="Preço">Preço alto</option>
+                  <option value="Sem interesse">Sem interesse no momento</option>
+                  <option value="Concorrente">Fechou com concorrente</option>
+                  <option value="Sem retorno">Cliente não deu mais retorno</option>
+                </select>
+              </div>
+              <div>
+                <label style={{display:"block", fontSize:12, color:"var(--text-secondary)", marginBottom:5}}>Observações (Opcional)</label>
+                <textarea className="input-modal" rows={3} value={formPerda.obs} onChange={e => setFormPerda({...formPerda, obs: e.target.value})} placeholder="Ex: Achou a taxa de setup muito cara..." />
+              </div>
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
+                <button type="button" onClick={() => setModalPerda(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
+                <button type="submit" disabled={!formPerda.motivo} className="btn-action" style={{flex:1,background:"#f87171",color:"#fff",borderColor:"#f87171", opacity: !formPerda.motivo ? 0.5 : 1}}>Gravar e Marcar como Perdida</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL DETALHE CLIENTE */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={()=>setClienteDetalhe(null)}>
@@ -623,7 +666,7 @@ export default function AdminPage() {
             <h2>{clienteDetalhe.nome} <span className="badge-status" style={{background: clienteDetalhe.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: clienteDetalhe.tipo==='Cliente' ? '#22c55e' : '#f59e0b', marginLeft: 10}}>{clienteDetalhe.tipo}</span></h2>
             <hr style={{margin:"15px 0", opacity:0.1}}/>
             <h4>PROPOSTAS</h4>
-            {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} ({p.status})</div>)}
+            {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} <span style={{color: p.status==='perdida'?'#f87171':'inherit'}}>({p.status})</span> {p.motivo_perda && <span style={{fontSize:10, color:"var(--text-tertiary)"}}> - {p.motivo_perda}</span>}</div>)}
             <h4 style={{marginTop:"15px"}}>CONTRATOS</h4>
             {clienteDetalhe.contratos.map((c:any)=><div key={c.id} style={{fontSize:"13px",padding:"5px 0"}}>{fmt(c.valor_mensal)} - {c.status}</div>)}
             <h4 style={{marginTop:"15px"}}>TAREFAS PENDENTES</h4>
