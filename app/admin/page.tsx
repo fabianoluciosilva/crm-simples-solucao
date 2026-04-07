@@ -65,7 +65,35 @@ export default function AdminPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
-  // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
+  // ─── CARREGAMENTO DE DADOS E AUTOMAÇÕES ────────────────────────────────────
+  const verificarAutomacoesDeTempo = async (listaLeads: any[], listaContratos: any[]) => {
+    try {
+      const hoje = new Date();
+      const doisDiasAtras = new Date(); doisDiasAtras.setDate(hoje.getDate() - 2);
+      const onzeMesesAtras = new Date(); onzeMesesAtras.setMonth(hoje.getMonth() - 11);
+
+      for (const lead of listaLeads) {
+        if (new Date(lead.created_at) < doisDiasAtras) {
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'LEAD_SEM_RESPOSTA_2_DIAS').eq('referencia_id', lead.id);
+          if (!log || log.length === 0) {
+            await supabase.from('automacoes_log').insert([{ tipo_regra: 'LEAD_SEM_RESPOSTA_2_DIAS', referencia_id: lead.id, tabela_referencia: 'leads', acao_executada: 'Tarefa de Resgate Criada' }]);
+            await supabase.from('tarefas').insert([{ titulo: `🔥 Resgatar Lead Frio: ${lead.empresa}`, descricao: `Lead sem interação há mais de 48h.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: lead.empresa, lead_id: lead.id }]);
+          }
+        }
+      }
+
+      for (const contrato of listaContratos) {
+        if (contrato.status === 'Ativo' && new Date(contrato.data_inicio) <= onzeMesesAtras) {
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'REAJUSTE_CONTRATO_11M').eq('referencia_id', contrato.id);
+          if (!log || log.length === 0) {
+            await supabase.from('automacoes_log').insert([{ tipo_regra: 'REAJUSTE_CONTRATO_11M', referencia_id: contrato.id, tabela_referencia: 'contratos', acao_executada: 'Tarefa de Reajuste Criada' }]);
+            await supabase.from('tarefas').insert([{ titulo: `📈 Preparar Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `O contrato fará 1 ano no próximo mês. Preparar documentação de reajuste.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: contrato.cliente_nome }]);
+          }
+        }
+      }
+    } catch (e) {}
+  };
+
   const carregarTudo = async () => {
     if (!session) return;
     setCarregando(true);
@@ -84,11 +112,12 @@ export default function AdminPage() {
     if (t.data) setTarefas(isAdmin ? t.data : t.data.filter(x => x.usuario_email === session.user.email));
     
     setCarregando(false);
+    if (l.data && c.data) verificarAutomacoesDeTempo(l.data, c.data);
   };
 
   useEffect(() => { carregarTudo(); }, [session, filtroDias]);
 
-  // ─── MOTOR DE TEMPLATES (Variáveis Inteligentes) ──────────────────────────
+  // ─── MOTOR DE TEMPLATES ───────────────────────────────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
     if (!conteudo) return "";
     return conteudo
@@ -103,18 +132,15 @@ export default function AdminPage() {
     if (!confirm(`Confirmar envio de proposta para ${prop.email}?`)) return;
     setEnviando(prop.id);
     
-    // 1. Prepara o conteúdo (Verifica se existe template, senão usa o padrão que sabemos que funciona)
     const tplEmail = templates.find(t => t.tipo === 'Email');
     let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>É um prazer apresentar a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,</p><p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p></div>`;
     
     if (tplEmail && tplEmail.conteudo) {
-      // Converte quebras de linha do template em tags <br/> para o E-mail não perder a formatação
       const htmlDoTemplate = processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>');
       corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${htmlDoTemplate}</div>`;
     }
 
     try {
-      // 2. Dispara a Rota API
       const response = await fetch('/api/send-email', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -125,11 +151,11 @@ export default function AdminPage() {
         }),
       });
 
+      // LÊ A MENSAGEM EXATA DE ERRO VINDA DA API
+      const data = await response.json();
+
       if (response.ok) {
-        // Atualiza status para enviado
         await supabase.from('propostas').update({ status_envio: 'enviado' }).eq('id', prop.id);
-        
-        // Automação: Tarefa de Follow-up (Sem dar erro se a tabela log não existir)
         try {
           const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
           if (!log || log.length === 0) {
@@ -137,12 +163,13 @@ export default function AdminPage() {
             const dataVenc = new Date(); dataVenc.setDate(dataVenc.getDate() + 3); dataVenc.setHours(10, 0, 0, 0);
             await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar o retorno da proposta ${prop.numero} enviada por e-mail.`, data_vencimento: dataVenc.toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
           }
-        } catch (autoErr) { console.error("Log automação ignorado:", autoErr); }
+        } catch (autoErr) { console.error(autoErr); }
 
-        alert("E-mail enviado e Follow-up agendado com sucesso!");
+        alert("E-mail enviado e Follow-up agendado automaticamente!");
         carregarTudo();
       } else {
-        alert("Falha ao enviar e-mail. A API da Vercel retornou um erro.");
+        // MOSTRA O ERRO TÉCNICO EXATO (Ex: "Invalid login", "Senha Incorreta")
+        alert(`Falha ao enviar e-mail.\n\nERRO TÉCNICO: ${data.error}`);
       }
     } catch (e) { alert("Erro de conexão ao tentar comunicar com a API."); } finally { setEnviando(null); }
   };
@@ -150,11 +177,7 @@ export default function AdminPage() {
   const enviarWhatsApp = (prop: PropostaDB) => {
     const tplWpp = templates.find(t => t.tipo === 'WhatsApp');
     let texto = `Olá ${prop.contato}, envio a nossa proposta (cód: ${prop.numero}) no valor de ${fmt(prop.valor)} mensais.`;
-    
-    if (tplWpp && tplWpp.conteudo) {
-      texto = processarTemplate(tplWpp.conteudo, prop.contato, prop.cliente, prop.valor);
-    }
-    
+    if (tplWpp && tplWpp.conteudo) { texto = processarTemplate(tplWpp.conteudo, prop.contato, prop.cliente, prop.valor); }
     window.open(`https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
@@ -194,7 +217,7 @@ export default function AdminPage() {
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); carregarTudo(); }};
 
-  // ─── CÁLCULOS E AGRUPAMENTOS ──────────────────────────────────────────────
+  // ─── CÁLCULOS DO DASHBOARD ──────────────────────────────────────────────
   const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
   const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
   const totalPropostas = pFiltradas.length;
