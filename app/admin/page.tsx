@@ -4,29 +4,28 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-interface PropostaDB { id: number; created_at: string; numero: string; cliente: string; contato: string; telefone?: string; email: string; valor: number; status: string; status_envio: string; filial?: string; dados: any; motivo_perda?: string; obs_perda?: string; }
-interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; }
-interface ContratoDB { id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string; valor_mensal: number; status: string; data_inicio: string; data_fim?: string; motivo_cancelamento?: string; filial?: string; created_at: string; }
-interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; }
-interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; whatsapp?: string; documento?: string; tipo: string; codigo?: string; filial?: string; created_at?: string; }
+interface PropostaDB { id: number; created_at: string; numero: string; cliente: string; contato: string; telefone?: string; email: string; valor: number; status: string; status_envio: string; filial?: string; dados: any; motivo_perda?: string; obs_perda?: string; empresa_id?: string; }
+interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; empresa_id?: string; }
+interface ContratoDB { id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string; valor_mensal: number; status: string; data_inicio: string; data_fim?: string; motivo_cancelamento?: string; filial?: string; created_at: string; empresa_id?: string; }
+interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; empresa_id?: string; }
+interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; whatsapp?: string; documento?: string; tipo: string; codigo?: string; filial?: string; created_at?: string; empresa_id?: string; }
 
-// Tipagem do Perfil de Acesso
-interface PerfilUsuario { email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string; }
+// Tipagem SaaS (Multi-Tenant)
+interface PerfilUsuario { email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string; empresa_id: string; empresa_nome: string; }
 
 export default function AdminPage() {
   const router = useRouter();
 
   // --- ESTADOS GERAIS, AUTENTICAÇÃO E PERFIS ---
   const [session, setSession] = useState<any>(null);
-  const [perfilAtivo, setPerfilAtivo] = useState<PerfilUsuario>({ email: '', perfil: 'Comercial', filial: 'Matriz' });
+  const [perfilAtivo, setPerfilAtivo] = useState<PerfilUsuario | null>(null);
   const [carregandoAuth, setCarregandoAuth] = useState(true);
   const [tema, setTema] = useState<"dark" | "light">("dark");
   const [toast, setToast] = useState<{msg: string, tipo: 'sucesso' | 'erro' | 'info'} | null>(null);
 
-  // Variáveis de atalho para permissões
-  const isAdmin = perfilAtivo.perfil === 'Admin';
-  const isComercial = perfilAtivo.perfil === 'Comercial' || isAdmin;
-  const isSuporte = perfilAtivo.perfil === 'Suporte' || isAdmin;
+  const isAdmin = perfilAtivo?.perfil === 'Admin';
+  const isComercial = perfilAtivo?.perfil === 'Comercial' || isAdmin;
+  const isSuporte = perfilAtivo?.perfil === 'Suporte' || isAdmin;
 
   const showToast = (msg: string, tipo: 'sucesso' | 'erro' | 'info' = 'sucesso') => {
     setToast({ msg, tipo });
@@ -34,7 +33,7 @@ export default function AdminPage() {
   };
 
   // --- ESTADOS DO CRM ---
-  const [aba, setAba] = useState<"propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates">("tarefas"); // Default fallback
+  const [aba, setAba] = useState<"propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates">("tarefas");
   const [propostas, setPropostas] = useState<PropostaDB[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [tarefas, setTarefas] = useState<TarefaDB[]>([]);
@@ -74,53 +73,65 @@ export default function AdminPage() {
       if (!session) { router.push("/"); return; }
       setSession(session);
       
-      // 1. CARREGA O PERFIL DO USUÁRIO
       let emailUser = session.user.email || "";
-      const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
       
-      let perfilFinal: PerfilUsuario = { email: emailUser, perfil: 'Comercial', filial: 'Matriz' };
+      // 1. Busca o perfil e dados da empresa associada
+      const { data: perfilData } = await supabase.from('perfis').select('*, empresas(nome)').eq('email', emailUser).single();
       
-      if (perfilData) {
-        perfilFinal = { email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial };
+      let perfilFinal: PerfilUsuario;
+
+      if (perfilData && perfilData.empresa_id) {
+        perfilFinal = { email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, empresa_id: perfilData.empresa_id, empresa_nome: perfilData.empresas?.nome || 'Empresa' };
       } else {
-        // Se não existir, cria perfil automático (O seu e-mail vira Admin por padrão)
+        // ONBOARDING INICIAL: Se o usuário logou pela primeira vez, garante a criação da empresa raiz.
+        let { data: empExistente } = await supabase.from('empresas').select('*').eq('nome', 'Simples Solução TI').limit(1).single();
+        let empId = empExistente?.id;
+        
+        if (!empId) {
+          const { data: novaEmpresa } = await supabase.from('empresas').insert([{ nome: 'Simples Solução TI' }]).select().single();
+          empId = novaEmpresa?.id;
+        }
+
         const isDono = emailUser === 'fabiano@simplessolucao.com.br';
-        perfilFinal = { email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz' };
-        await supabase.from('perfis').insert([{ id: session.user.id, email: emailUser, perfil: perfilFinal.perfil, filial: 'Matriz' }]);
+        perfilFinal = { email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz', empresa_id: empId, empresa_nome: 'Simples Solução TI' };
+        
+        // Atualiza ou Insere o Perfil
+        if (perfilData) {
+           await supabase.from('perfis').update({ empresa_id: empId }).eq('email', emailUser);
+        } else {
+           await supabase.from('perfis').insert([{ id: session.user.id, email: emailUser, perfil: perfilFinal.perfil, filial: 'Matriz', empresa_id: empId }]);
+        }
       }
       
       setPerfilAtivo(perfilFinal);
       setFormTarefa(prev => ({ ...prev, usuario_email: emailUser }));
-      
-      // Define a aba inicial correta com base no perfil
-      if (perfilFinal.perfil === 'Admin' || perfilFinal.perfil === 'Comercial') setAba('propostas');
-      else setAba('tarefas');
-      
+      if (perfilFinal.perfil === 'Admin' || perfilFinal.perfil === 'Comercial') setAba('propostas'); else setAba('tarefas');
       setCarregandoAuth(false);
     });
   }, [router]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
-  // ─── CARREGAMENTO DE DADOS SEGREGADO POR PERFIL ──────────────────────────
+  // ─── CARREGAMENTO DE DADOS SAAS (ISOLADOS POR EMPRESA_ID) ────────────────
   const verificarAutomacoesDeTempo = async (listaLeads: any[], listaContratos: any[]) => {
+    if (!perfilAtivo?.empresa_id) return;
     try {
       const hoje = new Date(); const doisDiasAtras = new Date(); doisDiasAtras.setDate(hoje.getDate() - 2); const onzeMesesAtras = new Date(); onzeMesesAtras.setMonth(hoje.getMonth() - 11);
       for (const lead of listaLeads) {
         if (new Date(lead.created_at) < doisDiasAtras) {
-          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'LEAD_SEM_RESPOSTA_2_DIAS').eq('referencia_id', lead.id);
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('empresa_id', perfilAtivo.empresa_id).eq('tipo_regra', 'LEAD_SEM_RESPOSTA_2_DIAS').eq('referencia_id', lead.id);
           if (!log || log.length === 0) {
-            await supabase.from('automacoes_log').insert([{ tipo_regra: 'LEAD_SEM_RESPOSTA_2_DIAS', referencia_id: lead.id, tabela_referencia: 'leads', acao_executada: 'Tarefa de Resgate Criada' }]);
-            await supabase.from('tarefas').insert([{ titulo: `🔥 Resgatar Lead Frio: ${lead.empresa}`, descricao: `Lead sem interação há mais de 48h.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: lead.empresa, lead_id: lead.id }]);
+            await supabase.from('automacoes_log').insert([{ empresa_id: perfilAtivo.empresa_id, tipo_regra: 'LEAD_SEM_RESPOSTA_2_DIAS', referencia_id: lead.id, tabela_referencia: 'leads', acao_executada: 'Tarefa Resgate' }]);
+            await supabase.from('tarefas').insert([{ empresa_id: perfilAtivo.empresa_id, titulo: `🔥 Resgatar Lead: ${lead.empresa}`, descricao: `Sem interação há mais de 48h.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: lead.empresa, lead_id: lead.id }]);
           }
         }
       }
       for (const contrato of listaContratos) {
         if (contrato.status === 'Ativo' && new Date(contrato.data_inicio) <= onzeMesesAtras) {
-          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'REAJUSTE_CONTRATO_11M').eq('referencia_id', contrato.id);
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('empresa_id', perfilAtivo.empresa_id).eq('tipo_regra', 'REAJUSTE_CONTRATO_11M').eq('referencia_id', contrato.id);
           if (!log || log.length === 0) {
-            await supabase.from('automacoes_log').insert([{ tipo_regra: 'REAJUSTE_CONTRATO_11M', referencia_id: contrato.id, tabela_referencia: 'contratos', acao_executada: 'Tarefa de Reajuste Criada' }]);
-            await supabase.from('tarefas').insert([{ titulo: `📈 Preparar Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `O contrato fará 1 ano no próximo mês. Preparar documentação de reajuste.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: contrato.cliente_nome }]);
+            await supabase.from('automacoes_log').insert([{ empresa_id: perfilAtivo.empresa_id, tipo_regra: 'REAJUSTE_CONTRATO_11M', referencia_id: contrato.id, tabela_referencia: 'contratos', acao_executada: 'Tarefa Reajuste' }]);
+            await supabase.from('tarefas').insert([{ empresa_id: perfilAtivo.empresa_id, titulo: `📈 Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `Contrato fará 1 ano no próximo mês.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: contrato.cliente_nome }]);
           }
         }
       }
@@ -128,43 +139,34 @@ export default function AdminPage() {
   };
 
   const carregarTudo = async () => {
-    if (!session || carregandoAuth) return;
+    if (!session || carregandoAuth || !perfilAtivo?.empresa_id) return;
     setCarregando(true);
     
-    // Regras de Bloqueio de Download (Segurança de Dados)
-    let queryPropostas = supabase.from('propostas').select('*').order('created_at', { ascending: false });
-    let queryClientes = supabase.from('clientes').select('*').order('nome', { ascending: true });
-    let queryContratos = supabase.from('contratos').select('*').order('created_at', { ascending: false });
-    let queryTarefas = supabase.from('tarefas').select('*').order('data_vencimento', { ascending: true });
-    let queryLeads = supabase.from('leads').select('*').order('created_at', { ascending: false });
+    // ISOLAMENTO MULTI-TENANT: Tudo leva o filtro empresa_id
+    const empId = perfilAtivo.empresa_id;
+
+    let queryPropostas = supabase.from('propostas').select('*').eq('empresa_id', empId).order('created_at', { ascending: false });
+    let queryClientes = supabase.from('clientes').select('*').eq('empresa_id', empId).order('nome', { ascending: true });
+    let queryContratos = supabase.from('contratos').select('*').eq('empresa_id', empId).order('created_at', { ascending: false });
+    let queryTarefas = supabase.from('tarefas').select('*').eq('empresa_id', empId).order('data_vencimento', { ascending: true });
+    let queryLeads = supabase.from('leads').select('*').eq('empresa_id', empId).order('created_at', { ascending: false });
     
-    // Filtro de Multi-Empresas (Filiais)
     if (!isAdmin && perfilAtivo.filial !== 'Matriz') {
-      queryPropostas = queryPropostas.eq('filial', perfilAtivo.filial);
-      queryClientes = queryClientes.eq('filial', perfilAtivo.filial);
-      queryContratos = queryContratos.eq('filial', perfilAtivo.filial);
+      queryPropostas = queryPropostas.eq('filial', perfilAtivo.filial); queryClientes = queryClientes.eq('filial', perfilAtivo.filial); queryContratos = queryContratos.eq('filial', perfilAtivo.filial);
     }
-    
-    // Filtro de Tarefas por Usuário (Suporte só vê as dele)
-    if (!isAdmin) {
-      queryTarefas = queryTarefas.eq('usuario_email', perfilAtivo.email);
-    }
+    if (!isAdmin) queryTarefas = queryTarefas.eq('usuario_email', perfilAtivo.email);
 
     const [p, l, t, c, tpl, cliBase] = await Promise.all([
-      isComercial ? queryPropostas : Promise.resolve({ data: [] }), // Suporte não baixa propostas
+      isComercial ? queryPropostas : Promise.resolve({ data: [] }),
       isComercial ? queryLeads : Promise.resolve({ data: [] }),
-      queryTarefas, // Todos veem tarefas (filtradas por dono acima)
-      isAdmin ? queryContratos : Promise.resolve({ data: [] }), // Só ADMIN baixa contratos MRR
-      isAdmin ? supabase.from('templates').select('*').order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
-      queryClientes // Todos veem a base de clientes (Suporte precisa para abrir chamados)
+      queryTarefas,
+      isAdmin ? queryContratos : Promise.resolve({ data: [] }),
+      isAdmin ? supabase.from('templates').select('*').eq('empresa_id', empId).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
+      queryClientes
     ]);
     
-    if (p.data) setPropostas(p.data);
-    if (l.data) setLeads(l.data);
-    if (c.data) setContratos(c.data);
-    if (tpl.data) setTemplates(tpl.data);
-    if (cliBase.data) setClientesBase(cliBase.data);
-    if (t.data) setTarefas(t.data);
+    if (p.data) setPropostas(p.data); if (l.data) setLeads(l.data); if (c.data) setContratos(c.data);
+    if (tpl.data) setTemplates(tpl.data); if (cliBase.data) setClientesBase(cliBase.data); if (t.data) setTarefas(t.data);
     
     setCarregando(false);
     if (l.data && c.data && isAdmin) verificarAutomacoesDeTempo(l.data, c.data);
@@ -172,51 +174,28 @@ export default function AdminPage() {
 
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
 
-  // ─── MOTOR DE TEMPLATES E GERADOR DE HTML ─────────────────────────────────
+  // ─── MOTOR DE TEMPLATES ───────────────────────────────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
-    if (!conteudo) return "";
-    return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor));
+    if (!conteudo) return ""; return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor));
   };
 
   const gerarHtmlProposta = (prop: PropostaDB) => {
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
     const obs = prop.dados?.obs || "";
-    return `
-      <div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;">
-          <div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">Simples Solução TI</h2></div>
-          <div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div>
-        </div>
-        <h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SUPORTE TÉCNICO</h1>
-        <p>Rio de Janeiro, ${dataFormatada}</p>
-        <p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p>
-        <p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p>
-        <p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>.</p>
-        <div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div>
-        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;">
-          <tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr>
-          <tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr>
-        </table>
-        ${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
-      </div>
-    `;
+    return `<div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;"><div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;"><div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">${perfilAtivo?.empresa_nome}</h2></div><div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div></div><h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SERVIÇOS</h1><p>Rio de Janeiro, ${dataFormatada}</p><p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p><p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p><div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Equipa Comercial<br><span style="font-weight: normal; font-size: 13px; color: #555;">${perfilAtivo?.empresa_nome}</span></div><h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2><table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;"><tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr><tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção de TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr></table>${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}</div>`;
   };
 
-  // ─── AÇÕES DE COMUNICADOS EM MASSA E WPP DA FILA ──────────────────────────
+  // ─── AÇÕES DE COMUNICADOS EM MASSA E WPP ──────────────────────────────────
   const dispararEmailsMassa = async () => {
-    const alvos = formComunicado.publico === "Todos" 
-        ? clientesBase.filter(c => c.email && c.email.includes("@"))
-        : clientesBase.filter(c => c.tipo === formComunicado.publico && c.email && c.email.includes("@"));
-        
+    const alvos = formComunicado.publico === "Todos" ? clientesBase.filter(c => c.email && c.email.includes("@")) : clientesBase.filter(c => c.tipo === formComunicado.publico && c.email && c.email.includes("@"));
     if (alvos.length === 0) return showToast("Nenhum e-mail válido encontrado para este público.", "erro");
-    if (!confirm(`Tem a certeza que deseja disparar este e-mail para ${alvos.length} clientes?`)) return;
+    if (!confirm(`Deseja disparar este e-mail para ${alvos.length} clientes?`)) return;
 
     setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
     let enviados = 0;
     for (const cli of alvos) {
       try {
-        const htmlCorpo = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;"><div style="background: #0a1628; padding: 20px; text-align: center; color: #fff;"><h2 style="margin: 0;">Aviso Importante</h2></div><div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none;"><p>Olá <strong>${cli.nome}</strong>,</p><div style="white-space: pre-wrap; font-size: 15px; margin: 20px 0;">${formComunicado.mensagem}</div><hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" /><p style="font-size: 13px; color: #666;">Atenciosamente,<br/><strong>Equipa | Simples Solução TI</strong></p></div></div>`;
+        const htmlCorpo = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;"><div style="background: #0a1628; padding: 20px; text-align: center; color: #fff;"><h2 style="margin: 0;">Aviso Importante</h2></div><div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none;"><p>Olá <strong>${cli.nome}</strong>,</p><div style="white-space: pre-wrap; font-size: 15px; margin: 20px 0;">${formComunicado.mensagem}</div><hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" /><p style="font-size: 13px; color: #666;">Atenciosamente,<br/><strong>Equipa | ${perfilAtivo?.empresa_nome}</strong></p></div></div>`;
         await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: cli.email, subject: formComunicado.assunto, html: htmlCorpo }) });
         enviados++; setProgressoEmail(p => ({ ...p, enviado: enviados })); await new Promise(r => setTimeout(r, 500));
       } catch (e) {}
@@ -232,7 +211,7 @@ export default function AdminPage() {
 
   const enviarWhatsAppDaFila = (cli: ClienteDB) => {
     const numero = (cli.whatsapp || cli.telefone || "").replace(/\D/g, "");
-    const texto = `Olá *${cli.nome}*,\n\n*Aviso SSTI:*\n${formComunicado.mensagem}`;
+    const texto = `Olá *${cli.nome}*,\n\n*Aviso ${perfilAtivo?.empresa_nome}:*\n${formComunicado.mensagem}`;
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank');
     setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
@@ -245,18 +224,28 @@ export default function AdminPage() {
     try {
       if (!(window as any).html2pdf) { await new Promise((resolve) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = resolve; document.body.appendChild(s); }); }
       const elemento = document.createElement('div'); elemento.innerHTML = gerarHtmlProposta(prop);
-      const pdfDataUri = await (window as any).html2pdf().set({ margin: 10, filename: `Proposta_SSTI.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(elemento).outputPdf('datauristring');
+      const pdfDataUri = await (window as any).html2pdf().set({ margin: 10, filename: `Proposta.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(elemento).outputPdf('datauristring');
       pdfBase64 = pdfDataUri.split(',')[1];
     } catch (err) {}
 
     const tplEmail = templates.find(t => t.tipo === 'Email');
-    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - SSTI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal:</strong> ${fmt(prop.valor)}</p><br /><p>Simples Solução TI</p></div>`;
+    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal:</strong> ${fmt(prop.valor)}</p><br /><p>${perfilAtivo?.empresa_nome}</p></div>`;
     if (tplEmail && tplEmail.conteudo) { corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>')}</div>`; }
 
     try {
-      const response = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64: pdfBase64 }) });
-      if (response.ok) { await supabase.from('propostas').update({ status_envio: 'enviado' }).eq('id', prop.id); showToast("E-mail enviado com sucesso!", "sucesso"); carregarTudo(); } 
-      else { showToast(`Erro ao enviar e-mail.`, "erro"); }
+      const response = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta.pdf`, pdfBase64: pdfBase64 }) });
+      if (response.ok) {
+        await supabase.from('propostas').update({ status_envio: 'enviado' }).eq('id', prop.id);
+        try {
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('empresa_id', perfilAtivo?.empresa_id).eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
+          if (!log || log.length === 0) {
+            await supabase.from('automacoes_log').insert([{ empresa_id: perfilAtivo?.empresa_id, tipo_regra: 'PROPOSTA_ENVIADA_FOLLOWUP', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Tarefa Follow-up' }]);
+            const dataVenc = new Date(); dataVenc.setDate(dataVenc.getDate() + 3); dataVenc.setHours(10, 0, 0, 0);
+            await supabase.from('tarefas').insert([{ empresa_id: perfilAtivo?.empresa_id, titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar retorno da proposta ${prop.numero}.`, data_vencimento: dataVenc.toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+          }
+        } catch (e) {}
+        showToast("E-mail enviado com sucesso!", "sucesso"); carregarTudo();
+      } else { showToast(`Erro ao enviar e-mail.`, "erro"); }
     } catch (e) { showToast("Erro de conexão.", "erro"); } finally { setEnviando(null); }
   };
 
@@ -272,41 +261,38 @@ export default function AdminPage() {
   const alterarStatusParaGanho = async (prop: PropostaDB) => {
     await supabase.from('propostas').update({ status: 'fechada' }).eq('id', prop.id);
     try {
-      await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente', filial: prop.filial || perfilAtivo.filial }]);
-      await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+      await supabase.from('contratos').insert([{ empresa_id: perfilAtivo?.empresa_id, proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente', filial: prop.filial || perfilAtivo?.filial }]);
+      await supabase.from('tarefas').insert([{ empresa_id: perfilAtivo?.empresa_id, titulo: `🚀 Onboarding: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
       
       const clienteExiste = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-      if (!clienteExiste) { await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]); } 
+      if (!clienteExiste) { await supabase.from('clientes').insert([{ empresa_id: perfilAtivo?.empresa_id, nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo?.filial }]); } 
       else if (clienteExiste.tipo === 'Lead') { await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', clienteExiste.id); }
-      
       showToast("Negócio Fechado! Contrato e Onboarding ativados.", "sucesso");
     } catch (e) { console.error(e) }
     carregarTudo();
   };
 
   const abrirModalPerda = (prop: PropostaDB) => { setFormPerda({ id: prop.id, motivo: "", obs: "" }); setModalPerda(true); };
-
   const confirmarPerda = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formPerda.motivo) return showToast("Selecione um motivo de perda.", "erro");
+    e.preventDefault(); if (!formPerda.motivo) return showToast("Selecione um motivo.", "erro");
     await supabase.from('propostas').update({ status: 'perdida', motivo_perda: formPerda.motivo, obs_perda: formPerda.obs }).eq('id', formPerda.id);
     showToast("Proposta marcada como perdida.", "info"); setModalPerda(false); carregarTudo();
   };
 
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
-  // ─── DEMAIS AÇÕES DE CRUD ──────────────────────────────────────────────────
-  const salvarClienteBase = async (e: React.FormEvent) => { e.preventDefault(); if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id); else await supabase.from('clientes').insert([{...formCliente, filial: perfilAtivo.filial}]); showToast("Registo guardado.", "sucesso"); setModalClienteForm(false); carregarTudo(); };
-  const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Originado da Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
+  // ─── DEMAIS AÇÕES DE CRUD (SEMPRE COM EMPRESA_ID INJETADO) ──────────────
+  const salvarClienteBase = async (e: React.FormEvent) => { e.preventDefault(); if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id); else await supabase.from('clientes').insert([{...formCliente, empresa_id: perfilAtivo?.empresa_id, filial: formCliente.filial || perfilAtivo?.filial}]); showToast("Registo guardado.", "sucesso"); setModalClienteForm(false); carregarTudo(); };
+  const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
   const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
-  const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
+  const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo?.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([{...payload, empresa_id: perfilAtivo?.empresa_id}]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
   const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
-  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
+  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([{...payload, empresa_id: perfilAtivo?.empresa_id}]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
   const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
   const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
-  const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
-  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
+  const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da ${perfilAtivo?.empresa_nome}.`)}`, '_blank'); };
+  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([{...formTemplate, empresa_id: perfilAtivo?.empresa_id}]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
 
   // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTOS ──────────────────────────────
@@ -352,7 +338,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* FILA DO WHATSAPP */}
       {filaWpp.length > 0 && (
         <div style={{ position: "fixed", bottom: 20, left: 280, width: 380, background: "var(--bg-sidebar)", border: "1px solid #4A90D9", borderRadius: 16, zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", maxHeight: 500 }}>
           <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
@@ -373,45 +358,22 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* SIDEBAR COM CONTROLE DE PERFIL */}
       <aside className="sidebar">
-        <div style={{padding:"30px",textAlign:"center"}}><img src={tema==='dark'?'/Logo-negativo.webp':'/logo-ssti.webp'} style={{maxHeight:"40px"}}/></div>
+        <div style={{padding:"30px",textAlign:"center"}}><img src={tema==='dark'?'/Logo-negativo.webp':'/icon.png'} style={{maxHeight:"40px", borderRadius: "8px"}}/></div>
         <nav className="nav-menu">
-          
-          {/* Menu Comercial / Admin */}
-          {isComercial && (
-            <button className={`nav-item ${aba==='propostas'?'active':''}`} onClick={()=>setAba('propostas')}>📊 Dashboard / Pipeline</button>
-          )}
-          
-          {/* Menu Todos */}
+          {isComercial && <button className={`nav-item ${aba==='propostas'?'active':''}`} onClick={()=>setAba('propostas')}>📊 Dashboard / Pipeline</button>}
           <button className={`nav-item ${aba==='clientes'?'active':''}`} onClick={()=>setAba('clientes')}>👥 Carteira de Clientes</button>
-          
-          {/* Menu Admin Apenas */}
-          {isAdmin && (
-            <button className={`nav-item ${aba==='contratos'?'active':''}`} onClick={()=>setAba('contratos')}>📄 Contratos (Financeiro)</button>
-          )}
-          
-          {/* Menu Todos */}
+          {isAdmin && <button className={`nav-item ${aba==='contratos'?'active':''}`} onClick={()=>setAba('contratos')}>📄 Contratos (MRR)</button>}
           <button className={`nav-item ${aba==='tarefas'?'active':''}`} onClick={()=>setAba('tarefas')}>✅ Minhas Tarefas</button>
-          
-          {/* Menu Comercial / Admin */}
-          {isComercial && (
-            <button className={`nav-item ${aba==='leads'?'active':''}`} onClick={()=>setAba('leads')}>🎯 Leads do Site</button>
-          )}
-
-          {/* Menu Admin Apenas */}
-          {isAdmin && (
-            <button className={`nav-item ${aba==='templates'?'active':''}`} onClick={()=>setAba('templates')}>📝 Templates do Sistema</button>
-          )}
-          
-          {isComercial && (
-             <button className="nav-item" style={{color:"#4A90D9",marginTop:"20px",border:"1px dashed #4A90D9"}} onClick={()=>router.push('/preco')}>+ Nova Proposta</button>
-          )}
+          {isComercial && <button className={`nav-item ${aba==='leads'?'active':''}`} onClick={()=>setAba('leads')}>🎯 Leads do Site</button>}
+          {isAdmin && <button className={`nav-item ${aba==='templates'?'active':''}`} onClick={()=>setAba('templates')}>📝 Templates do Sistema</button>}
+          {isComercial && <button className="nav-item" style={{color:"#4A90D9",marginTop:"20px",border:"1px dashed #4A90D9"}} onClick={()=>router.push('/preco')}>+ Nova Proposta</button>}
         </nav>
         
         <div style={{padding:"20px",borderTop:"1px solid var(--border-light)", textAlign:"center"}}>
-           <div style={{fontSize:"11px",color:"#4A90D9", fontWeight:"bold", marginBottom: 4}}>{perfilAtivo.perfil} | {perfilAtivo.filial}</div>
-           <div style={{fontSize:"11px",color:"var(--text-secondary)", wordBreak: "break-all"}}>{perfilAtivo.email}</div>
+           <div style={{fontSize:"12px",color:"#4A90D9", fontWeight:"bold", marginBottom: 4}}>{perfilAtivo?.empresa_nome}</div>
+           <div style={{fontSize:"11px",color:"var(--text-primary)", marginBottom: 4}}>{perfilAtivo?.perfil} | {perfilAtivo?.filial}</div>
+           <div style={{fontSize:"10px",color:"var(--text-secondary)", wordBreak: "break-all"}}>{perfilAtivo?.email}</div>
            <button onClick={handleLogout} style={{color:"#f87171",background:"none",border:"none",cursor:"pointer",fontSize:"12px",marginTop:"12px", width:"100%", padding:"8px", borderTop:"1px solid rgba(248,113,113,0.2)"}}>Sair do Sistema</button>
         </div>
       </aside>
@@ -428,20 +390,16 @@ export default function AdminPage() {
             )}
             {aba === 'clientes' && (
               <select value={filtroTipoCliente} onChange={e=>setFiltroTipoCliente(e.target.value as any)} style={{background:"var(--bg-card)",color:"var(--text-primary)",border:"1px solid var(--border-light)",borderRadius:"8px",padding:"0 10px"}}>
-                <option value="Todos">Mostrar Todos</option>
-                <option value="Cliente">Apenas Clientes</option>
-                <option value="Lead">Apenas Leads</option>
+                <option value="Todos">Mostrar Todos</option><option value="Cliente">Apenas Clientes</option><option value="Lead">Apenas Leads</option>
               </select>
             )}
           </div>
         </header>
 
-        {/* ─── RENDERIZAÇÃO DAS ABAS ─── */}
-        
         {aba === 'propostas' && isComercial && (
           <>
             <div className="grid-metrics">
-              {isAdmin && <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>MRR ATIVO ({perfilAtivo.filial})</div><div style={{fontSize:"24px",fontWeight:800}}>{fmt(mrrAtivo)}</div></div>}
+              {isAdmin && <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>MRR ATIVO</div><div style={{fontSize:"24px",fontWeight:800}}>{fmt(mrrAtivo)}</div></div>}
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>CONVERSÃO</div><div style={{fontSize:"24px",fontWeight:800}}>{taxaConversao.toFixed(1)}%</div></div>
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>GANHAS</div><div style={{fontSize:"24px",fontWeight:800,color:"#22c55e"}}>{propostasFechadas.length}</div></div>
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>PERDIDAS</div><div style={{fontSize:"24px",fontWeight:800,color:"#f87171"}}>{propostasPerdidas.length}</div></div>
@@ -479,7 +437,7 @@ export default function AdminPage() {
           <>
             {isComercial && (
               <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-                <button onClick={()=>{setFormCliente({nome:"", email:"", telefone:"", whatsapp:"", documento:"", tipo:"Cliente", codigo:"", filial: perfilAtivo.filial}); setModalClienteForm(true);}} className="btn-action" style={{background:"#4A90D9",color:"#fff",border:"none", padding: "10px 20px", fontSize: 14}}>+ Novo Registo</button>
+                <button onClick={()=>{setFormCliente({nome:"", email:"", telefone:"", whatsapp:"", documento:"", tipo:"Cliente", codigo:"", filial: perfilAtivo?.filial}); setModalClienteForm(true);}} className="btn-action" style={{background:"#4A90D9",color:"#fff",border:"none", padding: "10px 20px", fontSize: 14}}>+ Novo Registo</button>
                 <button onClick={()=>{setFormComunicado({publico:"Cliente", assunto:"", mensagem:""}); setModalComunicado(true);}} className="btn-action" style={{background:"transparent",color:"#4A90D9",border:"1px solid #4A90D9", padding: "10px 20px", fontSize: 14}}>📢 Comunicado em Massa</button>
               </div>
             )}
@@ -543,7 +501,7 @@ export default function AdminPage() {
                       <td>
                         {t.status !== 'Concluído' && <button className="btn-action" onClick={()=>alterarStatusTarefaRapido(t.id,'Concluído')}>✓</button>}
                         <button className="btn-action" onClick={()=>editarTarefa(t)}>Editar</button>
-                        <button className="btn-action" style={{color:"#f87171"}} onClick={()=>excluirTarefa(t.id)}>X</button>
+                        {isAdmin && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>excluirTarefa(t.id)}>X</button>}
                       </td>
                     </tr>
                   ))}
@@ -669,14 +627,13 @@ export default function AdminPage() {
               <input required className="input-modal" value={formCliente.nome} onChange={e => setFormCliente({...formCliente, nome: e.target.value})} placeholder="Nome da Empresa..." />
               <input className="input-modal" value={formCliente.email} onChange={e => setFormCliente({...formCliente, email: e.target.value})} placeholder="E-mail principal..." />
               <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.telefone} onChange={e => setFormCliente({...formCliente, telefone: e.target.value})} placeholder="Telefone Fixo..." /><input className="input-modal" style={{flex: 1}} value={formCliente.whatsapp} onChange={e => setFormCliente({...formCliente, whatsapp: e.target.value})} placeholder="WhatsApp..." /></div>
-              <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.documento} onChange={e => setFormCliente({...formCliente, documento: e.target.value})} placeholder="CNPJ / CPF..." />{isAdmin && <input className="input-modal" style={{flex: 1}} value={formCliente.filial} onChange={e => setFormCliente({...formCliente, filial: e.target.value})} placeholder="Filial (Ex: Matriz, SP)..." />}</div>
+              <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.documento} onChange={e => setFormCliente({...formCliente, documento: e.target.value})} placeholder="CNPJ / CPF..." />{isAdmin && <input className="input-modal" style={{flex: 1}} value={formCliente.filial} onChange={e => setFormCliente({...formCliente, filial: e.target.value})} placeholder="Filial (Ex: Matriz)..." />}</div>
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Registo</button></div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL TAREFAS, CONTRATOS, TEMPLATES... */}
       {modalTarefa && (
         <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -712,7 +669,8 @@ export default function AdminPage() {
         <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{formTemplate.id ? "Editar Template" : "Novo Template"}</h2>
-            <form onSubmit={salvarTemplate} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
+            <p style={{fontSize:"12px",color:"var(--text-secondary)",marginBottom:"15px"}}>Use as variáveis: {'{{nome}}'}, {'{{empresa}}'}, {'{{valor}}'}</p>
+            <form onSubmit={salvarTemplate}>
               <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({...formTemplate, nome: e.target.value})} placeholder="Nome do Template..." />
               <select className="input-modal" value={formTemplate.tipo} onChange={e => setFormTemplate({...formTemplate, tipo: e.target.value})}><option value="WhatsApp">WhatsApp</option><option value="Email">Email</option></select>
               <textarea required className="input-modal" rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
