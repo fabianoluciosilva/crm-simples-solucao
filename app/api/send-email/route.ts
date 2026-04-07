@@ -24,6 +24,8 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ success: true });
   } catch (error) {
+    // Adicionamos este log para ver o erro exato na Vercel!
+    console.error("Erro detalhado no Nodemailer:", error);
     return NextResponse.json({ error: "Falha no envio" }, { status: 500 });
   }
 }
