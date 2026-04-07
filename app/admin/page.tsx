@@ -8,6 +8,7 @@ interface PropostaDB { id: number; created_at: string; numero: string; cliente: 
 interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; }
 interface ContratoDB { id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string; valor_mensal: number; status: string; data_inicio: string; data_fim?: string; motivo_cancelamento?: string; created_at: string; }
 interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; }
+interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; documento?: string; tipo: string; codigo?: string; created_at?: string; }
 
 export default function AdminPage() {
   const router = useRouter();
@@ -31,8 +32,10 @@ export default function AdminPage() {
   const [tarefas, setTarefas] = useState<TarefaDB[]>([]);
   const [contratos, setContratos] = useState<ContratoDB[]>([]);
   const [templates, setTemplates] = useState<TemplateDB[]>([]);
+  const [clientesBase, setClientesBase] = useState<ClienteDB[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [filtroDias, setFiltroDias] = useState<number>(30);
+  const [filtroTipoCliente, setFiltroTipoCliente] = useState<"Todos" | "Cliente" | "Lead">("Todos");
   const [enviando, setEnviando] = useState<number | null>(null);
 
   // --- ESTADOS DE MODAIS ---
@@ -42,6 +45,8 @@ export default function AdminPage() {
   const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
   const [modalTemplate, setModalTemplate] = useState(false);
   const [formTemplate, setFormTemplate] = useState<Partial<TemplateDB>>({ nome: "", tipo: "WhatsApp", conteudo: "" });
+  const [modalClienteForm, setModalClienteForm] = useState(false);
+  const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", documento: "", tipo: "Cliente", codigo: "" });
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -103,18 +108,20 @@ export default function AdminPage() {
   const carregarTudo = async () => {
     if (!session) return;
     setCarregando(true);
-    const [p, l, t, c, tpl] = await Promise.all([
+    const [p, l, t, c, tpl, cliBase] = await Promise.all([
       supabase.from('propostas').select('*').order('created_at', { ascending: false }),
       supabase.from('leads').select('*').order('created_at', { ascending: false }),
       supabase.from('tarefas').select('*').order('data_vencimento', { ascending: true }),
       supabase.from('contratos').select('*').order('created_at', { ascending: false }),
-      supabase.from('templates').select('*').order('created_at', { ascending: false })
+      supabase.from('templates').select('*').order('created_at', { ascending: false }),
+      supabase.from('clientes').select('*').order('nome', { ascending: true })
     ]);
     
     if (p.data) setPropostas(p.data);
     if (l.data) setLeads(l.data);
     if (c.data) setContratos(c.data);
     if (tpl.data) setTemplates(tpl.data);
+    if (cliBase.data) setClientesBase(cliBase.data);
     if (t.data) setTarefas(isAdmin ? t.data : t.data.filter(x => x.usuario_email === session.user.email));
     
     setCarregando(false);
@@ -126,10 +133,7 @@ export default function AdminPage() {
   // ─── MOTOR DE TEMPLATES E GERADOR DE HTML ─────────────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
     if (!conteudo) return "";
-    return conteudo
-      .replace(/\{\{nome\}\}/g, nome || "Cliente")
-      .replace(/\{\{empresa\}\}/g, empresa || "Empresa")
-      .replace(/\{\{valor\}\}/g, fmt(valor));
+    return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor));
   };
 
   const gerarHtmlProposta = (prop: PropostaDB) => {
@@ -175,7 +179,6 @@ export default function AdminPage() {
   const enviarPorEmail = async (prop: PropostaDB) => {
     if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
     
-    // Inicia o processo direto, sem confirm()
     setEnviando(prop.id);
     showToast("A processar PDF e a enviar e-mail...", "info");
     
@@ -278,6 +281,15 @@ export default function AdminPage() {
           await supabase.from('automacoes_log').insert([{ tipo_regra: 'ONBOARDING_PROPOSTA_GANHA', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Onboarding Inicializado' }]);
           await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente (Onboarding)' }]);
           await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado! Iniciar inventário da rede.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+          
+          // Inteligência: Converte o Lead em Cliente na Tabela Mestre
+          const clienteExiste = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+          if (!clienteExiste) {
+             await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente' }]);
+          } else if (clienteExiste.tipo === 'Lead') {
+             await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', clienteExiste.id);
+          }
+          
           showToast("Negócio Fechado! Contrato ativado e Onboarding iniciado.", "sucesso");
         }
       } catch (e) { console.error(e) }
@@ -287,10 +299,19 @@ export default function AdminPage() {
     carregarTudo();
   };
 
-  // Mantido o confirm() nativo apenas para EXCLUSÃO (por segurança de dados)
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
-  // ─── AÇÕES DE CONTRATOS, TAREFAS E TEMPLATES ──────────────────────────────
+  // ─── AÇÕES DA NOVA TABELA DE CLIENTES (CLIENTES/LEADS) ────────────────────
+  const salvarClienteBase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id);
+    else await supabase.from('clientes').insert([formCliente]);
+    showToast("Registo guardado com sucesso.", "sucesso");
+    setModalClienteForm(false);
+    carregarTudo();
+  };
+
+  // ─── AÇÕES DE CONTRATOS E TAREFAS ─────────────────────────────────────────
   const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Originado da Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
   const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
   const salvarContrato = async (e: React.FormEvent) => { 
@@ -313,7 +334,7 @@ export default function AdminPage() {
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
 
-  // ─── CÁLCULOS DO DASHBOARD ──────────────────────────────────────────────
+  // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTOS ──────────────────────────────
   const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
   const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
   const totalPropostas = pFiltradas.length;
@@ -323,26 +344,47 @@ export default function AdminPage() {
   const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
   const mrrAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
 
+  // Mapeamento Inteligente Unindo Tabela de Clientes com Propostas/Contratos
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
+    
+    // 1. Injeta todos os clientes da nova Tabela
+    clientesBase.forEach(c => {
+      const key = c.nome.trim().toUpperCase();
+      mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [] });
+    });
+
+    // 2. Associa Propostas (E cria Leads virtuais caso o nome não exista na tabela oficial ainda)
     propostas.forEach(p => {
       const key = p.cliente.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, propostas: [], contratos: [], tarefas: [] });
+      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, tipo: 'Lead', propostas: [], contratos: [], tarefas: [] });
       mapa.get(key).propostas.push(p);
     });
+
+    // 3. Associa Contratos
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, propostas: [], contratos: [], tarefas: [] });
+      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', propostas: [], contratos: [], tarefas: [] });
       mapa.get(key).contratos.push(c);
+      mapa.get(key).tipo = 'Cliente'; // Se tem contrato, forçosamente é Cliente Ativo
     });
+
+    // 4. Associa Tarefas
     tarefas.forEach(t => {
       if (t.nome_referencia) {
         const key = t.nome_referencia.trim().toUpperCase();
         if (mapa.has(key)) mapa.get(key).tarefas.push(t);
       }
     });
-    return Array.from(mapa.values()).sort((a,b) => a.nome.localeCompare(b.nome));
-  }, [propostas, contratos, tarefas]);
+
+    let lista = Array.from(mapa.values()).sort((a,b) => a.nome.localeCompare(b.nome));
+    
+    // Aplica o Filtro Visual da Aba
+    if (filtroTipoCliente !== "Todos") {
+      lista = lista.filter(c => c.tipo === filtroTipoCliente);
+    }
+    return lista;
+  }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente]);
 
   if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar sessão...</div>;
 
@@ -384,9 +426,17 @@ export default function AdminPage() {
                 <option value={30}>30 dias</option><option value={90}>3 Meses</option><option value={0}>Sempre</option>
               </select>
             )}
+            {aba === 'clientes' && (
+              <select value={filtroTipoCliente} onChange={e=>setFiltroTipoCliente(e.target.value as any)} style={{background:"var(--bg-card)",color:"var(--text-primary)",border:"1px solid var(--border-light)",borderRadius:"8px",padding:"0 10px"}}>
+                <option value="Todos">Mostrar Todos</option>
+                <option value="Cliente">Apenas Clientes</option>
+                <option value="Lead">Apenas Leads</option>
+              </select>
+            )}
           </div>
         </header>
 
+        {/* DASHBOARD */}
         {aba === 'propostas' && (
           <>
             <div className="grid-metrics">
@@ -421,25 +471,39 @@ export default function AdminPage() {
           </>
         )}
 
+        {/* CLIENTES 360º */}
         {aba === 'clientes' && (
-          <div className="table-wrapper">
-            <table>
-              <thead><tr><th>Nome da Empresa</th><th>Contato</th><th>Propostas</th><th>Contratos</th><th>Ação</th></tr></thead>
-              <tbody>
-                {clientesAgrupados.map(c => (
-                  <tr key={c.nome}>
-                    <td><strong>{c.nome}</strong></td>
-                    <td>{c.contato}<br/><small>{c.email}</small></td>
-                    <td>{c.propostas.length}</td>
-                    <td>{c.contratos.filter((x:any)=>x.status==='Ativo').length} Ativos</td>
-                    <td><button className="btn-action" onClick={()=>setClienteDetalhe(c)}>Ver Histórico</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <button onClick={()=>{setFormCliente({nome:"", email:"", telefone:"", documento:"", tipo:"Cliente", codigo:""}); setModalClienteForm(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Registo</button>
+            <div className="table-wrapper">
+              <table>
+                <thead><tr><th>Nome / Cód</th><th>Contato / E-mail</th><th>Status</th><th>Propostas</th><th>Contratos</th><th>Ação</th></tr></thead>
+                <tbody>
+                  {clientesAgrupados.map(c => (
+                    <tr key={c.nome}>
+                      <td>
+                        <strong>{c.nome}</strong>
+                        {c.codigo && <div style={{fontSize:11, color:"var(--text-tertiary)"}}>{c.codigo}</div>}
+                      </td>
+                      <td>{c.telefone || c.contato}<br/><small>{c.email}</small></td>
+                      <td>
+                         <span className="badge-status" style={{background: c.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: c.tipo==='Cliente' ? '#22c55e' : '#f59e0b'}}>{c.tipo}</span>
+                      </td>
+                      <td>{c.propostas.length}</td>
+                      <td>{c.contratos.filter((x:any)=>x.status==='Ativo').length} Ativos</td>
+                      <td style={{display: "flex", gap: "8px", justifyContent: "flex-end"}}>
+                        <button className="btn-action" onClick={()=>setClienteDetalhe(c)}>Histórico</button>
+                        {c.id && <button className="btn-action" onClick={()=>{setFormCliente(c); setModalClienteForm(true);}}>Editar</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
+        {/* CONTRATOS */}
         {aba === 'contratos' && (
           <>
             <button onClick={()=>abrirNovoContrato()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Contrato</button>
@@ -462,6 +526,7 @@ export default function AdminPage() {
           </>
         )}
 
+        {/* TAREFAS */}
         {aba === 'tarefas' && (
           <>
             <button onClick={()=>abrirNovaTarefa()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Nova Tarefa</button>
@@ -488,6 +553,7 @@ export default function AdminPage() {
           </>
         )}
         
+        {/* LEADS */}
         {aba === 'leads' && (
           <div className="table-wrapper">
             <table>
@@ -509,6 +575,7 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* TEMPLATES */}
         {aba === 'templates' && (
           <>
             <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
@@ -538,7 +605,7 @@ export default function AdminPage() {
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={()=>setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e=>e.stopPropagation()}>
-            <h2>{clienteDetalhe.nome}</h2>
+            <h2>{clienteDetalhe.nome} <span className="badge-status" style={{background: clienteDetalhe.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: clienteDetalhe.tipo==='Cliente' ? '#22c55e' : '#f59e0b', marginLeft: 10}}>{clienteDetalhe.tipo}</span></h2>
             <hr style={{margin:"15px 0", opacity:0.1}}/>
             <h4>PROPOSTAS</h4>
             {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} ({p.status})</div>)}
@@ -551,7 +618,34 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL TAREFAS E CONTRATOS */}
+      {/* MODAL ADICIONAR/EDITAR CLIENTE */}
+      {modalClienteForm && (
+        <div className="modal-overlay" onClick={() => setModalClienteForm(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formCliente.id ? "Editar Cliente" : "Novo Registo"}</h2>
+            <form onSubmit={salvarClienteBase} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
+              <div style={{display:"flex", gap:"10px"}}>
+                <input className="input-modal" style={{flex: 1}} value={formCliente.codigo} onChange={e => setFormCliente({...formCliente, codigo: e.target.value})} placeholder="Código (Opcional)..." />
+                <select className="input-modal" style={{flex: 1}} value={formCliente.tipo} onChange={e => setFormCliente({...formCliente, tipo: e.target.value})}>
+                  <option value="Cliente">Cliente</option><option value="Lead">Lead</option>
+                </select>
+              </div>
+              <input required className="input-modal" value={formCliente.nome} onChange={e => setFormCliente({...formCliente, nome: e.target.value})} placeholder="Nome da Empresa..." />
+              <input className="input-modal" value={formCliente.email} onChange={e => setFormCliente({...formCliente, email: e.target.value})} placeholder="E-mail principal..." />
+              <div style={{display:"flex", gap:"10px"}}>
+                 <input className="input-modal" style={{flex: 1}} value={formCliente.telefone} onChange={e => setFormCliente({...formCliente, telefone: e.target.value})} placeholder="Telefone/WhatsApp..." />
+                 <input className="input-modal" style={{flex: 1}} value={formCliente.documento} onChange={e => setFormCliente({...formCliente, documento: e.target.value})} placeholder="CNPJ / CPF..." />
+              </div>
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
+                <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAREFAS */}
       {modalTarefa && (
         <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -571,6 +665,7 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* MODAL CONTRATOS */}
       {modalContrato && (
         <div className="modal-overlay" onClick={() => setModalContrato(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
