@@ -8,7 +8,7 @@ interface PropostaDB { id: number; created_at: string; numero: string; cliente: 
 interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; }
 interface ContratoDB { id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string; valor_mensal: number; status: string; data_inicio: string; data_fim?: string; motivo_cancelamento?: string; created_at: string; }
 interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; }
-interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; documento?: string; tipo: string; codigo?: string; created_at?: string; }
+interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; whatsapp?: string; documento?: string; tipo: string; codigo?: string; created_at?: string; }
 
 export default function AdminPage() {
   const router = useRouter();
@@ -38,7 +38,13 @@ export default function AdminPage() {
   const [filtroTipoCliente, setFiltroTipoCliente] = useState<"Todos" | "Cliente" | "Lead">("Todos");
   const [enviando, setEnviando] = useState<number | null>(null);
 
-  // --- ESTADOS DE MODAIS ---
+  // --- ESTADOS DE COMUNICADOS EM MASSA E FILA WPP ---
+  const [modalComunicado, setModalComunicado] = useState(false);
+  const [formComunicado, setFormComunicado] = useState({ publico: "Cliente", assunto: "", mensagem: "" });
+  const [progressoEmail, setProgressoEmail] = useState({ ativo: false, total: 0, enviado: 0 });
+  const [filaWpp, setFilaWpp] = useState<ClienteDB[]>([]);
+
+  // --- ESTADOS DE MODAIS GERAIS ---
   const [modalTarefa, setModalTarefa] = useState(false);
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "" });
   const [modalContrato, setModalContrato] = useState(false);
@@ -46,7 +52,7 @@ export default function AdminPage() {
   const [modalTemplate, setModalTemplate] = useState(false);
   const [formTemplate, setFormTemplate] = useState<Partial<TemplateDB>>({ nome: "", tipo: "WhatsApp", conteudo: "" });
   const [modalClienteForm, setModalClienteForm] = useState(false);
-  const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", documento: "", tipo: "Cliente", codigo: "" });
+  const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "" });
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -149,41 +155,96 @@ export default function AdminPage() {
         <h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SUPORTE TÉCNICO</h1>
         <p>Rio de Janeiro, ${dataFormatada}</p>
         <p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p>
-        <p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>. Agradecemos ainda pela oportunidade de propor, por meio desta, uma parceria na área de tecnologia da informação.</p>
-        <p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>. Esse serviço tem o objetivo de auxiliar o ambiente de TI da empresa para uma evolução contínua, minimizando problemas e possíveis riscos existentes.</p>
-        <p>Agradecemos a oportunidade e nos colocamos à sua inteira disposição para eventuais esclarecimentos que forem necessários.</p>
+        <p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p>
+        <p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>.</p>
         <div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993 | (21) 3197-0198<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div>
-        
-        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">A Empresa</h2>
-        <p>A Simples Solução TI é uma integradora de tecnologia que oferece soluções de apoio à área de TI dos seus clientes. Estamos localizados estrategicamente no Shopping Nova América.</p>
-        <p>Contamos com uma sólida infraestrutura de atendimento, com sistema de help desk, inventário e ainda temos dois links de internet para redundância. Com isso garantimos um atendimento ininterrupto a toda nossa base de clientes.</p>
-        
-        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Detalhamento dos Serviços</h2>
-        <p>No primeiro mês do contrato faremos uma validação do ambiente que produzirá uma documentação resumida do ambiente de TI, produzindo os seguintes artefatos:</p>
-        <ul style="margin-bottom: 20px;"><li>Inventário de Hardware e Software;</li><li>Documentação da estrutura de Rede;</li><li>Documentação e Validação/Implantação de rotinas de backup;</li><li>Validação do Parque de máquinas e sugestão de investimentos;</li><li>Revisão de backlog de chamados;</li><li>Validação das políticas de segurança e antivírus.</li></ul>
-        
         <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2>
-        <p>Contrato de suporte inicial da <strong>${prop.cliente}</strong>:</p>
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;">
           <tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr>
           <tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr>
         </table>
-        ${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Escopo Adicional / Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
-        <h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Considerações Finais</h2>
-        <ul><li>Esta proposta é válida por 30 dias a partir da data de emissão.</li><li>Maiores informações sobre os serviços da Simples Solução TI podem ser encontradas em <strong>www.simplessolucao.com.br</strong>.</li><li>Colocamo-nos à disposição para quaisquer esclarecimentos.</li></ul>
+        ${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}
       </div>
     `;
   };
 
-  // ─── AÇÕES DE PROPOSTAS ───────────────────────────────────────────────────
-  const enviarPorEmail = async (prop: PropostaDB) => {
-    if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
+  // ─── AÇÕES DE COMUNICADOS EM MASSA (E-MAIL E WPP) ─────────────────────────
+  const dispararEmailsMassa = async () => {
+    const alvos = formComunicado.publico === "Todos" 
+        ? clientesBase.filter(c => c.email && c.email.includes("@"))
+        : clientesBase.filter(c => c.tipo === formComunicado.publico && c.email && c.email.includes("@"));
+        
+    if (alvos.length === 0) return showToast("Nenhum cliente com e-mail válido encontrado para este público.", "erro");
+    if (!confirm(`Tem a certeza que deseja disparar este e-mail para ${alvos.length} clientes?`)) return;
+
+    setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
+    let enviados = 0;
+
+    for (const cli of alvos) {
+      try {
+        const htmlCorpo = `
+          <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+            <div style="background: #0a1628; padding: 20px; text-align: center; color: #fff;">
+              <h2 style="margin: 0;">Aviso Importante</h2>
+            </div>
+            <div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none;">
+              <p>Olá <strong>${cli.nome}</strong>,</p>
+              <div style="white-space: pre-wrap; font-size: 15px; margin: 20px 0;">${formComunicado.mensagem}</div>
+              <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+              <p style="font-size: 13px; color: #666;">Atenciosamente,<br/><strong>Equipa | Simples Solução TI</strong><br/>(21) 3529-7993<br/>www.simplessolucao.com.br</p>
+            </div>
+          </div>
+        `;
+
+        await fetch('/api/send-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: cli.email, subject: formComunicado.assunto, html: htmlCorpo })
+        });
+        
+        enviados++;
+        setProgressoEmail(p => ({ ...p, enviado: enviados }));
+        
+        // Pequeno atraso (500ms) para não bloquear o servidor SMTP
+        await new Promise(r => setTimeout(r, 500));
+      } catch (e) { console.error(`Falha ao enviar para ${cli.email}`); }
+    }
+
+    setProgressoEmail({ ativo: false, total: 0, enviado: 0 });
+    setModalComunicado(false);
+    showToast(`Disparo concluído! ${enviados} e-mails enviados com sucesso.`, "sucesso");
+  };
+
+  const gerarFilaWhatsapp = () => {
+    const alvos = formComunicado.publico === "Todos" 
+        ? clientesBase.filter(c => c.whatsapp || c.telefone)
+        : clientesBase.filter(c => c.tipo === formComunicado.publico && (c.whatsapp || c.telefone));
+
+    if (alvos.length === 0) return showToast("Nenhum cliente com número de telefone ou WhatsApp válido encontrado.", "erro");
     
+    setFilaWpp(alvos);
+    setModalComunicado(false); // Fecha o modal de redação e mostra o painel da fila
+    showToast(`Fila gerada com ${alvos.length} clientes.`, "info");
+  };
+
+  const enviarWhatsAppDaFila = (cli: ClienteDB) => {
+    const numeroBruto = cli.whatsapp || cli.telefone || "";
+    const numero = numeroBruto.replace(/\D/g, "");
+    const texto = `Olá *${cli.nome}*,\n\n*Aviso SSTI:*\n${formComunicado.mensagem}`;
+    
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank');
+    
+    // Remove o cliente da fila visualmente para ajudar no controle
+    setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
+  };
+
+
+  // ─── AÇÕES DE PROPOSTAS (NORMAIS) ─────────────────────────────────────────
+  const enviarPorEmailNormal = async (prop: PropostaDB) => {
+    if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
     setEnviando(prop.id);
     showToast("A processar PDF e a enviar e-mail...", "info");
     
     let pdfBase64 = "";
-
     try {
       if (!(window as any).html2pdf) {
         await new Promise((resolve) => {
@@ -193,71 +254,31 @@ export default function AdminPage() {
           document.body.appendChild(script);
         });
       }
-
       const elemento = document.createElement('div');
       elemento.innerHTML = gerarHtmlProposta(prop);
-      
-      const opt = {
-        margin: 10,
-        filename: `Proposta_SSTI_${prop.cliente.replace(/[^a-z0-9]/gi, '_')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-
+      const opt = { margin: 10, filename: `Proposta_SSTI.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
       const pdfDataUri = await (window as any).html2pdf().set(opt).from(elemento).outputPdf('datauristring');
       pdfBase64 = pdfDataUri.split(',')[1];
-    } catch (err) {
-      console.error(err);
-      showToast("Falha ao processar o PDF. Tentando enviar apenas o e-mail...", "erro");
-    }
+    } catch (err) { console.error(err); }
 
     const tplEmail = templates.find(t => t.tipo === 'Email');
-    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - Simples Solução TI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal Ofertado:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,</p><p><strong>Equipa Comercial | Simples Solução TI</strong><br/>(21) 3529-7993 | www.simplessolucao.com.br</p></div>`;
-    
+    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial - SSTI</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta de suporte técnico para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal:</strong> ${fmt(prop.valor)}</p><br /><p>Atenciosamente,<br/><strong>Simples Solução TI</strong></p></div>`;
     if (tplEmail && tplEmail.conteudo) {
-      const htmlDoTemplate = processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>');
-      corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${htmlDoTemplate}</div>`;
+      corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>')}</div>`;
     }
 
     try {
-      const response = await fetch('/api/send-email', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: prop.email,
-          subject: `Proposta Comercial SSTI - ${prop.cliente}`,
-          html: corpoEmail,
-          fileName: `Proposta_SSTI_${prop.cliente.replace(/[^a-z0-9]/gi, '_')}.pdf`,
-          pdfBase64: pdfBase64
-        }),
-      });
-
+      const response = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64: pdfBase64 }) });
       const data = await response.json();
-
       if (response.ok) {
         await supabase.from('propostas').update({ status_envio: 'enviado' }).eq('id', prop.id);
-        try {
-          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
-          if (!log || log.length === 0) {
-            await supabase.from('automacoes_log').insert([{ tipo_regra: 'PROPOSTA_ENVIADA_FOLLOWUP', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Tarefa de Follow-up Criada' }]);
-            const dataVenc = new Date(); dataVenc.setDate(dataVenc.getDate() + 3); dataVenc.setHours(10, 0, 0, 0);
-            await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar o retorno da proposta ${prop.numero} enviada por e-mail.`, data_vencimento: dataVenc.toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-          }
-        } catch (autoErr) { console.error(autoErr); }
-
-        showToast("E-mail com anexo enviado com sucesso!", "sucesso");
+        showToast("E-mail enviado com sucesso!", "sucesso");
         carregarTudo();
-      } else {
-        showToast(`Erro na API: ${data.error}`, "erro");
-      }
-    } catch (e) { 
-      showToast("Erro de conexão ao tentar enviar o e-mail.", "erro"); 
-    } finally { 
-      setEnviando(null); 
-    }
+      } else { showToast(`Erro: ${data.error}`, "erro"); }
+    } catch (e) { showToast("Erro de conexão ao tentar enviar o e-mail.", "erro"); } finally { setEnviando(null); }
   };
 
-  const enviarWhatsApp = (prop: PropostaDB) => {
+  const enviarWhatsAppNormal = (prop: PropostaDB) => {
     const tplWpp = templates.find(t => t.tipo === 'WhatsApp');
     let texto = `Olá ${prop.contato}, envio a nossa proposta (cód: ${prop.numero}) no valor de ${fmt(prop.valor)} mensais.`;
     if (tplWpp && tplWpp.conteudo) { texto = processarTemplate(tplWpp.conteudo, prop.contato, prop.cliente, prop.valor); }
@@ -276,22 +297,15 @@ export default function AdminPage() {
     await supabase.from('propostas').update({ status: novoStatus }).eq('id', prop.id);
     if (novoStatus === 'fechada') {
       try {
-        const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'ONBOARDING_PROPOSTA_GANHA').eq('referencia_id', prop.id);
-        if (!log || log.length === 0) {
-          await supabase.from('automacoes_log').insert([{ tipo_regra: 'ONBOARDING_PROPOSTA_GANHA', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Onboarding Inicializado' }]);
-          await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente (Onboarding)' }]);
-          await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado! Iniciar inventário da rede.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-          
-          // Inteligência: Converte o Lead em Cliente na Tabela Mestre
-          const clienteExiste = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-          if (!clienteExiste) {
-             await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente' }]);
-          } else if (clienteExiste.tipo === 'Lead') {
-             await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', clienteExiste.id);
-          }
-          
-          showToast("Negócio Fechado! Contrato ativado e Onboarding iniciado.", "sucesso");
-        }
+        await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente' }]);
+        await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding Técnico: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+        
+        // Inteligência: Converte o Lead em Cliente na Tabela Mestre
+        const clienteExiste = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+        if (!clienteExiste) { await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente' }]); } 
+        else if (clienteExiste.tipo === 'Lead') { await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', clienteExiste.id); }
+        
+        showToast("Negócio Fechado! Contrato ativado e Onboarding iniciado.", "sucesso");
       } catch (e) { console.error(e) }
     } else {
       showToast(`Proposta marcada como ${novoStatus}.`, "info");
@@ -340,49 +354,29 @@ export default function AdminPage() {
   const totalPropostas = pFiltradas.length;
   const propostasFechadas = pFiltradas.filter(p => p.status === 'fechada');
   const propostasPerdidas = pFiltradas.filter(p => p.status === 'perdida');
-  
   const taxaConversao = totalPropostas > 0 ? (propostasFechadas.length / totalPropostas) * 100 : 0;
   const mrrAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
 
-  // Mapeamento Inteligente Unindo Tabela de Clientes com Propostas/Contratos
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
-    
-    // 1. Injeta todos os clientes da nova Tabela
-    clientesBase.forEach(c => {
-      const key = c.nome.trim().toUpperCase();
-      mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [] });
-    });
-
-    // 2. Associa Propostas (E cria Leads virtuais caso o nome não exista na tabela oficial ainda)
+    clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [] }); });
     propostas.forEach(p => {
       const key = p.cliente.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, tipo: 'Lead', propostas: [], contratos: [], tarefas: [] });
       mapa.get(key).propostas.push(p);
     });
-
-    // 3. Associa Contratos
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', propostas: [], contratos: [], tarefas: [] });
       mapa.get(key).contratos.push(c);
-      mapa.get(key).tipo = 'Cliente'; // Se tem contrato, forçosamente é Cliente Ativo
+      mapa.get(key).tipo = 'Cliente';
     });
-
-    // 4. Associa Tarefas
     tarefas.forEach(t => {
-      if (t.nome_referencia) {
-        const key = t.nome_referencia.trim().toUpperCase();
-        if (mapa.has(key)) mapa.get(key).tarefas.push(t);
-      }
+      if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
     });
 
     let lista = Array.from(mapa.values()).sort((a,b) => a.nome.localeCompare(b.nome));
-    
-    // Aplica o Filtro Visual da Aba
-    if (filtroTipoCliente !== "Todos") {
-      lista = lista.filter(c => c.tipo === filtroTipoCliente);
-    }
+    if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente]);
 
@@ -392,10 +386,30 @@ export default function AdminPage() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
 
-      {/* TOAST FLUTUANTE */}
       {toast && (
         <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>
           {toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}
+        </div>
+      )}
+
+      {/* PAINEL FLUTUANTE DA FILA DO WHATSAPP */}
+      {filaWpp.length > 0 && (
+        <div style={{ position: "fixed", bottom: 20, left: 280, width: 380, background: "var(--bg-sidebar)", border: "1px solid #4A90D9", borderRadius: 16, zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", maxHeight: 500 }}>
+          <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
+            <span>💬 Fila de Envio WhatsApp ({filaWpp.length})</span>
+            <button onClick={() => setFilaWpp([])} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontWeight: "bold" }}>X</button>
+          </div>
+          <div style={{ padding: 15, overflowY: "auto", flex: 1 }}>
+            {filaWpp.map(c => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", borderBottom: "1px solid var(--border-light)" }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{c.nome}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.whatsapp || c.telefone}</div>
+                </div>
+                <button onClick={() => enviarWhatsAppDaFila(c)} style={{ background: "#22c55e", color: "#fff", border: "none", padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Enviar ›</button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -436,7 +450,6 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {/* DASHBOARD */}
         {aba === 'propostas' && (
           <>
             <div className="grid-metrics">
@@ -457,8 +470,8 @@ export default function AdminPage() {
                       <td><span className="badge-status" style={{background:p.status==='fechada'?'#22c55e22':p.status==='perdida'?'#f8717122':'#f59e0b22',color:p.status==='fechada'?'#22c55e':p.status==='perdida'?'#f87171':'#f59e0b'}}>{p.status||'aberta'}</span></td>
                       <td style={{textAlign:"right"}}>
                         <button className="btn-action" onClick={()=>visualizarProposta(p)}>PDF</button>
-                        <button className="btn-action" onClick={()=>enviarWhatsApp(p)}>Wpp</button>
-                        <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmail(p)}>{enviando===p.id?'A enviar...':'E-mail'}</button>
+                        <button className="btn-action" onClick={()=>enviarWhatsAppNormal(p)}>Wpp</button>
+                        <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmailNormal(p)}>{enviando===p.id?'A enviar...':'E-mail'}</button>
                         {p.status !== 'fechada' && <button className="btn-action" style={{color:"#22c55e",borderColor:"#22c55e"}} onClick={()=>alterarStatusComAutomacao(p,'fechada')}>✓ Ganhou</button>}
                         {p.status !== 'perdida' && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>alterarStatusComAutomacao(p,'perdida')}>Perdeu</button>}
                         <button className="btn-action" style={{color:"#f87171", border:"none"}} onClick={()=>excluirProposta(p.id,p.cliente)}>X</button>
@@ -471,13 +484,15 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* CLIENTES 360º */}
         {aba === 'clientes' && (
           <>
-            <button onClick={()=>{setFormCliente({nome:"", email:"", telefone:"", documento:"", tipo:"Cliente", codigo:""}); setModalClienteForm(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Registo</button>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+              <button onClick={()=>{setFormCliente({nome:"", email:"", telefone:"", whatsapp:"", documento:"", tipo:"Cliente", codigo:""}); setModalClienteForm(true);}} className="btn-action" style={{background:"#4A90D9",color:"#fff",border:"none", padding: "10px 20px", fontSize: 14}}>+ Novo Registo</button>
+              <button onClick={()=>{setFormComunicado({publico:"Cliente", assunto:"", mensagem:""}); setModalComunicado(true);}} className="btn-action" style={{background:"transparent",color:"#4A90D9",border:"1px solid #4A90D9", padding: "10px 20px", fontSize: 14}}>📢 Comunicado em Massa</button>
+            </div>
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Nome / Cód</th><th>Contato / E-mail</th><th>Status</th><th>Propostas</th><th>Contratos</th><th>Ação</th></tr></thead>
+                <thead><tr><th>Nome / Cód</th><th>Contatos</th><th>Status</th><th>Propostas</th><th>Contratos</th><th>Ação</th></tr></thead>
                 <tbody>
                   {clientesAgrupados.map(c => (
                     <tr key={c.nome}>
@@ -485,7 +500,11 @@ export default function AdminPage() {
                         <strong>{c.nome}</strong>
                         {c.codigo && <div style={{fontSize:11, color:"var(--text-tertiary)"}}>{c.codigo}</div>}
                       </td>
-                      <td>{c.telefone || c.contato}<br/><small>{c.email}</small></td>
+                      <td>
+                        <div style={{fontSize: 12, color:"var(--text-secondary)"}}>📞 {c.telefone || c.contato || '—'}</div>
+                        <div style={{fontSize: 12, color:"var(--text-secondary)"}}>💬 {c.whatsapp || '—'}</div>
+                        <div style={{fontSize: 11, color:"var(--text-tertiary)", marginTop: 2}}>{c.email}</div>
+                      </td>
                       <td>
                          <span className="badge-status" style={{background: c.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: c.tipo==='Cliente' ? '#22c55e' : '#f59e0b'}}>{c.tipo}</span>
                       </td>
@@ -503,7 +522,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* CONTRATOS */}
         {aba === 'contratos' && (
           <>
             <button onClick={()=>abrirNovoContrato()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Contrato</button>
@@ -526,7 +544,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* TAREFAS */}
         {aba === 'tarefas' && (
           <>
             <button onClick={()=>abrirNovaTarefa()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Nova Tarefa</button>
@@ -553,7 +570,6 @@ export default function AdminPage() {
           </>
         )}
         
-        {/* LEADS */}
         {aba === 'leads' && (
           <div className="table-wrapper">
             <table>
@@ -575,7 +591,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* TEMPLATES */}
         {aba === 'templates' && (
           <>
             <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
@@ -618,6 +633,43 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* MODAL COMUNICADO EM MASSA */}
+      {modalComunicado && (
+        <div className="modal-overlay" onClick={() => !progressoEmail.ativo && setModalComunicado(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>📢 Comunicado em Massa</h2>
+            
+            {progressoEmail.ativo ? (
+              <div style={{ marginTop: 20, textAlign: "center" }}>
+                <p style={{ marginBottom: 10, color: "var(--text-primary)" }}>A enviar e-mails... ({progressoEmail.enviado} de {progressoEmail.total})</p>
+                <div style={{ width: "100%", background: "var(--bg-main)", borderRadius: 10, height: 10, overflow: "hidden" }}>
+                  <div style={{ width: `${(progressoEmail.enviado / progressoEmail.total) * 100}%`, background: "#4A90D9", height: "100%", transition: "width 0.3s" }}></div>
+                </div>
+              </div>
+            ) : (
+              <form style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
+                <div>
+                  <label style={{display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 5}}>Público Alvo</label>
+                  <select className="input-modal" value={formComunicado.publico} onChange={e => setFormComunicado({...formComunicado, publico: e.target.value})}>
+                    <option value="Todos">Todos (Clientes + Leads)</option>
+                    <option value="Cliente">Apenas Clientes Ativos</option>
+                    <option value="Lead">Apenas Leads</option>
+                  </select>
+                </div>
+                <input required className="input-modal" value={formComunicado.assunto} onChange={e => setFormComunicado({...formComunicado, assunto: e.target.value})} placeholder="Assunto (Apenas para E-mail)..." />
+                <textarea required className="input-modal" rows={6} value={formComunicado.mensagem} onChange={e => setFormComunicado({...formComunicado, mensagem: e.target.value})} placeholder="Escreva o comunicado aqui. Para o WhatsApp não use formatação HTML..." />
+                
+                <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
+                  <button type="button" onClick={() => setModalComunicado(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
+                  <button type="button" onClick={gerarFilaWhatsapp} className="btn-action" style={{flex:1,background:"#22c55e",color:"#fff",borderColor:"#22c55e"}}>💬 Gerar Fila WhatsApp</button>
+                  <button type="button" onClick={dispararEmailsMassa} className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>📧 Disparar E-mails</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* MODAL ADICIONAR/EDITAR CLIENTE */}
       {modalClienteForm && (
         <div className="modal-overlay" onClick={() => setModalClienteForm(false)}>
@@ -633,9 +685,10 @@ export default function AdminPage() {
               <input required className="input-modal" value={formCliente.nome} onChange={e => setFormCliente({...formCliente, nome: e.target.value})} placeholder="Nome da Empresa..." />
               <input className="input-modal" value={formCliente.email} onChange={e => setFormCliente({...formCliente, email: e.target.value})} placeholder="E-mail principal..." />
               <div style={{display:"flex", gap:"10px"}}>
-                 <input className="input-modal" style={{flex: 1}} value={formCliente.telefone} onChange={e => setFormCliente({...formCliente, telefone: e.target.value})} placeholder="Telefone/WhatsApp..." />
-                 <input className="input-modal" style={{flex: 1}} value={formCliente.documento} onChange={e => setFormCliente({...formCliente, documento: e.target.value})} placeholder="CNPJ / CPF..." />
+                 <input className="input-modal" style={{flex: 1}} value={formCliente.telefone} onChange={e => setFormCliente({...formCliente, telefone: e.target.value})} placeholder="Telefone Fixo..." />
+                 <input className="input-modal" style={{flex: 1}} value={formCliente.whatsapp} onChange={e => setFormCliente({...formCliente, whatsapp: e.target.value})} placeholder="WhatsApp..." />
               </div>
+              <input className="input-modal" value={formCliente.documento} onChange={e => setFormCliente({...formCliente, documento: e.target.value})} placeholder="CNPJ / CPF..." />
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
                 <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
                 <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar</button>
@@ -645,7 +698,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL TAREFAS */}
+      {/* MODAL TAREFAS E CONTRATOS */}
       {modalTarefa && (
         <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -665,7 +718,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL CONTRATOS */}
       {modalContrato && (
         <div className="modal-overlay" onClick={() => setModalContrato(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
