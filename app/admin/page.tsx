@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Sidebar } from "@/components/admin/layout/Sidebar";
 import { Header } from "@/components/admin/layout/Header";
+import { DashboardTab } from "@/components/admin/modules/DashboardTab";
+import { MetricCard } from "@/components/admin/ui/MetricCard";
 import {
   PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line, Area, AreaChart
@@ -15,19 +17,19 @@ interface PropostaDB {
   id: number; created_at: string; numero: string; cliente: string; contato: string;
   telefone?: string; email: string; valor: number; status: string; status_envio: string;
   filial?: string; dados: any; motivo_perda?: string; obs_perda?: string;
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface TarefaDB {
   id: number; titulo: string; descricao: string; data_vencimento: string; status: string;
   usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string;
   data_conclusao?: string; created_at: string; prioridade?: 'Alta' | 'Normal' | 'Baixa';
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface ContratoDB {
   id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string;
   valor_mensal: number; status: string; data_inicio: string; data_fim?: string;
   motivo_cancelamento?: string; filial?: string; created_at: string;
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface TemplateDB {
   id: number; nome: string; tipo: string; conteudo: string; created_at: string; assunto?: string;
@@ -40,7 +42,7 @@ interface ClienteDB {
 interface InteracaoDB {
   id: number; cliente_nome: string; usuario_email: string; tipo: string;
   descricao: string; created_at: string;
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface PerfilUsuario {
   id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string;
@@ -64,19 +66,6 @@ const calcDiasAtraso = (dataVenc: string): number => {
   const diff = Math.floor((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24));
   return diff;
 };
-
-// ─── COMPONENTES REUTILIZÁVEIS ──────────────────────────────────────────────
-const MetricCard = ({ label, value, color, borderColor, icon, sub }: {
-  label: string; value: string | number; color?: string; borderColor?: string; icon?: string; sub?: string;
-}) => (
-  <div className="metric-card" style={{ borderTop: borderColor ? `3px solid ${borderColor}` : undefined }}>
-    <div style={{ fontSize: "12px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-      {icon && <span>{icon}</span>}{label}
-    </div>
-    <div style={{ fontSize: "28px", fontWeight: 800, color: color || "var(--text-primary)", marginTop: 8 }}>{value}</div>
-    {sub && <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: 4 }}>{sub}</div>}
-  </div>
-);
 
 const BadgeStatus = ({ status }: { status: string }) => {
   const cores: Record<string, { bg: string; color: string }> = {
@@ -496,6 +485,7 @@ export default function AdminPage() {
     alvos = alvos.filter(c => c.email && c.email.includes("@") && c.ativo !== false);
     if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado para este público.", "erro");
     if (!confirm(`Deseja disparar este e-mail para ${alvos.length} contactos?`)) return;
+
     setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
     let enviados = 0;
     for (const cli of alvos) {
@@ -920,6 +910,86 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* FILA WHATSAPP FLUTUANTE */}
+      {filaWpp.length > 0 && (
+        <div style={{ position: "fixed", bottom: 90, right: 30, background: "#22c55e", borderRadius: 16, padding: 16, zIndex: 999, maxWidth: 300, boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>
+          <div style={{ color: "#fff", fontWeight: 700, marginBottom: 10 }}>💬 Fila WhatsApp ({filaWpp.length})</div>
+          {filaWpp.slice(0, 3).map(cli => (
+            <div key={cli.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ color: "#fff", fontSize: 12, flex: 1 }}>{cli.nome}</span>
+              <button onClick={() => enviarWhatsAppDaFila(cli)} style={{ background: "#fff", color: "#22c55e", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Enviar</button>
+            </div>
+          ))}
+          {filaWpp.length > 3 && <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 4 }}>+{filaWpp.length - 3} na fila...</div>}
+          <button onClick={() => setFilaWpp([])} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, cursor: "pointer", marginTop: 8, width: "100%" }}>Limpar Fila</button>
+        </div>
+      )}
+
+      {/* BUSCA GLOBAL (Ctrl+K) */}
+      {mostrarBuscaGlobal && (
+        <div className="busca-global-overlay" onClick={() => { setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
+          <div className="busca-global-box" onClick={e => e.stopPropagation()}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 20 }}>🔍</span>
+              <input
+                ref={searchInputRef}
+                value={buscaGlobal}
+                onChange={e => setBuscaGlobal(e.target.value)}
+                placeholder="Pesquisar clientes, propostas, tarefas..."
+                style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 16, outline: "none", fontFamily: "'Outfit', sans-serif" }}
+                autoFocus
+              />
+              <kbd style={{ background: "var(--border-light)", padding: "2px 6px", borderRadius: 4, fontSize: 11, color: "var(--text-secondary)" }}>ESC</kbd>
+            </div>
+            {buscaGlobal.length >= 2 && (
+              <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                {resultadosBuscaGlobal.clientes.length > 0 && (
+                  <>
+                    <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>CLIENTES</div>
+                    {resultadosBuscaGlobal.clientes.map((c: any) => (
+                      <div key={c.nome} className="resultado-busca-item" onClick={() => { setClienteDetalhe(c); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
+                        <span>👤</span><div><div style={{ fontWeight: 600 }}>{c.nome}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{c.tipo} · {c.email || "sem e-mail"}</div></div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {resultadosBuscaGlobal.propostas.length > 0 && (
+                  <>
+                    <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>PROPOSTAS</div>
+                    {resultadosBuscaGlobal.propostas.map((p: any) => (
+                      <div key={p.id} className="resultado-busca-item" onClick={() => { setAba('propostas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
+                        <span>🎯</span><div><div style={{ fontWeight: 600 }}>{p.cliente}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.numero} · {fmt(p.valor)}</div></div>
+                        <BadgeStatus status={p.status || 'aberta'} />
+                      </div>
+                    ))}
+                  </>
+                )}
+                {resultadosBuscaGlobal.tarefas.length > 0 && (
+                  <>
+                    <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>TAREFAS</div>
+                    {resultadosBuscaGlobal.tarefas.map((t: any) => (
+                      <div key={t.id} className="resultado-busca-item" onClick={() => { setAba('tarefas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
+                        <span>✅</span><div><div style={{ fontWeight: 600 }}>{t.titulo}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.nome_referencia}</div></div>
+                        <BadgeStatus status={t.status} />
+                      </div>
+                    ))}
+                  </>
+                )}
+                {resultadosBuscaGlobal.clientes.length === 0 && resultadosBuscaGlobal.propostas.length === 0 && resultadosBuscaGlobal.tarefas.length === 0 && (
+                  <div style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)", fontSize: 14 }}>Nenhum resultado encontrado para "{buscaGlobal}"</div>
+                )}
+              </div>
+            )}
+            {buscaGlobal.length < 2 && (
+              <div style={{ padding: 30, textAlign: "center", color: "var(--text-secondary)", fontSize: 13 }}>
+                Digite ao menos 2 caracteres para pesquisar
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* COMPONENTES EXTRAÍDOS: SIDEBAR */}
       <Sidebar 
         aba={aba} 
         setAba={setAba} 
@@ -933,9 +1003,8 @@ export default function AdminPage() {
         onOpenSearch={() => { setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }} 
       />
 
-      {/* MAIN */}
       <main className="main-content">
-        
+        {/* COMPONENTES EXTRAÍDOS: HEADER */}
         <Header 
           aba={aba} 
           carregando={carregando} 
@@ -946,95 +1015,25 @@ export default function AdminPage() {
           carregarTudo={carregarTudo} 
         />
 
-        {/* ─── ABA: DASHBOARD ─────────────────────────────────────────────────── */}
+        {/* COMPONENTES EXTRAÍDOS: DASHBOARD */}
         {aba === 'dashboard' && isComercial && (
-          <>
-            <div className="grid-metrics">
-              {isAdmin && <MetricCard label="MRR ATIVO" value={fmt(mrrAtivo)} borderColor="#22c55e" icon="💰" sub={`${contratos.filter(c => c.status === 'Ativo').length} contratos`} />}
-              <MetricCard label="TAXA DE CONVERSÃO" value={`${taxaConversao.toFixed(1)}%`} color="#4A90D9" borderColor="#4A90D9" icon="📈" />
-              <MetricCard label="GANHAS (VALOR)" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" icon="🏆" sub={`${propostasFechadas.length} negócios`} />
-              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} borderColor="#a855f7" icon="🎟️" />
-              <MetricCard label="PERDIDAS" value={propostasPerdidas.length} color="#f87171" borderColor="#f87171" icon="❌" />
-            </div>
-
-            <div className="grid-metrics" style={{ marginBottom: "24px" }}>
-              <MetricCard label="EM ABERTO (NOVAS)" value={fmt(propostasAbertas.reduce((a, b) => a + b.valor, 0))} borderColor="#64748b" />
-              <MetricCard label="EM NEGOCIAÇÃO" value={fmt(propostasEnviadas.reduce((a, b) => a + b.valor, 0))} color="#4A90D9" borderColor="#4A90D9" />
-              <MetricCard label="FECHADO NO PERÍODO" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" />
-            </div>
-
-            {/* ALERTAS RÁPIDOS */}
-            {tarefasUrgentes.length > 0 && (
-              <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <span style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>⚠️ {tarefasUrgentes.length} tarefa{tarefasUrgentes.length > 1 ? 's' : ''} urgente{tarefasUrgentes.length > 1 ? 's' : ''}</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: 13, marginLeft: 10 }}>{tarefasUrgentes.slice(0, 2).map(t => t.titulo).join(', ')}{tarefasUrgentes.length > 2 ? '...' : ''}</span>
-                </div>
-                <button className="btn-action" style={{ color: "#f87171", borderColor: "#f87171" }} onClick={() => setAba('tarefas')}>Ver Tarefas</button>
-              </div>
-            )}
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: "20px" }}>
-              <div className="metric-card" style={{ height: 320 }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📊 Funil de Negociação</div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[{ name: 'Criadas', qtd: pFiltradas.length }, { name: 'Enviadas', qtd: propostasEnviadas.length + propostasFechadas.length }, { name: 'Ganhas', qtd: propostasFechadas.length }]} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" horizontal={false} />
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} width={80} />
-                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Bar dataKey="qtd" fill="#4A90D9" radius={[0, 6, 6, 0]} barSize={28} label={{ position: 'right', fill: 'var(--text-secondary)', fontSize: 12 }} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="metric-card" style={{ height: 320 }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📉 Motivos de Perda</div>
-                {propostasPerdidas.length === 0 ? (
-                  <div style={{ height: "80%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", flexDirection: "column", gap: 8 }}>
-                    <span style={{ fontSize: 32 }}>🎉</span>
-                    <span>Nenhuma perda no período!</span>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={dadosMotivosPerda} cx="50%" cy="45%" innerRadius={55} outerRadius={90} paddingAngle={5} dataKey="value">
-                        {dadosMotivosPerda.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS_PIE[index % COLORS_PIE.length]} />)}
-                      </Pie>
-                      <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} itemStyle={{ color: '#fff' }} />
-                      <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-
-              <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
-                <ResponsiveContainer width="100%" height="85%">
-                  <AreaChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <defs>
-                      <linearGradient id="colorGanhas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorPerdidas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f87171" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
-                    <Area type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" fill="url(#colorGanhas)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" fill="url(#colorPerdidas)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="abertas" name="Em Aberto" stroke="#4A90D9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </>
+          <DashboardTab 
+            isAdmin={isAdmin} 
+            mrrAtivo={mrrAtivo} 
+            taxaConversao={taxaConversao} 
+            propostasFechadas={propostasFechadas} 
+            ticketMedio={ticketMedio} 
+            propostasPerdidas={propostasPerdidas} 
+            propostasAbertas={propostasAbertas} 
+            propostasEnviadas={propostasEnviadas} 
+            tarefasUrgentes={tarefasUrgentes} 
+            pFiltradas={pFiltradas} 
+            dadosMotivosPerda={dadosMotivosPerda} 
+            dadosPipelineMensal={dadosPipelineMensal} 
+            fmt={fmt} 
+            setAba={setAba} 
+            contratosAtivosCount={contratos.filter(c => c.status === 'Ativo').length} 
+          />
         )}
 
         {/* ─── ABA: PROPOSTAS (KANBAN) ─────────────────────────────────────────── */}
