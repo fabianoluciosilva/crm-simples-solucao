@@ -3,10 +3,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Sidebar } from "@/components/admin/layout/Sidebar";
-import { Header } from "@/components/admin/layout/Header";
-import { DashboardTab } from "@/components/admin/modules/DashboardTab";
-import { RelatoriosTab } from "@/components/admin/modules/RelatoriosTab";
+import {
+  PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line, Area, AreaChart
+} from 'recharts';
 
 // ─── TIPOS ─────────────────────────────────────────────────────────────────
 interface PropostaDB {
@@ -63,6 +63,19 @@ const calcDiasAtraso = (dataVenc: string): number => {
   return diff;
 };
 
+// ─── COMPONENTES REUTILIZÁVEIS ──────────────────────────────────────────────
+const MetricCard = ({ label, value, color, borderColor, icon, sub }: {
+  label: string; value: string | number; color?: string; borderColor?: string; icon?: string; sub?: string;
+}) => (
+  <div className="metric-card" style={{ borderTop: borderColor ? `3px solid ${borderColor}` : undefined }}>
+    <div style={{ fontSize: "12px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+      {icon && <span>{icon}</span>}{label}
+    </div>
+    <div style={{ fontSize: "28px", fontWeight: 800, color: color || "var(--text-primary)", marginTop: 8 }}>{value}</div>
+    {sub && <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: 4 }}>{sub}</div>}
+  </div>
+);
+
 const BadgeStatus = ({ status }: { status: string }) => {
   const cores: Record<string, { bg: string; color: string }> = {
     fechada: { bg: '#22c55e22', color: '#22c55e' },
@@ -100,6 +113,7 @@ function useDebounce<T>(value: T, delay: number): T {
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AdminPage() {
+  const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // --- ESTADOS GERAIS ---
@@ -209,7 +223,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { window.location.href = "/"; return; }
+      if (!session) { router.push("/"); return; }
       setSession(session);
       const emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
@@ -227,9 +241,9 @@ export default function AdminPage() {
       else setAba('tarefas');
       setCarregandoAuth(false);
     });
-  }, []);
+  }, [router]);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = "/"; };
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -366,6 +380,8 @@ export default function AdminPage() {
     }),
     [tarefasComAtraso]
   );
+
+  const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
 
   // ─── BASE DE CLIENTES AGRUPADA COM NOVO RELACIONAMENTO (ID) ───────────────
   const clientesAgrupados = useMemo(() => {
@@ -850,7 +866,12 @@ export default function AdminPage() {
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; }
+        .sidebar { width: 260px; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); position: fixed; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; z-index: 10; }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; }
+        .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; width: 100%; text-align: left; font-size: 13px; transition: all 0.15s; }
+        .nav-item:hover { background: rgba(74,144,217,0.07); color: var(--text-primary); }
+        .nav-item.active { background: rgba(74,144,217,0.12); color: #4A90D9; }
         .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .metric-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; padding: 20px; transition: box-shadow 0.2s; }
         .metric-card:hover { box-shadow: var(--shadow); }
@@ -978,63 +999,180 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* COMPONENTES EXTRAÍDOS: SIDEBAR */}
-      <Sidebar 
-        aba={aba} 
-        setAba={setAba} 
-        isAdmin={isAdmin} 
-        isComercial={isComercial} 
-        tarefasUrgentesCount={tarefasUrgentes.length} 
-        perfilAtivo={perfilAtivo} 
-        tema={tema} 
-        alternarTema={alternarTema} 
-        handleLogout={handleLogout} 
-        onOpenSearch={() => { setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }} 
-      />
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+        <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
+          <img src={tema === 'dark' ? '/Logo-negativo.webp' : '/icon.png'} style={{ maxHeight: "36px", borderRadius: "8px" }} alt="SSTI" />
+        </div>
+        <nav className="nav-menu">
+          {isComercial && <button className={`nav-item ${aba === 'dashboard' ? 'active' : ''}`} onClick={() => setAba('dashboard')}>📈 Dashboard</button>}
+          {isComercial && (
+            <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
+              🎯 Funil de Vendas
+            </button>
+          )}
+          <button className={`nav-item ${aba === 'clientes' ? 'active' : ''}`} onClick={() => setAba('clientes')}>👥 Base de Clientes</button>
+          {isAdmin && <button className={`nav-item ${aba === 'contratos' ? 'active' : ''}`} onClick={() => setAba('contratos')}>📄 Financeiro (MRR)</button>}
+          <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => setAba('tarefas')}>
+            ✅ Tarefas
+            {tarefasUrgentes.length > 0 && <span className="notificacao-badge">{tarefasUrgentes.length}</span>}
+          </button>
+          {isAdmin && <button className={`nav-item ${aba === 'relatorios' ? 'active' : ''}`} onClick={() => setAba('relatorios')}>📊 Relatórios</button>}
+          {isAdmin && <button className={`nav-item ${aba === 'templates' ? 'active' : ''}`} onClick={() => setAba('templates')}>📝 Templates</button>}
+          {isAdmin && <button className={`nav-item ${aba === 'usuarios' ? 'active' : ''}`} onClick={() => setAba('usuarios')}>🔐 Usuários</button>}
+          {isComercial && (
+            <button
+              className="nav-item"
+              style={{ color: "#4A90D9", marginTop: "16px", border: "1px dashed #4A90D9", borderRadius: 10 }}
+              onClick={() => router.push('/preco')}
+            >
+              ✚ Nova Proposta
+            </button>
+          )}
+        </nav>
+        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-light)" }}>
+          <button
+            onClick={() => { setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }}
+            style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-light)", borderRadius: 8, padding: "8px 12px", color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 12 }}
+          >
+            🔍 <span>Pesquisar...</span>
+            <kbd style={{ marginLeft: "auto", background: "var(--border-light)", padding: "1px 5px", borderRadius: 4, fontSize: 10 }}>⌘K</kbd>
+          </button>
+          <div style={{ fontSize: "11px", color: "#4A90D9", fontWeight: "bold", marginBottom: 2 }}>Simples Solução TI</div>
+          <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: 4 }}>{perfilAtivo.perfil} · {perfilAtivo.filial}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
+            <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
+          </div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.2</div>
+        </div>
+      </aside>
 
+      {/* MAIN */}
       <main className="main-content">
-        {/* COMPONENTES EXTRAÍDOS: HEADER */}
-        <Header 
-          aba={aba} 
-          carregando={carregando} 
-          filtroDias={filtroDias} 
-          setFiltroDias={setFiltroDias} 
-          vistaPropostas={vistaPropostas} 
-          setVistaPropostas={setVistaPropostas} 
-          carregarTudo={carregarTudo} 
-        />
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
+          <div>
+            <h1 style={{ fontSize: "22px", fontWeight: 800 }}>
+              {aba === 'dashboard' && '📈 Dashboard'}
+              {aba === 'propostas' && '🎯 Funil de Vendas'}
+              {aba === 'clientes' && '👥 Base de Clientes'}
+              {aba === 'contratos' && '📄 Financeiro (MRR)'}
+              {aba === 'tarefas' && '✅ Tarefas'}
+              {aba === 'relatorios' && '📊 Relatórios'}
+              {aba === 'templates' && '📝 Templates'}
+              {aba === 'usuarios' && '🔐 Usuários'}
+            </h1>
+            {carregando && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>A sincronizar dados...</div>}
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            {(aba === 'dashboard' || aba === 'propostas' || aba === 'relatorios') && (
+              <select value={filtroDias} onChange={e => setFiltroDias(Number(e.target.value))} style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-light)", borderRadius: "8px", padding: "8px 12px", fontSize: 13 }}>
+                <option value={30}>Últimos 30 dias</option>
+                <option value={90}>Últimos 3 Meses</option>
+                <option value={180}>Últimos 6 Meses</option>
+                <option value={0}>Sempre</option>
+              </select>
+            )}
+            {aba === 'propostas' && (
+              <div style={{ display: "flex", background: "var(--bg-card)", border: "1px solid var(--border-light)", borderRadius: 8, overflow: "hidden" }}>
+                <button onClick={() => setVistaPropostas('kanban')} style={{ background: vistaPropostas === 'kanban' ? 'rgba(74,144,217,0.2)' : 'transparent', color: vistaPropostas === 'kanban' ? '#4A90D9' : 'var(--text-secondary)', border: "none", padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Kanban</button>
+                <button onClick={() => setVistaPropostas('tabela')} style={{ background: vistaPropostas === 'tabela' ? 'rgba(74,144,217,0.2)' : 'transparent', color: vistaPropostas === 'tabela' ? '#4A90D9' : 'var(--text-secondary)', border: "none", padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Tabela</button>
+              </div>
+            )}
+            <button onClick={carregarTudo} className="btn-action" title="Recarregar dados">🔄</button>
+          </div>
+        </header>
 
-        {/* COMPONENTES EXTRAÍDOS: DASHBOARD */}
+        {/* ─── ABA: DASHBOARD ─────────────────────────────────────────────────── */}
         {aba === 'dashboard' && isComercial && (
-          <DashboardTab 
-            isAdmin={isAdmin} 
-            mrrAtivo={mrrAtivo} 
-            taxaConversao={taxaConversao} 
-            propostasFechadas={propostasFechadas} 
-            ticketMedio={ticketMedio} 
-            propostasPerdidas={propostasPerdidas} 
-            propostasAbertas={propostasAbertas} 
-            propostasEnviadas={propostasEnviadas} 
-            tarefasUrgentes={tarefasUrgentes} 
-            pFiltradas={pFiltradas} 
-            dadosMotivosPerda={dadosMotivosPerda} 
-            dadosPipelineMensal={dadosPipelineMensal} 
-            fmt={fmt} 
-            setAba={setAba} 
-            contratos={contratos} 
-          />
-        )}
+          <>
+            <div className="grid-metrics">
+              {isAdmin && <MetricCard label="MRR ATIVO" value={fmt(mrrAtivo)} borderColor="#22c55e" icon="💰" sub={`${contratos.filter(c => c.status === 'Ativo').length} contratos`} />}
+              <MetricCard label="TAXA DE CONVERSÃO" value={`${taxaConversao.toFixed(1)}%`} color="#4A90D9" borderColor="#4A90D9" icon="📈" />
+              <MetricCard label="GANHAS (VALOR)" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" icon="🏆" sub={`${propostasFechadas.length} negócios`} />
+              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} borderColor="#a855f7" icon="🎟️" />
+              <MetricCard label="PERDIDAS" value={propostasPerdidas.length} color="#f87171" borderColor="#f87171" icon="❌" />
+            </div>
 
-        {/* COMPONENTES EXTRAÍDOS: RELATÓRIOS */}
-        {aba === 'relatorios' && isAdmin && (
-          <RelatoriosTab 
-            clientesAgrupados={clientesAgrupados}
-            contratos={contratos}
-            mrrAtivo={mrrAtivo}
-            ticketMedio={ticketMedio}
-            dadosPipelineMensal={dadosPipelineMensal}
-            fmt={fmt}
-          />
+            <div className="grid-metrics" style={{ marginBottom: "24px" }}>
+              <MetricCard label="EM ABERTO (NOVAS)" value={fmt(propostasAbertas.reduce((a, b) => a + b.valor, 0))} borderColor="#64748b" />
+              <MetricCard label="EM NEGOCIAÇÃO" value={fmt(propostasEnviadas.reduce((a, b) => a + b.valor, 0))} color="#4A90D9" borderColor="#4A90D9" />
+              <MetricCard label="FECHADO NO PERÍODO" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" />
+            </div>
+
+            {/* ALERTAS RÁPIDOS */}
+            {tarefasUrgentes.length > 0 && (
+              <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <span style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>⚠️ {tarefasUrgentes.length} tarefa{tarefasUrgentes.length > 1 ? 's' : ''} urgente{tarefasUrgentes.length > 1 ? 's' : ''}</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: 13, marginLeft: 10 }}>{tarefasUrgentes.slice(0, 2).map(t => t.titulo).join(', ')}{tarefasUrgentes.length > 2 ? '...' : ''}</span>
+                </div>
+                <button className="btn-action" style={{ color: "#f87171", borderColor: "#f87171" }} onClick={() => setAba('tarefas')}>Ver Tarefas</button>
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: "20px" }}>
+              <div className="metric-card" style={{ height: 320 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📊 Funil de Negociação</div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[{ name: 'Criadas', qtd: pFiltradas.length }, { name: 'Enviadas', qtd: propostasEnviadas.length + propostasFechadas.length }, { name: 'Ganhas', qtd: propostasFechadas.length }]} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} width={80} />
+                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
+                    <Bar dataKey="qtd" fill="#4A90D9" radius={[0, 6, 6, 0]} barSize={28} label={{ position: 'right', fill: 'var(--text-secondary)', fontSize: 12 }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="metric-card" style={{ height: 320 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📉 Motivos de Perda</div>
+                {propostasPerdidas.length === 0 ? (
+                  <div style={{ height: "80%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", flexDirection: "column", gap: 8 }}>
+                    <span style={{ fontSize: 32 }}>🎉</span>
+                    <span>Nenhuma perda no período!</span>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={dadosMotivosPerda} cx="50%" cy="45%" innerRadius={55} outerRadius={90} paddingAngle={5} dataKey="value">
+                        {dadosMotivosPerda.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS_PIE[index % COLORS_PIE.length]} />)}
+                      </Pie>
+                      <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} itemStyle={{ color: '#fff' }} />
+                      <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              {/* NOVO: Evolução mensal */}
+              <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
+                <ResponsiveContainer width="100%" height="85%">
+                  <AreaChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="colorGanhas" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="colorPerdidas" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f87171" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
+                    <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
+                    <Area type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" fill="url(#colorGanhas)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" fill="url(#colorPerdidas)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="abertas" name="Em Aberto" stroke="#4A90D9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
         )}
 
         {/* ─── ABA: PROPOSTAS (KANBAN) ─────────────────────────────────────────── */}
@@ -1312,6 +1450,50 @@ export default function AdminPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </>
+        )}
+
+        {/* ─── ABA: RELATÓRIOS ─────────────────────────────────────────────────── */}
+        {aba === 'relatorios' && isAdmin && (
+          <>
+            <div className="grid-metrics" style={{ marginBottom: 24 }}>
+              <MetricCard label="CLIENTES ATIVOS" value={clientesAgrupados.filter(c => c.tipo === 'Cliente' && c.ativo !== false).length} icon="👥" />
+              <MetricCard label="LEADS NA BASE" value={clientesAgrupados.filter(c => c.tipo === 'Lead').length} color="#f59e0b" icon="🎯" />
+              <MetricCard label="CONTRATOS ATIVOS" value={contratos.filter(c => c.status === 'Ativo').length} color="#22c55e" icon="📄" />
+              <MetricCard label="CHURN (CANCELADOS)" value={contratos.filter(c => c.status === 'Cancelado').length} color="#f87171" icon="📉" />
+              <MetricCard label="MRR TOTAL" value={fmt(mrrAtivo)} color="#22c55e" icon="💰" />
+              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} icon="🎟️" />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+              <div className="metric-card" style={{ height: 360 }}>
+                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>MRR Atual vs Meta Trimestral</div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Valor recorrente por contratos ativos</div>
+                <ResponsiveContainer width="100%" height="80%">
+                  <BarChart data={[{ name: 'MRR Atual', Receita: mrrAtivo }, { name: 'Meta (+20%)', Receita: mrrAtivo * 1.2 }]} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
+                    <XAxis dataKey="name" stroke="var(--text-secondary)" tick={{ fontSize: 12 }} axisLine={false} />
+                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} formatter={(v: any) => fmt(v)} />
+                    <Bar dataKey="Receita" fill="#22c55e" radius={[6, 6, 0, 0]} barSize={60} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="metric-card" style={{ height: 360 }}>
+                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>Evolução Mensal de Propostas</div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Ganhas vs Perdidas nos últimos 6 meses</div>
+                <ResponsiveContainer width="100%" height="80%">
+                  <LineChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} />
+                    <Line type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" strokeWidth={2} dot={{ fill: '#f87171', r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </>
         )}
