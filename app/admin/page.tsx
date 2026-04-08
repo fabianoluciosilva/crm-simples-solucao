@@ -6,30 +6,26 @@ import { supabase } from "@/lib/supabase";
 import { Sidebar } from "@/components/admin/layout/Sidebar";
 import { Header } from "@/components/admin/layout/Header";
 import { DashboardTab } from "@/components/admin/modules/DashboardTab";
-import { MetricCard } from "@/components/admin/ui/MetricCard";
-import {
-  PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line, Area, AreaChart
-} from 'recharts';
+import { RelatoriosTab } from "@/components/admin/modules/RelatoriosTab";
 
 // ─── TIPOS ─────────────────────────────────────────────────────────────────
 interface PropostaDB {
   id: number; created_at: string; numero: string; cliente: string; contato: string;
   telefone?: string; email: string; valor: number; status: string; status_envio: string;
   filial?: string; dados: any; motivo_perda?: string; obs_perda?: string;
-  cliente_id?: string; 
+  cliente_id?: string;
 }
 interface TarefaDB {
   id: number; titulo: string; descricao: string; data_vencimento: string; status: string;
   usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string;
   data_conclusao?: string; created_at: string; prioridade?: 'Alta' | 'Normal' | 'Baixa';
-  cliente_id?: string; 
+  cliente_id?: string;
 }
 interface ContratoDB {
   id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string;
   valor_mensal: number; status: string; data_inicio: string; data_fim?: string;
   motivo_cancelamento?: string; filial?: string; created_at: string;
-  cliente_id?: string; 
+  cliente_id?: string;
 }
 interface TemplateDB {
   id: number; nome: string; tipo: string; conteudo: string; created_at: string; assunto?: string;
@@ -42,7 +38,7 @@ interface ClienteDB {
 interface InteracaoDB {
   id: number; cliente_nome: string; usuario_email: string; tipo: string;
   descricao: string; created_at: string;
-  cliente_id?: string; 
+  cliente_id?: string;
 }
 interface PerfilUsuario {
   id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string;
@@ -370,8 +366,6 @@ export default function AdminPage() {
     }),
     [tarefasComAtraso]
   );
-
-  const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
 
   // ─── BASE DE CLIENTES AGRUPADA COM NOVO RELACIONAMENTO (ID) ───────────────
   const clientesAgrupados = useMemo(() => {
@@ -856,12 +850,7 @@ export default function AdminPage() {
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; }
-        .sidebar { width: 260px; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); position: fixed; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; z-index: 10; }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; }
-        .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-        .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; width: 100%; text-align: left; font-size: 13px; transition: all 0.15s; }
-        .nav-item:hover { background: rgba(74,144,217,0.07); color: var(--text-primary); }
-        .nav-item.active { background: rgba(74,144,217,0.12); color: #4A90D9; }
         .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .metric-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; padding: 20px; transition: box-shadow 0.2s; }
         .metric-card:hover { box-shadow: var(--shadow); }
@@ -1032,7 +1021,19 @@ export default function AdminPage() {
             dadosPipelineMensal={dadosPipelineMensal} 
             fmt={fmt} 
             setAba={setAba} 
-            contratosAtivosCount={contratos.filter(c => c.status === 'Ativo').length} 
+            contratos={contratos} 
+          />
+        )}
+
+        {/* COMPONENTES EXTRAÍDOS: RELATÓRIOS */}
+        {aba === 'relatorios' && isAdmin && (
+          <RelatoriosTab 
+            clientesAgrupados={clientesAgrupados}
+            contratos={contratos}
+            mrrAtivo={mrrAtivo}
+            ticketMedio={ticketMedio}
+            dadosPipelineMensal={dadosPipelineMensal}
+            fmt={fmt}
           />
         )}
 
@@ -1311,50 +1312,6 @@ export default function AdminPage() {
                   )}
                 </tbody>
               </table>
-            </div>
-          </>
-        )}
-
-        {/* ─── ABA: RELATÓRIOS ─────────────────────────────────────────────────── */}
-        {aba === 'relatorios' && isAdmin && (
-          <>
-            <div className="grid-metrics" style={{ marginBottom: 24 }}>
-              <MetricCard label="CLIENTES ATIVOS" value={clientesAgrupados.filter(c => c.tipo === 'Cliente' && c.ativo !== false).length} icon="👥" />
-              <MetricCard label="LEADS NA BASE" value={clientesAgrupados.filter(c => c.tipo === 'Lead').length} color="#f59e0b" icon="🎯" />
-              <MetricCard label="CONTRATOS ATIVOS" value={contratos.filter(c => c.status === 'Ativo').length} color="#22c55e" icon="📄" />
-              <MetricCard label="CHURN (CANCELADOS)" value={contratos.filter(c => c.status === 'Cancelado').length} color="#f87171" icon="📉" />
-              <MetricCard label="MRR TOTAL" value={fmt(mrrAtivo)} color="#22c55e" icon="💰" />
-              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} icon="🎟️" />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              <div className="metric-card" style={{ height: 360 }}>
-                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>MRR Atual vs Meta Trimestral</div>
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Valor recorrente por contratos ativos</div>
-                <ResponsiveContainer width="100%" height="80%">
-                  <BarChart data={[{ name: 'MRR Atual', Receita: mrrAtivo }, { name: 'Meta (+20%)', Receita: mrrAtivo * 1.2 }]} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" stroke="var(--text-secondary)" tick={{ fontSize: 12 }} axisLine={false} />
-                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} formatter={(v: any) => fmt(v)} />
-                    <Bar dataKey="Receita" fill="#22c55e" radius={[6, 6, 0, 0]} barSize={60} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="metric-card" style={{ height: 360 }}>
-                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>Evolução Mensal de Propostas</div>
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Ganhas vs Perdidas nos últimos 6 meses</div>
-                <ResponsiveContainer width="100%" height="80%">
-                  <LineChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} />
-                    <Line type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" strokeWidth={2} dot={{ fill: '#f87171', r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
             </div>
           </>
         )}
