@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 
 interface PropostaDB { id: number; created_at: string; numero: string; cliente: string; contato: string; telefone?: string; email: string; valor: number; status: string; status_envio: string; filial?: string; dados: any; motivo_perda?: string; obs_perda?: string; }
 interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; }
@@ -121,7 +121,17 @@ export default function AdminPage() {
     
     if (p.data) setPropostas(p.data); if (l.data) setLeads(l.data); if (c.data) setContratos(c.data);
     if (tpl.data) setTemplates(tpl.data); if (cliBase.data) setClientesBase(cliBase.data); if (t.data) setTarefas(t.data);
-    if (ints.data) setInteracoes(ints.data); if (perfis.data) setUsuarios(perfis.data);
+    if (ints.data) setInteracoes(ints.data); 
+    
+    // Proteção: Garante que pelo menos o seu próprio utilizador aparece caso o banco de dados bloqueie a lista
+    if (perfis.data) {
+      let listaPerfis = [...perfis.data];
+      if (!listaPerfis.find(u => u.email === perfilAtivo.email)) {
+        listaPerfis.push(perfilAtivo);
+      }
+      setUsuarios(listaPerfis);
+    }
+    
     setCarregando(false);
   };
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
@@ -132,7 +142,6 @@ export default function AdminPage() {
   const pFiltradas = useMemo(() => {
     let filtradas = propostas;
     if (filtroDias > 0) { const limite = new Date(); limite.setDate(limite.getDate() - filtroDias); filtradas = filtradas.filter(p => new Date(p.created_at) >= limite); }
-    // Oculta propostas de clientes desativados dos cálculos globais
     return filtradas.filter(p => !clientesDesativadosNomes.includes(p.cliente.toUpperCase()));
   }, [propostas, filtroDias, clientesDesativadosNomes]);
 
@@ -142,8 +151,6 @@ export default function AdminPage() {
   const propostasEnviadas = pFiltradas.filter(p => p.status === 'enviada' || p.status === 'negociacao');
   
   const taxaConversao = pFiltradas.length > 0 ? (propostasFechadas.length / pFiltradas.length) * 100 : 0;
-  
-  // MRR Ativo apenas de clientes que não estão desativados
   const mrrAtivo = contratos.filter(c => c.status === 'Ativo' && !clientesDesativadosNomes.includes(c.cliente_nome.toUpperCase())).reduce((acc, c) => acc + Number(c.valor_mensal), 0);
 
   const dadosMotivosPerda = useMemo(() => {
@@ -154,29 +161,21 @@ export default function AdminPage() {
 
   const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
 
-  // Agrupamento Geral (O Cérebro da Base de Clientes)
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
     
-    // 1. Base Oficial
     clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) }); });
-    
-    // 2. Propostas
     propostas.forEach(p => {
       const key = p.cliente.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).propostas.push(p);
     });
-    
-    // 3. Contratos
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).contratos.push(c);
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
-    
-    // 4. Leads do Site
     leads.forEach(l => {
       const key = l.empresa.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
@@ -186,9 +185,7 @@ export default function AdminPage() {
 
     let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
     
-    // Ocultar desativados se a chave estiver desligada
     if (!mostrarDesativados) lista = lista.filter(c => c.ativo !== false);
-    
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
     if (buscaCliente) {
       const b = buscaCliente.toLowerCase();
@@ -197,13 +194,11 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, buscaCliente, interacoes, mostrarDesativados]);
 
-  // Função para Desativar/Ativar Cliente
   const alternarStatusCliente = async (cliente: any) => {
     const novoStatus = cliente.ativo === false ? true : false;
     if (cliente.isOficial) {
       await supabase.from('clientes').update({ ativo: novoStatus }).eq('id', cliente.id);
     } else {
-      // Se não era oficial e estamos a desativar, temos de criar a ficha e marcá-la como desativada
       await supabase.from('clientes').insert([{ nome: cliente.nome, email: cliente.email, telefone: cliente.telefone, whatsapp: cliente.whatsapp, tipo: cliente.tipo, filial: perfilAtivo.filial, ativo: novoStatus }]);
     }
     showToast(`O registo foi ${novoStatus ? 'ativado' : 'desativado'} com sucesso!`, "info");
@@ -218,7 +213,7 @@ export default function AdminPage() {
   // ─── COMUNICADOS EM MASSA (EMAIL / FILA WPP) ─────────────────────────────
   const dispararEmailsMassa = async () => {
     let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
-    alvos = alvos.filter(c => c.email && c.email.includes("@") && c.ativo !== false); // Não envia para desativados
+    alvos = alvos.filter(c => c.email && c.email.includes("@") && c.ativo !== false);
     
     if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado para este público.", "erro");
     if (!confirm(`Deseja disparar este e-mail para ${alvos.length} contactos?`)) return;
@@ -374,7 +369,6 @@ export default function AdminPage() {
 
   const salvarClienteBase = async (e: React.FormEvent) => { 
     e.preventDefault(); 
-    // Magia para converter um Lead virtual num Cliente Oficial: se for um Lead não-oficial, ignoramos o ID virtual dele e forçamos um insert
     if (formCliente.id) {
       await supabase.from('clientes').update({ nome: formCliente.nome, email: formCliente.email, telefone: formCliente.telefone, whatsapp: formCliente.whatsapp, documento: formCliente.documento, tipo: formCliente.tipo, codigo: formCliente.codigo, filial: formCliente.filial }).eq('id', formCliente.id);
     } else {
@@ -396,7 +390,6 @@ export default function AdminPage() {
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
 
-  // ─── GESTÃO DE UTILIZADORES (ADMIN) ───────────────────────────────────────
   const salvarUsuario = async (e: React.FormEvent) => { e.preventDefault(); if (formUsuario.id) { await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial }).eq('id', formUsuario.id); } else { return showToast("Para novos utilizadores, eles devem fazer login no sistema 1 vez primeiro.", "erro"); } showToast("Permissões de utilizador atualizadas!", "sucesso"); setModalUsuario(false); carregarTudo(); };
   const excluirUsuario = async (id?: string, email?: string) => { if (!id) return; if (email === session?.user?.email) return showToast("Não pode excluir o seu próprio utilizador.", "erro"); if (confirm(`Pretende remover todas as permissões de acesso de ${email}?`)) { await supabase.from('perfis').delete().eq('id', id); showToast("Acesso do utilizador removido.", "info"); carregarTudo(); } };
 
@@ -411,14 +404,14 @@ export default function AdminPage() {
       <aside className="sidebar">
         <div style={{padding:"30px",textAlign:"center"}}><img src={tema==='dark'?'/Logo-negativo.webp':'/icon.png'} style={{maxHeight:"40px", borderRadius: "8px"}}/></div>
         <nav className="nav-menu">
-          {isComercial && <button className={`nav-item ${aba==='dashboard'?'active':''}`} onClick={()=>setAba('dashboard')}>📈 Dashboard Global</button>}
+          {isComercial && <button className={`nav-item ${aba==='dashboard'?'active':''}`} onClick={()=>setAba('dashboard')}>📈 Dashboard</button>}
           {isComercial && <button className={`nav-item ${aba==='propostas'?'active':''}`} onClick={()=>setAba('propostas')}>🎯 Funil de Vendas</button>}
           <button className={`nav-item ${aba==='clientes'?'active':''}`} onClick={()=>setAba('clientes')}>👥 Base de Clientes</button>
           {isAdmin && <button className={`nav-item ${aba==='contratos'?'active':''}`} onClick={()=>setAba('contratos')}>📄 Financeiro (MRR)</button>}
           <button className={`nav-item ${aba==='tarefas'?'active':''}`} onClick={()=>setAba('tarefas')}>✅ Minhas Tarefas</button>
-          {isAdmin && <button className={`nav-item ${aba==='relatorios'?'active':''}`} onClick={()=>setAba('relatorios')}>📊 Relatórios Avançados</button>}
+          {isAdmin && <button className={`nav-item ${aba==='relatorios'?'active':''}`} onClick={()=>setAba('relatorios')}>📊 Relatórios</button>}
           {isAdmin && <button className={`nav-item ${aba==='templates'?'active':''}`} onClick={()=>setAba('templates')}>📝 Templates</button>}
-          {isAdmin && <button className={`nav-item ${aba==='usuarios'?'active':''}`} onClick={()=>setAba('usuarios')}>👥 Gestão de Equipa</button>}
+          {isAdmin && <button className={`nav-item ${aba==='usuarios'?'active':''}`} onClick={()=>setAba('usuarios')}>👥 Usuários</button>}
           {isComercial && <button className="nav-item" style={{color:"#4A90D9",marginTop:"20px",border:"1px dashed #4A90D9"}} onClick={()=>router.push('/preco')}>+ Nova Proposta</button>}
         </nav>
         <div style={{padding:"20px",borderTop:"1px solid var(--border-light)", textAlign:"center"}}>
@@ -501,7 +494,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* 2. FUNIL DE VENDAS (KANBAN OU TABELA) */}
         {aba === 'propostas' && isComercial && vistaPropostas === 'kanban' && (
           <div className="kanban-board">
             <div className="kanban-col" onDragOver={handleDragOver} onDrop={(e)=>handleDropStatus(e, 'aberta')}>
@@ -667,8 +659,8 @@ export default function AdminPage() {
         {aba === 'relatorios' && isAdmin && (
           <>
             <div className="grid-metrics" style={{marginBottom: 30}}>
-              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>TOTAL DE CLIENTES REGISTADOS</div><div style={{fontSize:"28px",fontWeight:800}}>{clientesAgrupados.filter(c => c.tipo === 'Cliente').length}</div></div>
-              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>TOTAL DE LEADS CAPTADOS</div><div style={{fontSize:"28px",fontWeight:800,color:"#f59e0b"}}>{clientesAgrupados.filter(c => c.tipo === 'Lead').length}</div></div>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>TOTAL DE CLIENTES ATIVOS</div><div style={{fontSize:"28px",fontWeight:800}}>{clientesAgrupados.filter(c => c.tipo === 'Cliente' && c.ativo !== false).length}</div></div>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>TOTAL DE LEADS NA BASE</div><div style={{fontSize:"28px",fontWeight:800,color:"#f59e0b"}}>{clientesAgrupados.filter(c => c.tipo === 'Lead').length}</div></div>
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>CONTRATOS ATIVOS</div><div style={{fontSize:"28px",fontWeight:800,color:"#22c55e"}}>{contratos.filter(c => c.status === 'Ativo').length}</div></div>
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>CHURN (CONTRATOS CANCELADOS)</div><div style={{fontSize:"28px",fontWeight:800,color:"#f87171"}}>{contratos.filter(c => c.status === 'Cancelado').length}</div></div>
             </div>
@@ -676,13 +668,11 @@ export default function AdminPage() {
             <div style={{display: "grid", gridTemplateColumns: "1fr", gap: "20px"}}>
               <div className="metric-card" style={{height: 400}}>
                 <div style={{fontSize:"16px", fontWeight:700, color:"var(--text-primary)", marginBottom: 10}}>Crescimento de Receita (MRR Ativo) vs Meta</div>
-                <div style={{fontSize:"13px", color:"var(--text-secondary)", marginBottom: 20}}>Acompanhamento do valor recorrente gerado por novos contratos ao longo do tempo.</div>
+                <div style={{fontSize:"13px", color:"var(--text-secondary)", marginBottom: 20}}>Acompanhamento do valor recorrente gerado por contratos ao longo do tempo.</div>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={[
-                    { name: 'Jan', Receita: mrrAtivo * 0.6 },
-                    { name: 'Fev', Receita: mrrAtivo * 0.7 },
-                    { name: 'Mar', Receita: mrrAtivo * 0.85 },
-                    { name: 'Abr', Receita: mrrAtivo }
+                    { name: 'Mês Atual', Receita: mrrAtivo },
+                    { name: 'Meta Trimestre', Receita: mrrAtivo * 1.2 }
                   ]} margin={{top: 5, right: 30, left: 20, bottom: 5}}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
                     <XAxis dataKey="name" stroke="var(--text-secondary)" />
@@ -720,27 +710,6 @@ export default function AdminPage() {
               </table>
             </div>
           </>
-        )}
-        
-        {aba === 'leads' && isComercial && (
-          <div className="table-wrapper">
-            <table>
-              <thead><tr><th>Data de Entrada</th><th>Empresa Solicitante</th><th>Interesse no Site</th><th>Ações de Venda</th></tr></thead>
-              <tbody>
-                {leads.map(l => (
-                  <tr key={l.id}>
-                    <td>{new Date(l.created_at).toLocaleDateString('pt-BR')}</td>
-                    <td><strong>{l.empresa}</strong><br/>{l.nome}</td>
-                    <td>{l.produto}</td>
-                    <td>
-                      <button className="btn-action" onClick={()=>enviarWhatsAppDaFila({nome: l.nome, whatsapp: l.telefone} as any)}>Chamar no Wpp</button>
-                      <button className="btn-action" onClick={()=>abrirNovaTarefa(`Contato Lead: ${l.empresa}`, l.id)}>+ Agendar Tarefa</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         )}
 
         {aba === 'templates' && isAdmin && (
@@ -799,10 +768,7 @@ export default function AdminPage() {
         <div className="modal-overlay" onClick={() => setModalEnvioProposta({ativo: false, tipo: 'Email', prop: null, numeroWpp: ''})}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>Enviar {modalEnvioProposta.tipo}</h2>
-            <p style={{fontSize: 13, color: "var(--text-secondary)", marginBottom: 15}}>
-              Cliente: <strong>{modalEnvioProposta.prop.cliente}</strong>
-            </p>
-            
+            <p style={{fontSize: 13, color: "var(--text-secondary)", marginBottom: 15}}>Cliente: <strong>{modalEnvioProposta.prop.cliente}</strong></p>
             <form onSubmit={confirmarEnvioMensagem} style={{display: "flex", flexDirection: "column", gap: 15}}>
               {modalEnvioProposta.tipo === 'WhatsApp' && (
                 <div>
@@ -810,128 +776,75 @@ export default function AdminPage() {
                   <input required className="input-modal" value={modalEnvioProposta.numeroWpp} onChange={e => setModalEnvioProposta({...modalEnvioProposta, numeroWpp: e.target.value})} placeholder="Ex: 5521999999999" />
                 </div>
               )}
-              
               <div>
                 <label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>Escolha o Template</label>
                 <select className="input-modal" value={formEnvioMensagem.templateId} onChange={e => setFormEnvioMensagem({...formEnvioMensagem, templateId: e.target.value})}>
                   <option value="" disabled>Selecione um template...</option>
-                  {templates.filter(t => t.tipo === modalEnvioProposta.tipo).map(t => (
-                    <option key={t.id} value={t.id.toString()}>{t.nome}</option>
-                  ))}
+                  {templates.filter(t => t.tipo === modalEnvioProposta.tipo).map(t => ( <option key={t.id} value={t.id.toString()}>{t.nome}</option> ))}
                   <option value="custom">✍️ Escrever mensagem personalizada...</option>
                 </select>
               </div>
-
               {formEnvioMensagem.templateId && modalEnvioProposta.tipo === 'Email' && (
-                <div>
-                  <label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>Assunto do E-mail</label>
-                  <input required className="input-modal" value={formEnvioMensagem.assunto} onChange={e => setFormEnvioMensagem({...formEnvioMensagem, assunto: e.target.value})} placeholder="Assunto do e-mail..." />
-                </div>
+                <div><label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>Assunto do E-mail</label><input required className="input-modal" value={formEnvioMensagem.assunto} onChange={e => setFormEnvioMensagem({...formEnvioMensagem, assunto: e.target.value})} placeholder="Assunto do e-mail..." /></div>
               )}
-
               {formEnvioMensagem.templateId && (
-                <div>
-                  <label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>
-                    Conteúdo da Mensagem (Pode editar antes de enviar)
-                  </label>
-                  <textarea 
-                    required 
-                    className="input-modal" 
-                    rows={8} 
-                    value={formEnvioMensagem.texto} 
-                    onChange={e => setFormEnvioMensagem({...formEnvioMensagem, texto: e.target.value})} 
-                    placeholder="Digite a mensagem aqui..."
-                  />
-                </div>
+                <div><label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>Conteúdo da Mensagem (Pode editar antes de enviar)</label><textarea required className="input-modal" rows={8} value={formEnvioMensagem.texto} onChange={e => setFormEnvioMensagem({...formEnvioMensagem, texto: e.target.value})} placeholder="Digite a mensagem aqui..." /></div>
               )}
-
-              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
-                <button type="button" onClick={() => setModalEnvioProposta({ativo: false, tipo: 'Email', prop: null, numeroWpp: ''})} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" disabled={!formEnvioMensagem.templateId || !formEnvioMensagem.texto.trim() || enviando === modalEnvioProposta.prop.id} className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>
-                  {enviando === modalEnvioProposta.prop.id ? 'A Enviar...' : `Enviar ${modalEnvioProposta.tipo}`}
-                </button>
-              </div>
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalEnvioProposta({ativo: false, tipo: 'Email', prop: null, numeroWpp: ''})} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" disabled={!formEnvioMensagem.templateId || !formEnvioMensagem.texto.trim() || enviando === modalEnvioProposta.prop.id} className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>{enviando === modalEnvioProposta.prop.id ? 'A Enviar...' : `Enviar ${modalEnvioProposta.tipo}`}</button></div>
             </form>
           </div>
         </div>
       )}
 
-      {/* A NOVA FICHA DO CLIENTE (DIÁRIO E INFORMAÇÕES) */}
+      {/* A FICHA DO CLIENTE (DIÁRIO E INFORMAÇÕES) */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={()=>setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e=>e.stopPropagation()} style={{maxWidth: 800, display: "flex", gap: 30}}>
-            
             <div style={{flex: 1}}>
               <h2>{clienteDetalhe.nome} <span className="badge-status" style={{background: clienteDetalhe.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : clienteDetalhe.tipo==='Parceiro' ? 'rgba(168,85,247,0.1)' : 'rgba(245,158,11,0.1)', color: clienteDetalhe.tipo==='Cliente' ? '#22c55e' : clienteDetalhe.tipo==='Parceiro' ? '#a855f7' : '#f59e0b', marginLeft: 10}}>{clienteDetalhe.tipo}</span></h2>
-              <div style={{fontSize:13, color:"var(--text-secondary)", marginTop:10, marginBottom: 20}}>
-                <div>📞 {clienteDetalhe.telefone || clienteDetalhe.contato} | 💬 {clienteDetalhe.whatsapp}</div>
-                <div>📧 {clienteDetalhe.email}</div>
-                <div style={{color: "#f87171", fontWeight: "bold", marginTop: 5}}>🔥 Tracking Score: {clienteDetalhe.score || 0} pontos</div>
-              </div>
+              <div style={{fontSize:13, color:"var(--text-secondary)", marginTop:10, marginBottom: 20}}><div>📞 {clienteDetalhe.telefone || clienteDetalhe.contato} | 💬 {clienteDetalhe.whatsapp}</div><div>📧 {clienteDetalhe.email}</div><div style={{color: "#f87171", fontWeight: "bold", marginTop: 5}}>🔥 Tracking Score: {clienteDetalhe.score || 0} pontos</div></div>
               <hr style={{margin:"15px 0", opacity:0.1}}/>
-
               {isComercial && <>
                 <h4 style={{color:"#4A90D9"}}>PROPOSTAS</h4>
                 {clienteDetalhe.propostas.length === 0 && <div style={{fontSize:12, color:"var(--text-tertiary)"}}>Nenhuma proposta</div>}
                 {clienteDetalhe.propostas.map((p:any)=><div key={p.id} style={{fontSize:"13px",padding:"5px 0"}}>{p.numero} - {fmt(p.valor)} <span style={{color: p.status==='perdida'?'#f87171':'inherit'}}>({p.status})</span></div>)}
-                
-                {isAdmin && <>
-                  <h4 style={{marginTop:"15px", color:"#4A90D9"}}>CONTRATOS ATIVOS</h4>
-                  {clienteDetalhe.contratos.length === 0 && <div style={{fontSize:12, color:"var(--text-tertiary)"}}>Sem contrato</div>}
-                  {clienteDetalhe.contratos.map((c:any)=><div key={c.id} style={{fontSize:"13px",padding:"5px 0"}}>{fmt(c.valor_mensal)} - {c.status}</div>)}
-                </>}
+                {isAdmin && <><h4 style={{marginTop:"15px", color:"#4A90D9"}}>CONTRATOS ATIVOS</h4>{clienteDetalhe.contratos.length === 0 && <div style={{fontSize:12, color:"var(--text-tertiary)"}}>Sem contrato</div>}{clienteDetalhe.contratos.map((c:any)=><div key={c.id} style={{fontSize:"13px",padding:"5px 0"}}>{fmt(c.valor_mensal)} - {c.status}</div>)}</>}
               </>}
               <h4 style={{marginTop:"15px", color:"#4A90D9"}}>CHAMADOS / TAREFAS</h4>
               {clienteDetalhe.tarefas.filter((t:any)=>t.status!=='Concluído').length === 0 && <div style={{fontSize:12, color:"var(--text-tertiary)"}}>Nenhuma pendência</div>}
               {clienteDetalhe.tarefas.filter((t:any)=>t.status!=='Concluído').map((t:any)=><div key={t.id} style={{fontSize:"13px",padding:"5px 0"}}>{t.titulo} - {new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</div>)}
             </div>
-
             <div style={{flex: 1.2, background: "var(--bg-main)", borderRadius: 12, padding: 20, display: "flex", flexDirection: "column"}}>
-              <h4 style={{marginBottom: 15}}>Diário de Bordo (Interações)</h4>
-              
+              <h4 style={{marginBottom: 15}}>Diário de Bordo</h4>
               <div style={{flex: 1, overflowY: "auto", marginBottom: 20, paddingRight: 10}}>
                 {clienteDetalhe.interacoes.length === 0 && <div style={{fontSize:12, color:"var(--text-tertiary)", textAlign: "center", marginTop: 40}}>Nenhuma interação registada.</div>}
                 {clienteDetalhe.interacoes.map((i:any) => (
                   <div key={i.id} style={{borderLeft: "2px solid #4A90D9", paddingLeft: 12, marginLeft: 5, marginBottom: 20, position: "relative"}}>
                     <div style={{position: "absolute", left: -6, top: 0, width: 10, height: 10, borderRadius: 10, background: "#4A90D9"}}></div>
-                    <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}>
-                      <span style={{fontSize: 11, fontWeight: "bold", color: "#4A90D9", textTransform: "uppercase"}}>{i.tipo}</span>
-                      <span style={{fontSize: 10, color: "var(--text-tertiary)"}}>{new Date(i.created_at).toLocaleDateString('pt-BR')}</span>
-                    </div>
-                    <div style={{fontSize: 13, color: "var(--text-primary)", marginTop: 4, whiteSpace: "pre-wrap"}}>{i.descricao}</div>
-                    <div style={{fontSize: 10, color: "var(--text-tertiary)", marginTop: 4, textAlign: "right"}}>- {i.usuario_email.split('@')[0]}</div>
+                    <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}><span style={{fontSize: 11, fontWeight: "bold", color: "#4A90D9", textTransform: "uppercase"}}>{i.tipo}</span><span style={{fontSize: 10, color: "var(--text-tertiary)"}}>{new Date(i.created_at).toLocaleDateString('pt-BR')}</span></div>
+                    <div style={{fontSize: 13, color: "var(--text-primary)", marginTop: 4, whiteSpace: "pre-wrap"}}>{i.descricao}</div><div style={{fontSize: 10, color: "var(--text-tertiary)", marginTop: 4, textAlign: "right"}}>- {i.usuario_email.split('@')[0]}</div>
                   </div>
                 ))}
               </div>
-
               <form onSubmit={salvarInteracao} style={{display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-light)", paddingTop: 15}}>
                 <div style={{display: "flex", gap: 10}}>
-                  <select className="input-modal" style={{width: 120, padding: 8}} value={formInteracao.tipo} onChange={e=>setFormInteracao({...formInteracao, tipo: e.target.value})}>
-                    <option value="Nota">✏️ Nota</option><option value="Ligação">📞 Ligação</option><option value="Reunião">🤝 Reunião</option><option value="WhatsApp">💬 Wpp</option>
-                  </select>
+                  <select className="input-modal" style={{width: 120, padding: 8}} value={formInteracao.tipo} onChange={e=>setFormInteracao({...formInteracao, tipo: e.target.value})}><option value="Nota">✏️ Nota</option><option value="Ligação">📞 Ligação</option><option value="Reunião">🤝 Reunião</option><option value="WhatsApp">💬 Wpp</option></select>
                   <textarea required className="input-modal" style={{flex: 1, padding: 8}} rows={2} placeholder="Registe o que foi conversado..." value={formInteracao.descricao} onChange={e=>setFormInteracao({...formInteracao, descricao: e.target.value})} />
                 </div>
-                <button type="submit" className="btn-action" style={{background: "#4A90D9", color: "#fff", border: "none"}}>Gravar no Histórico e Voltar</button>
+                <button type="submit" className="btn-action" style={{background: "#4A90D9", color: "#fff", border: "none"}}>Gravar e Voltar</button>
               </form>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* OUTROS MODAIS MANTIDOS */}
+      {/* OUTROS MODAIS */}
       {modalInfoNovoUser && (
         <div className="modal-overlay" onClick={() => setModalInfoNovoUser(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>Adicionar Novo Membro</h2>
-            <p style={{fontSize: 14, color: "var(--text-secondary)", marginTop: 15, lineHeight: 1.6}}>
-              Por motivos de segurança, não é possível criar uma senha provisória para terceiros.<br/><br/>
-              Para adicionar um membro da sua equipa, peça-lhe para <strong>aceder ao link do CRM</strong> e fazer login com a conta Google dele.<br/><br/>
-              Assim que ele fizer o primeiro login, o nome dele aparecerá nesta lista e você poderá clicar em <strong>Editar Acesso</strong> para lhe dar permissões de Comercial, Suporte ou Admin.
-            </p>
-            <div style={{marginTop: 20}}>
-              <button onClick={() => setModalInfoNovoUser(false)} className="btn-action" style={{width: "100%", background: "#4A90D9", color: "#fff", borderColor: "#4A90D9"}}>Entendido</button>
-            </div>
+            <p style={{fontSize: 14, color: "var(--text-secondary)", marginTop: 15, lineHeight: 1.6}}>Por motivos de segurança, não é possível criar uma senha provisória.<br/><br/>Para adicionar um membro, peça-lhe para <strong>aceder ao link do CRM</strong> e fazer login com a conta Google dele.<br/><br/>Assim que ele fizer o primeiro login, o nome dele aparecerá nesta lista e você poderá clicar em <strong>Editar Acesso</strong> para lhe dar permissões.</p>
+            <div style={{marginTop: 20}}><button onClick={() => setModalInfoNovoUser(false)} className="btn-action" style={{width: "100%", background: "#4A90D9", color: "#fff", borderColor: "#4A90D9"}}>Entendido</button></div>
           </div>
         </div>
       )}
@@ -942,16 +855,9 @@ export default function AdminPage() {
             <h2>Definir Permissões</h2>
             <form onSubmit={salvarUsuario} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
               <input disabled className="input-modal" value={formUsuario.email} style={{opacity: 0.7}} />
-              <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({...formUsuario, perfil: e.target.value as any})}>
-                <option value="Admin">Admin (Acesso Total e Financeiro)</option>
-                <option value="Comercial">Comercial (Propostas e Clientes)</option>
-                <option value="Suporte">Suporte (Apenas Tarefas)</option>
-              </select>
+              <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({...formUsuario, perfil: e.target.value as any})}><option value="Admin">Admin (Acesso Total e Financeiro)</option><option value="Comercial">Comercial (Propostas e Clientes)</option><option value="Suporte">Suporte (Apenas Tarefas)</option></select>
               <input required className="input-modal" value={formUsuario.filial} onChange={e => setFormUsuario({...formUsuario, filial: e.target.value})} placeholder="Filial (Ex: Matriz, São Paulo...)" />
-              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
-                <button type="button" onClick={() => setModalUsuario(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Salvar Acessos</button>
-              </div>
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalUsuario(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Salvar Acessos</button></div>
             </form>
           </div>
         </div>
@@ -963,14 +869,9 @@ export default function AdminPage() {
             <h2>Análise de Lead Perdido</h2>
             <p style={{fontSize:"13px",color:"var(--text-secondary)",marginBottom:"20px"}}>Por favor, informe o motivo da perda desta proposta.</p>
             <form onSubmit={confirmarPerda} style={{display:"flex",flexDirection:"column",gap:"15px"}}>
-              <select required className="input-modal" value={formPerda.motivo} onChange={e => setFormPerda({...formPerda, motivo: e.target.value})}>
-                <option value="" disabled>Selecione um motivo...</option><option value="Preço">Preço alto</option><option value="Sem interesse">Sem interesse no momento</option><option value="Concorrente">Fechou com concorrente</option><option value="Sem retorno">Cliente não deu mais retorno</option>
-              </select>
+              <select required className="input-modal" value={formPerda.motivo} onChange={e => setFormPerda({...formPerda, motivo: e.target.value})}><option value="" disabled>Selecione um motivo...</option><option value="Preço">Preço alto</option><option value="Sem interesse">Sem interesse no momento</option><option value="Concorrente">Fechou com concorrente</option><option value="Sem retorno">Cliente não deu mais retorno</option></select>
               <textarea className="input-modal" rows={3} value={formPerda.obs} onChange={e => setFormPerda({...formPerda, obs: e.target.value})} placeholder="Observações opcionais..." />
-              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
-                <button type="button" onClick={() => setModalPerda(false)} className="btn-action" style={{flex:1}}>Cancelar</button>
-                <button type="submit" disabled={!formPerda.motivo} className="btn-action" style={{flex:1,background:"#f87171",color:"#fff",borderColor:"#f87171", opacity: !formPerda.motivo ? 0.5 : 1}}>Registar Perda</button>
-              </div>
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalPerda(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" disabled={!formPerda.motivo} className="btn-action" style={{flex:1,background:"#f87171",color:"#fff",borderColor:"#f87171", opacity: !formPerda.motivo ? 0.5 : 1}}>Registar Perda</button></div>
             </form>
           </div>
         </div>
@@ -981,10 +882,7 @@ export default function AdminPage() {
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>📢 Comunicado em Massa</h2>
             {progressoEmail.ativo ? (
-              <div style={{ marginTop: 20, textAlign: "center" }}>
-                <p style={{ marginBottom: 10 }}>A enviar e-mails... ({progressoEmail.enviado} de {progressoEmail.total})</p>
-                <div style={{ width: "100%", background: "var(--bg-main)", borderRadius: 10, height: 10, overflow: "hidden" }}><div style={{ width: `${(progressoEmail.enviado / progressoEmail.total) * 100}%`, background: "#4A90D9", height: "100%", transition: "width 0.3s" }}></div></div>
-              </div>
+              <div style={{ marginTop: 20, textAlign: "center" }}><p style={{ marginBottom: 10 }}>A enviar e-mails... ({progressoEmail.enviado} de {progressoEmail.total})</p><div style={{ width: "100%", background: "var(--bg-main)", borderRadius: 10, height: 10, overflow: "hidden" }}><div style={{ width: `${(progressoEmail.enviado / progressoEmail.total) * 100}%`, background: "#4A90D9", height: "100%", transition: "width 0.3s" }}></div></div></div>
             ) : (
               <form style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
                 <select className="input-modal" value={formComunicado.publico} onChange={e => setFormComunicado({...formComunicado, publico: e.target.value})}><option value="Todos">Todos (Clientes, Leads e Parceiros)</option><option value="Cliente">Apenas Clientes Ativos</option><option value="Lead">Apenas Leads</option><option value="Parceiro">Apenas Parceiros</option></select>
@@ -1008,55 +906,6 @@ export default function AdminPage() {
               <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.telefone} onChange={e => setFormCliente({...formCliente, telefone: e.target.value})} placeholder="Telefone Fixo..." /><input className="input-modal" style={{flex: 1}} value={formCliente.whatsapp} onChange={e => setFormCliente({...formCliente, whatsapp: e.target.value})} placeholder="WhatsApp (com DDD)..." /></div>
               <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.documento} onChange={e => setFormCliente({...formCliente, documento: e.target.value})} placeholder="CNPJ / CPF..." />{isAdmin && <input className="input-modal" style={{flex: 1}} value={formCliente.filial} onChange={e => setFormCliente({...formCliente, filial: e.target.value})} placeholder="Filial (Ex: Matriz)..." />}</div>
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Registo</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {modalTarefa && (
-        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formTarefa.id ? "Editar Tarefa" : "Nova Tarefa"}</h2>
-            <form onSubmit={salvarTarefa} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
-              <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({...formTarefa, titulo: e.target.value})} placeholder="Título da tarefa..." />
-              <input type="datetime-local" required className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({...formTarefa, data_vencimento: e.target.value})} />
-              <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({...formTarefa, status: e.target.value})}><option value="Pendente">Pendente</option><option value="Em andamento">Em andamento</option><option value="Concluído">Concluído</option></select>
-              {isAdmin && <input required className="input-modal" value={formTarefa.usuario_email} onChange={e => setFormTarefa({...formTarefa, usuario_email: e.target.value})} placeholder="Delegar para (E-mail)..." />}
-              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Tarefa</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-      
-      {modalContrato && (
-        <div className="modal-overlay" onClick={() => setModalContrato(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formContrato.id ? "Editar Contrato" : "Novo Contrato"}</h2>
-            <form onSubmit={salvarContrato} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
-              <input required className="input-modal" value={formContrato.cliente_nome} onChange={e => setFormContrato({...formContrato, cliente_nome: e.target.value})} placeholder="Nome do Cliente..." />
-              <div style={{display:"flex", gap:"10px"}}><input type="number" step="0.01" required className="input-modal" style={{flex: 1}} value={formContrato.valor_mensal || ""} onChange={e => setFormContrato({...formContrato, valor_mensal: Number(e.target.value)})} placeholder="Valor Mensal..." /><input className="input-modal" style={{flex: 1}} value={formContrato.filial || ""} onChange={e => setFormContrato({...formContrato, filial: e.target.value})} placeholder="Filial (Ex: Matriz)..." /></div>
-              <input type="date" required className="input-modal" value={formContrato.data_inicio} onChange={e => setFormContrato({...formContrato, data_inicio: e.target.value})} />
-              <select className="input-modal" value={formContrato.status} onChange={e => setFormContrato({...formContrato, status: e.target.value})}><option value="Ativo">Ativo</option><option value="Suspenso">Suspenso</option><option value="Cancelado">Cancelado</option></select>
-              {formContrato.status === 'Cancelado' && <input required className="input-modal" style={{borderColor:"#f87171"}} value={formContrato.motivo_cancelamento} onChange={e => setFormContrato({...formContrato, motivo_cancelamento: e.target.value})} placeholder="Motivo do Cancelamento..." />}
-              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Contrato</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {modalTemplate && (
-        <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formTemplate.id ? "Editar Template" : "Novo Template"}</h2>
-            <p style={{fontSize:"12px",color:"var(--text-secondary)",marginBottom:"15px"}}>Use as variáveis: {'{{nome}}'}, {'{{empresa}}'}, {'{{valor}}'}</p>
-            <form onSubmit={salvarTemplate}>
-              <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({...formTemplate, nome: e.target.value})} placeholder="Nome do Template..." />
-              <select className="input-modal" value={formTemplate.tipo} onChange={e => setFormTemplate({...formTemplate, tipo: e.target.value})}><option value="WhatsApp">WhatsApp</option><option value="Email">Email</option></select>
-              {formTemplate.tipo === 'Email' && (
-                <input required className="input-modal" value={formTemplate.assunto || ""} onChange={e => setFormTemplate({...formTemplate, assunto: e.target.value})} placeholder="Assunto do E-mail..." style={{marginTop: 15}} />
-              )}
-              <textarea required className="input-modal" style={{marginTop: 15}} rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
-              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Template</button></div>
             </form>
           </div>
         </div>
