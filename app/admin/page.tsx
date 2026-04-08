@@ -182,7 +182,7 @@ export default function AdminPage() {
 
   const [modalUsuario, setModalUsuario] = useState(false);
   const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario>>({ email: '', perfil: 'Comercial', filial: 'Matriz' });
-
+  const [modalInfoNovoUser, setModalInfoNovoUser] = useState(false);
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
@@ -323,6 +323,7 @@ export default function AdminPage() {
     [contratos, clientesDesativadosNomes]
   );
 
+  // Ticket médio
   const ticketMedio = propostasFechadas.length > 0
     ? propostasFechadas.reduce((a, b) => a + b.valor, 0) / propostasFechadas.length
     : 0;
@@ -333,6 +334,7 @@ export default function AdminPage() {
     return Object.entries(contagem).map(([name, value]) => ({ name, value }));
   }, [propostasPerdidas]);
 
+  // Pipeline por mês (últimos 6 meses)
   const dadosPipelineMensal = useMemo(() => {
     const meses: Record<string, { ganhas: number; perdidas: number; abertas: number }> = {};
     for (let i = 5; i >= 0; i--) {
@@ -353,6 +355,7 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
+  // Tarefas com status de atraso automático
   const tarefasComAtraso = useMemo(() =>
     tarefas.map(t => {
       if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) {
@@ -368,6 +371,7 @@ export default function AdminPage() {
     return tarefasComAtraso.filter(t => t.status === filtroStatusTarefa);
   }, [tarefasComAtraso, filtroStatusTarefa]);
 
+  // Tarefas urgentes (vence em até 2 dias)
   const tarefasUrgentes = useMemo(() =>
     tarefasComAtraso.filter(t => {
       if (t.status === 'Concluído') return false;
@@ -437,6 +441,7 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, debouncedBusca, interacoes, mostrarDesativados]);
 
+  // Resultados de busca global
   const resultadosBuscaGlobal = useMemo(() => {
     if (!buscaGlobal || buscaGlobal.length < 2) return { clientes: [], propostas: [], tarefas: [] };
     const b = buscaGlobal.toLowerCase();
@@ -472,7 +477,7 @@ export default function AdminPage() {
   const dispararEmailsMassa = async () => {
     let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
     alvos = alvos.filter(c => c.email && c.email.includes("@") && c.ativo !== false);
-    if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado para este público.", "erro");
+    if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado.", "erro");
     if (!confirm(`Deseja disparar este e-mail para ${alvos.length} contactos?`)) return;
     setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
     let enviados = 0;
@@ -876,7 +881,7 @@ export default function AdminPage() {
 
       {/* FILA WHATSAPP FLUTUANTE */}
       {filaWpp.length > 0 && (
-        <div style={{ position: "fixed", bottom: 90, right: 30, background: "#22c55e", borderRadius: 16, padding: 16, zIndex: 999, maxWidth: 300, boxShadown: "0 10px 30px rgba(0,0,0,0.3)" }}>
+        <div style={{ position: "fixed", bottom: 90, right: 30, background: "#22c55e", borderRadius: 16, padding: 16, zIndex: 999, maxWidth: 300, boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>
           <div style={{ color: "#fff", fontWeight: 700, marginBottom: 10 }}>💬 Fila WhatsApp ({filaWpp.length})</div>
           {filaWpp.slice(0, 3).map(cli => (
             <div key={cli.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -998,7 +1003,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v1.06</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.0</div>
         </div>
       </aside>
 
@@ -1099,6 +1104,7 @@ export default function AdminPage() {
                 )}
               </div>
 
+              {/* NOVO: Evolução mensal */}
               <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
                 <ResponsiveContainer width="100%" height="85%">
@@ -1802,6 +1808,121 @@ export default function AdminPage() {
               <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
                 <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
                 <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Registo</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: TAREFA ────────────────────────────────────────────────────── */}
+      {modalTarefa && (
+        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formTarefa.id ? "✏️ Editar Tarefa" : "➕ Nova Tarefa"}</h2>
+            <form onSubmit={salvarTarefa} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <input required className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.titulo} onChange={e => setFormTarefa({ ...formTarefa, titulo: e.target.value })} placeholder="Título da tarefa *" />
+              <textarea className="input-modal" style={{ marginBottom: 0, resize: "vertical" }} rows={3} value={formTarefa.descricao} onChange={e => setFormTarefa({ ...formTarefa, descricao: e.target.value })} placeholder="Descrição (opcional)..." />
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Prazo</label>
+                  <input required type="datetime-local" className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.data_vencimento} onChange={e => setFormTarefa({ ...formTarefa, data_vencimento: e.target.value })} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Prioridade</label>
+                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.prioridade} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value as 'Alta' | 'Normal' | 'Baixa' })}>
+                    <option value="Alta">🔴 Alta</option>
+                    <option value="Normal">🔵 Normal</option>
+                    <option value="Baixa">⚪ Baixa</option>
+                  </select>
+                </div>
+              </div>
+              <input className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.nome_referencia} onChange={e => setFormTarefa({ ...formTarefa, nome_referencia: e.target.value })} placeholder="Cliente relacionado (opcional)..." />
+              {isAdmin && (
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Atribuir a</label>
+                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.usuario_email} onChange={e => setFormTarefa({ ...formTarefa, usuario_email: e.target.value })}>
+                    {usuarios.map(u => <option key={u.email} value={u.email}>{u.email.split('@')[0]} ({u.perfil})</option>)}
+                  </select>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Tarefa</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
+      {/* ─── MODAL: CONTRATO ──────────────────────────────────────────────────── */}
+      {modalContrato && (
+        <div className="modal-overlay" onClick={() => setModalContrato(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formContrato.id ? "✏️ Gerir Contrato" : "➕ Novo Contrato"}</h2>
+            <form onSubmit={salvarContrato} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <input required className="input-modal" style={{ marginBottom: 0 }} value={formContrato.cliente_nome} onChange={e => setFormContrato({ ...formContrato, cliente_nome: e.target.value })} placeholder="Nome do Cliente *" />
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Valor Mensal (R$)</label>
+                  <input required type="number" step="0.01" className="input-modal" style={{ marginBottom: 0 }} value={formContrato.valor_mensal || ""} onChange={e => setFormContrato({ ...formContrato, valor_mensal: Number(e.target.value) })} placeholder="Valor Mensal..." />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Filial</label>
+                  <input className="input-modal" style={{ marginBottom: 0 }} value={formContrato.filial || ""} onChange={e => setFormContrato({ ...formContrato, filial: e.target.value })} placeholder="Ex: Matriz..." />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Data de Início</label>
+                  <input type="date" required className="input-modal" style={{ marginBottom: 0 }} value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Status</label>
+                  <select className="input-modal" style={{ marginBottom: 0 }} value={formContrato.status} onChange={e => setFormContrato({ ...formContrato, status: e.target.value })}>
+                    <option value="Ativo">Ativo</option>
+                    <option value="Suspenso">Suspenso</option>
+                    <option value="Cancelado">Cancelado</option>
+                  </select>
+                </div>
+              </div>
+              <textarea className="input-modal" style={{ marginBottom: 0, resize: "vertical" }} rows={2} value={formContrato.servicos_inclusos} onChange={e => setFormContrato({ ...formContrato, servicos_inclusos: e.target.value })} placeholder="Serviços inclusos no contrato..." />
+              {formContrato.status === 'Cancelado' && (
+                <textarea required className="input-modal" style={{ marginBottom: 0, borderColor: "#f87171" }} rows={2} value={formContrato.motivo_cancelamento} onChange={e => setFormContrato({ ...formContrato, motivo_cancelamento: e.target.value })} placeholder="Motivo do cancelamento (obrigatório) *" />
+              )}
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Salvar Contrato</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: TEMPLATE ──────────────────────────────────────────────────── */}
+      {modalTemplate && (
+        <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 650 }}>
+            <h2>{formTemplate.id ? "✏️ Editar Template" : "➕ Novo Template"}</h2>
+            <form onSubmit={salvarTemplate} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <input required className="input-modal" style={{ flex: 2, marginBottom: 0 }} value={formTemplate.nome} onChange={e => setFormTemplate({ ...formTemplate, nome: e.target.value })} placeholder="Nome do template *" />
+                <select className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formTemplate.tipo} onChange={e => setFormTemplate({ ...formTemplate, tipo: e.target.value })}>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Email">E-mail</option>
+                </select>
+              </div>
+              {formTemplate.tipo === 'Email' && (
+                <input className="input-modal" style={{ marginBottom: 0 }} value={formTemplate.assunto} onChange={e => setFormTemplate({ ...formTemplate, assunto: e.target.value })} placeholder="Assunto do e-mail (opcional)..." />
+              )}
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
+                  Conteúdo — variáveis disponíveis: <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{nome}}'}</code> <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{empresa}}'}</code> <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{valor}}'}</code>
+                </label>
+                <textarea required className="input-modal" style={{ marginBottom: 0, resize: "vertical", fontFamily: "monospace", fontSize: 13 }} rows={10} value={formTemplate.conteudo} onChange={e => setFormTemplate({ ...formTemplate, conteudo: e.target.value })} placeholder="Conteúdo do template..." />
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Salvar Template</button>
               </div>
             </form>
           </div>
