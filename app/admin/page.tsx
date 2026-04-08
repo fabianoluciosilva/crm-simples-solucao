@@ -182,7 +182,7 @@ export default function AdminPage() {
 
   const [modalUsuario, setModalUsuario] = useState(false);
   const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario>>({ email: '', perfil: 'Comercial', filial: 'Matriz' });
-  const [modalInfoNovoUser, setModalInfoNovoUser] = useState(false);
+
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
@@ -472,7 +472,7 @@ export default function AdminPage() {
   const dispararEmailsMassa = async () => {
     let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
     alvos = alvos.filter(c => c.email && c.email.includes("@") && c.ativo !== false);
-    if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado.", "erro");
+    if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado para este público.", "erro");
     if (!confirm(`Deseja disparar este e-mail para ${alvos.length} contactos?`)) return;
     setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
     let enviados = 0;
@@ -762,16 +762,27 @@ export default function AdminPage() {
     }
   };
 
-  // ─── CRUD USUÁRIOS ────────────────────────────────────────────────────────
+  // ─── CRUD USUÁRIOS (PRÉ-REGISTO) ──────────────────────────────────────────
   const salvarUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formUsuario.id) {
       await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial }).eq('id', formUsuario.id);
-    } else return showToast("Para novos utilizadores, eles devem fazer login no sistema 1 vez primeiro.", "erro");
-    showToast("Permissões atualizadas!", "sucesso");
+      showToast("Permissões atualizadas!", "sucesso");
+    } else {
+      const { error } = await supabase.from('perfis').insert([{ 
+        email: formUsuario.email?.toLowerCase().trim(), 
+        perfil: formUsuario.perfil, 
+        filial: formUsuario.filial 
+      }]);
+      if (error) {
+        return showToast("Erro ao cadastrar. O e-mail já existe?", "erro");
+      }
+      showToast("Utilizador cadastrado com sucesso!", "sucesso");
+    }
     setModalUsuario(false);
     carregarTudo();
   };
+
   const excluirUsuario = async (id?: string, email?: string) => {
     if (!id) return;
     if (email === session?.user?.email) return showToast("Não pode excluir o seu próprio utilizador.", "erro");
@@ -837,7 +848,7 @@ export default function AdminPage() {
         .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; }
         .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; transition: border-color 0.2s; }
         .kanban-col.drag-over { border-color: #4A90D9; background: rgba(74,144,217,0.04); }
-        .kanban-header { padding: 14px 16px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.05em; }
+        .kanban-header { padding: 14px 16px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.05em; }
         .kanban-body { padding: 12px; flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 150px; }
         .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; cursor: grab; transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s; }
         .kanban-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.15); transform: translateY(-1px); }
@@ -865,7 +876,7 @@ export default function AdminPage() {
 
       {/* FILA WHATSAPP FLUTUANTE */}
       {filaWpp.length > 0 && (
-        <div style={{ position: "fixed", bottom: 90, right: 30, background: "#22c55e", borderRadius: 16, padding: 16, zIndex: 999, maxWidth: 300, boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>
+        <div style={{ position: "fixed", bottom: 90, right: 30, background: "#22c55e", borderRadius: 16, padding: 16, zIndex: 999, maxWidth: 300, boxShadown: "0 10px 30px rgba(0,0,0,0.3)" }}>
           <div style={{ color: "#fff", fontWeight: 700, marginBottom: 10 }}>💬 Fila WhatsApp ({filaWpp.length})</div>
           {filaWpp.slice(0, 3).map(cli => (
             <div key={cli.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -987,7 +998,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.0</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v1.06</div>
         </div>
       </aside>
 
@@ -1088,7 +1099,6 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* NOVO: Evolução mensal */}
               <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
                 <ResponsiveContainer width="100%" height="85%">
@@ -1470,7 +1480,7 @@ export default function AdminPage() {
         {aba === 'usuarios' && isAdmin && (
           <>
             <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-              <button onClick={() => setModalInfoNovoUser(true)} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Adicionar Membro</button>
+              <button onClick={() => { setFormUsuario({ id: undefined, email: '', perfil: 'Comercial', filial: perfilAtivo.filial }); setModalUsuario(true); }} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Pré-registar Membro</button>
             </div>
             <div className="table-wrapper">
               <table>
@@ -1652,39 +1662,44 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: NOVO USUÁRIO (INFO) ───────────────────────────────────────── */}
-      {modalInfoNovoUser && (
-        <div className="modal-overlay" onClick={() => setModalInfoNovoUser(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>➕ Adicionar Novo Membro</h2>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: 16, lineHeight: 1.7 }}>
-              Por motivos de segurança, não é possível criar uma senha provisória.<br /><br />
-              Para adicionar um membro, peça-lhe para <strong>aceder ao link do CRM</strong> e fazer login com a conta Google dele.<br /><br />
-              Assim que ele fizer o primeiro login, o nome dele aparecerá nesta lista e você poderá clicar em <strong>Editar Acesso</strong> para lhe dar permissões.
-            </p>
-            <div style={{ marginTop: 20 }}>
-              <button onClick={() => setModalInfoNovoUser(false)} className="btn-action" style={{ width: "100%", background: "#4A90D9", color: "#fff", borderColor: "#4A90D9", padding: 12 }}>Entendido</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: EDITAR USUÁRIO ────────────────────────────────────────────── */}
+      {/* ─── MODAL: EDITAR USUÁRIO / PRÉ-REGISTO ──────────────────────────────── */}
       {modalUsuario && (
         <div className="modal-overlay" onClick={() => setModalUsuario(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>🔐 Definir Permissões</h2>
-            <form onSubmit={salvarUsuario} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
-              <input disabled className="input-modal" value={formUsuario.email} style={{ opacity: 0.6 }} />
-              <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
-                <option value="Admin">Admin — Acesso Total e Financeiro</option>
-                <option value="Comercial">Comercial — Propostas e Clientes</option>
-                <option value="Suporte">Suporte — Apenas Tarefas</option>
-              </select>
-              <input required className="input-modal" value={formUsuario.filial} onChange={e => setFormUsuario({ ...formUsuario, filial: e.target.value })} placeholder="Filial (Ex: Matriz, São Paulo...)" />
-              <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
+            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Pré-registar Novo Membro"}</h2>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
+              {formUsuario.id 
+                ? "Altere o nível de acesso e a filial deste membro da equipa."
+                : "Digite o e-mail da conta Google que o seu novo membro usará para entrar. Quando ele fizer login, já terá as permissões certas!"}
+            </p>
+            <form onSubmit={salvarUsuario} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail (Conta Google)</label>
+                <input 
+                  required 
+                  className="input-modal" 
+                  value={formUsuario.email} 
+                  onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })}
+                  disabled={!!formUsuario.id} 
+                  style={{ opacity: formUsuario.id ? 0.6 : 1 }} 
+                  placeholder="exemplo@gmail.com" 
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nível de Acesso (Perfil)</label>
+                <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
+                  <option value="Admin">Admin — Acesso Total e Financeiro</option>
+                  <option value="Comercial">Comercial — Propostas e Clientes</option>
+                  <option value="Suporte">Suporte — Apenas Tarefas</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Filial</label>
+                <input required className="input-modal" value={formUsuario.filial} onChange={e => setFormUsuario({ ...formUsuario, filial: e.target.value })} placeholder="Ex: Matriz, São Paulo..." />
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
                 <button type="button" onClick={() => setModalUsuario(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Salvar Acessos</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>{formUsuario.id ? "Salvar Acessos" : "Registar Membro"}</button>
               </div>
             </form>
           </div>
@@ -1787,121 +1802,6 @@ export default function AdminPage() {
               <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
                 <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
                 <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Registo</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: TAREFA ────────────────────────────────────────────────────── */}
-      {modalTarefa && (
-        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formTarefa.id ? "✏️ Editar Tarefa" : "➕ Nova Tarefa"}</h2>
-            <form onSubmit={salvarTarefa} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <input required className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.titulo} onChange={e => setFormTarefa({ ...formTarefa, titulo: e.target.value })} placeholder="Título da tarefa *" />
-              <textarea className="input-modal" style={{ marginBottom: 0, resize: "vertical" }} rows={3} value={formTarefa.descricao} onChange={e => setFormTarefa({ ...formTarefa, descricao: e.target.value })} placeholder="Descrição (opcional)..." />
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Prazo</label>
-                  <input required type="datetime-local" className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.data_vencimento} onChange={e => setFormTarefa({ ...formTarefa, data_vencimento: e.target.value })} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Prioridade</label>
-                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.prioridade} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value as 'Alta' | 'Normal' | 'Baixa' })}>
-                    <option value="Alta">🔴 Alta</option>
-                    <option value="Normal">🔵 Normal</option>
-                    <option value="Baixa">⚪ Baixa</option>
-                  </select>
-                </div>
-              </div>
-              <input className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.nome_referencia} onChange={e => setFormTarefa({ ...formTarefa, nome_referencia: e.target.value })} placeholder="Cliente relacionado (opcional)..." />
-              {isAdmin && (
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Atribuir a</label>
-                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.usuario_email} onChange={e => setFormTarefa({ ...formTarefa, usuario_email: e.target.value })}>
-                    {usuarios.map(u => <option key={u.email} value={u.email}>{u.email.split('@')[0]} ({u.perfil})</option>)}
-                  </select>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Tarefa</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: CONTRATO ──────────────────────────────────────────────────── */}
-      {modalContrato && (
-        <div className="modal-overlay" onClick={() => setModalContrato(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formContrato.id ? "✏️ Gerir Contrato" : "➕ Novo Contrato"}</h2>
-            <form onSubmit={salvarContrato} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <input required className="input-modal" style={{ marginBottom: 0 }} value={formContrato.cliente_nome} onChange={e => setFormContrato({ ...formContrato, cliente_nome: e.target.value })} placeholder="Nome do Cliente *" />
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Valor Mensal (R$)</label>
-                  <input required type="number" step="0.01" className="input-modal" style={{ marginBottom: 0 }} value={formContrato.valor_mensal} onChange={e => setFormContrato({ ...formContrato, valor_mensal: parseFloat(e.target.value) })} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Status</label>
-                  <select className="input-modal" style={{ marginBottom: 0 }} value={formContrato.status} onChange={e => setFormContrato({ ...formContrato, status: e.target.value })}>
-                    <option value="Ativo">Ativo</option>
-                    <option value="Pausado">Pausado</option>
-                    <option value="Cancelado">Cancelado</option>
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Data de Início</label>
-                  <input type="date" className="input-modal" style={{ marginBottom: 0 }} value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Data de Fim (opcional)</label>
-                  <input type="date" className="input-modal" style={{ marginBottom: 0 }} value={formContrato.data_fim || ''} onChange={e => setFormContrato({ ...formContrato, data_fim: e.target.value })} />
-                </div>
-              </div>
-              <textarea className="input-modal" style={{ marginBottom: 0, resize: "vertical" }} rows={2} value={formContrato.servicos_inclusos} onChange={e => setFormContrato({ ...formContrato, servicos_inclusos: e.target.value })} placeholder="Serviços inclusos no contrato..." />
-              {formContrato.status === 'Cancelado' && (
-                <textarea required className="input-modal" style={{ marginBottom: 0, borderColor: "#f87171" }} rows={2} value={formContrato.motivo_cancelamento} onChange={e => setFormContrato({ ...formContrato, motivo_cancelamento: e.target.value })} placeholder="Motivo do cancelamento (obrigatório) *" />
-              )}
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Salvar Contrato</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: TEMPLATE ──────────────────────────────────────────────────── */}
-      {modalTemplate && (
-        <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 650 }}>
-            <h2>{formTemplate.id ? "✏️ Editar Template" : "➕ Novo Template"}</h2>
-            <form onSubmit={salvarTemplate} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input required className="input-modal" style={{ flex: 2, marginBottom: 0 }} value={formTemplate.nome} onChange={e => setFormTemplate({ ...formTemplate, nome: e.target.value })} placeholder="Nome do template *" />
-                <select className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formTemplate.tipo} onChange={e => setFormTemplate({ ...formTemplate, tipo: e.target.value })}>
-                  <option value="WhatsApp">WhatsApp</option>
-                  <option value="Email">E-mail</option>
-                </select>
-              </div>
-              {formTemplate.tipo === 'Email' && (
-                <input className="input-modal" style={{ marginBottom: 0 }} value={formTemplate.assunto} onChange={e => setFormTemplate({ ...formTemplate, assunto: e.target.value })} placeholder="Assunto do e-mail (opcional)..." />
-              )}
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-                  Conteúdo — variáveis disponíveis: <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{nome}}'}</code> <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{empresa}}'}</code> <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{valor}}'}</code>
-                </label>
-                <textarea required className="input-modal" style={{ marginBottom: 0, resize: "vertical", fontFamily: "monospace", fontSize: 13 }} rows={10} value={formTemplate.conteudo} onChange={e => setFormTemplate({ ...formTemplate, conteudo: e.target.value })} placeholder="Conteúdo do template..." />
-              </div>
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Salvar Template</button>
               </div>
             </form>
           </div>
