@@ -1,8 +1,15 @@
-"use client";
+import React from 'react';
 
-export const MetricCard = ({ label, value, color, borderColor, icon, sub }: {
-  label: string; value: string | number; color?: string; borderColor?: string; icon?: string; sub?: string;
-}) => (
+interface MetricCardProps {
+  label: string;
+  value: string | number;
+  color?: string;
+  borderColor?: string;
+  icon?: string;
+  sub?: string;
+}
+
+export const MetricCard = ({ label, value, color, borderColor, icon, sub }: MetricCardProps) => (
   <div className="metric-card" style={{ borderTop: borderColor ? `3px solid ${borderColor}` : undefined }}>
     <div style={{ fontSize: "12px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
       {icon && <span>{icon}</span>}{label}
