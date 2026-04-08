@@ -174,7 +174,7 @@ export default function AdminPage() {
   const [modalContrato, setModalContrato] = useState(false);
   const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({
     cliente_nome: "", valor_mensal: 0, status: "Ativo",
-    data_inicio: new DatetoISOString().split('T')[0],
+    data_inicio: new Date().toISOString().split('T')[0],
     servicos_inclusos: "", motivo_cancelamento: ""
   });
   const [modalTemplate, setModalTemplate] = useState(false);
@@ -223,7 +223,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { window.location.href = "/"; return; }
+      if (!session) { router.push("/"); return; }
       setSession(session);
       const emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
@@ -241,9 +241,9 @@ export default function AdminPage() {
       else setAba('tarefas');
       setCarregandoAuth(false);
     });
-  }, []);
+  }, [router]);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = "/"; };
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -1052,7 +1052,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.5</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.5 (Modular Seguro)</div>
         </div>
       </aside>
 
@@ -1153,6 +1153,7 @@ export default function AdminPage() {
                 )}
               </div>
 
+              {/* NOVO: Evolução mensal */}
               <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
                 <ResponsiveContainer width="100%" height="85%">
@@ -1210,7 +1211,7 @@ export default function AdminPage() {
                       key={p.id}
                       className={`kanban-card ${tarefaArrastando === p.id ? 'dragging' : ''}`}
                       style={{ borderLeft: col.status !== 'aberta' ? `3px solid ${col.cor}` : undefined, opacity: col.status === 'perdida' ? 0.7 : 1 }}
-                      draggable={true}
+                      draggable={true} // Destrancado para poder voltar negócios ganhos/perdidos
                       onDragStart={e => handleDragStart(e, p)}
                       onDragEnd={handleDragEnd}
                     >
