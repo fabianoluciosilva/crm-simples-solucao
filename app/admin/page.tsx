@@ -3,13 +3,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line } from 'recharts';
 
 interface PropostaDB { id: number; created_at: string; numero: string; cliente: string; contato: string; telefone?: string; email: string; valor: number; status: string; status_envio: string; filial?: string; dados: any; motivo_perda?: string; obs_perda?: string; }
 interface TarefaDB { id: number; titulo: string; descricao: string; data_vencimento: string; status: string; usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string; data_conclusao?: string; created_at: string; }
 interface ContratoDB { id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string; valor_mensal: number; status: string; data_inicio: string; data_fim?: string; motivo_cancelamento?: string; filial?: string; created_at: string; }
-interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; }
-interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; whatsapp?: string; documento?: string; tipo: string; codigo?: string; filial?: string; created_at?: string; score?: number; }
+interface TemplateDB { id: number; nome: string; tipo: string; conteudo: string; created_at: string; assunto?: string; }
+interface ClienteDB { id: number; nome: string; email?: string; telefone?: string; whatsapp?: string; documento?: string; tipo: string; codigo?: string; filial?: string; created_at?: string; score?: number; ativo?: boolean; }
 interface InteracaoDB { id: number; cliente_nome: string; usuario_email: string; tipo: string; descricao: string; created_at: string; }
 interface PerfilUsuario { id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string; }
 
@@ -29,16 +29,13 @@ export default function AdminPage() {
   const showToast = (msg: string, tipo: 'sucesso' | 'erro' | 'info' = 'sucesso') => { setToast({ msg, tipo }); setTimeout(() => setToast(null), 4000); };
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  // Limpeza inteligente de números para WhatsApp
   const formatarWhatsApp = (numStr?: string) => {
-    if (!numStr) return "";
-    let n = numStr.replace(/\D/g, "");
-    if (n.length === 10 || n.length === 11) return "55" + n; // Adiciona DDI do Brasil se não tiver
-    return n;
+    if (!numStr) return ""; let n = numStr.replace(/\D/g, "");
+    if (n.length === 10 || n.length === 11) return "55" + n; return n;
   };
 
-  // --- ESTADOS DO CRM E VISUALIZAÇÃO ---
-  const [aba, setAba] = useState<"dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios">("dashboard");
+  // --- ESTADOS DO CRM ---
+  const [aba, setAba] = useState<"dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios" | "relatorios">("dashboard");
   const [vistaPropostas, setVistaPropostas] = useState<"kanban" | "tabela">("kanban");
   const [propostas, setPropostas] = useState<PropostaDB[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
@@ -53,6 +50,7 @@ export default function AdminPage() {
   const [filtroDias, setFiltroDias] = useState<number>(30);
   const [filtroTipoCliente, setFiltroTipoCliente] = useState<"Todos" | "Cliente" | "Lead" | "Parceiro">("Todos");
   const [buscaCliente, setBuscaCliente] = useState("");
+  const [mostrarDesativados, setMostrarDesativados] = useState(false);
   const [enviando, setEnviando] = useState<number | null>(null);
 
   // --- ESTADOS DE MODAIS ---
@@ -62,14 +60,14 @@ export default function AdminPage() {
   const [filaWpp, setFilaWpp] = useState<ClienteDB[]>([]);
   
   const [modalEnvioProposta, setModalEnvioProposta] = useState<{ativo: boolean, tipo: 'Email' | 'WhatsApp', prop: PropostaDB | null, numeroWpp: string}>({ativo: false, tipo: 'Email', prop: null, numeroWpp: ''});
-  const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '' });
+  const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
 
   const [modalTarefa, setModalTarefa] = useState(false);
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "" });
   const [modalContrato, setModalContrato] = useState(false);
   const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
   const [modalTemplate, setModalTemplate] = useState(false);
-  const [formTemplate, setFormTemplate] = useState<Partial<TemplateDB>>({ nome: "", tipo: "WhatsApp", conteudo: "" });
+  const [formTemplate, setFormTemplate] = useState<Partial<TemplateDB>>({ nome: "", tipo: "WhatsApp", conteudo: "", assunto: "" });
   const [modalClienteForm, setModalClienteForm] = useState(false);
   const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "", filial: "Matriz" });
   
@@ -79,7 +77,6 @@ export default function AdminPage() {
 
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
-  
   const [modalPerda, setModalPerda] = useState(false);
   const [formPerda, setFormPerda] = useState({ id: 0, motivo: "", obs: "" });
 
@@ -125,22 +122,29 @@ export default function AdminPage() {
     if (p.data) setPropostas(p.data); if (l.data) setLeads(l.data); if (c.data) setContratos(c.data);
     if (tpl.data) setTemplates(tpl.data); if (cliBase.data) setClientesBase(cliBase.data); if (t.data) setTarefas(t.data);
     if (ints.data) setInteracoes(ints.data); if (perfis.data) setUsuarios(perfis.data);
-    
     setCarregando(false);
   };
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
 
-  // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTOS ──────────────────────────────
-  const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
-  const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
-  
+  // ─── LÓGICA DE DESATIVAÇÃO E CÁLCULOS ──────────────────────────────────
+  const clientesDesativadosNomes = useMemo(() => clientesBase.filter(c => c.ativo === false).map(c => c.nome.toUpperCase()), [clientesBase]);
+
+  const pFiltradas = useMemo(() => {
+    let filtradas = propostas;
+    if (filtroDias > 0) { const limite = new Date(); limite.setDate(limite.getDate() - filtroDias); filtradas = filtradas.filter(p => new Date(p.created_at) >= limite); }
+    // Oculta propostas de clientes desativados dos cálculos globais
+    return filtradas.filter(p => !clientesDesativadosNomes.includes(p.cliente.toUpperCase()));
+  }, [propostas, filtroDias, clientesDesativadosNomes]);
+
   const propostasFechadas = pFiltradas.filter(p => p.status === 'fechada');
   const propostasPerdidas = pFiltradas.filter(p => p.status === 'perdida');
   const propostasAbertas = pFiltradas.filter(p => !p.status || p.status === 'aberta');
   const propostasEnviadas = pFiltradas.filter(p => p.status === 'enviada' || p.status === 'negociacao');
   
   const taxaConversao = pFiltradas.length > 0 ? (propostasFechadas.length / pFiltradas.length) * 100 : 0;
-  const mrrAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
+  
+  // MRR Ativo apenas de clientes que não estão desativados
+  const mrrAtivo = contratos.filter(c => c.status === 'Ativo' && !clientesDesativadosNomes.includes(c.cliente_nome.toUpperCase())).reduce((acc, c) => acc + Number(c.valor_mensal), 0);
 
   const dadosMotivosPerda = useMemo(() => {
     const contagem: Record<string, number> = {};
@@ -150,37 +154,61 @@ export default function AdminPage() {
 
   const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
 
+  // Agrupamento Geral (O Cérebro da Base de Clientes)
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
-    clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) }); });
+    
+    // 1. Base Oficial
+    clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) }); });
+    
+    // 2. Propostas
     propostas.forEach(p => {
       const key = p.cliente.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
+      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).propostas.push(p);
     });
+    
+    // 3. Contratos
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
+      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).contratos.push(c);
-      // Proteção contra sobrescrever Parceiro!
-      if (mapa.get(key).tipo === 'Lead') { mapa.get(key).tipo = 'Cliente'; }
+      if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
+    
+    // 4. Leads do Site
     leads.forEach(l => {
       const key = l.empresa.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
-    });
-    tarefas.forEach(t => {
-      if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
+      if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
     });
 
+    tarefas.forEach(t => { if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); } });
+
     let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
+    
+    // Ocultar desativados se a chave estiver desligada
+    if (!mostrarDesativados) lista = lista.filter(c => c.ativo !== false);
+    
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
     if (buscaCliente) {
       const b = buscaCliente.toLowerCase();
       lista = lista.filter(c => c.nome?.toLowerCase().includes(b) || c.email?.toLowerCase().includes(b) || c.contato?.toLowerCase().includes(b) || c.codigo?.toLowerCase().includes(b));
     }
     return lista;
-  }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, buscaCliente, interacoes]);
+  }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, buscaCliente, interacoes, mostrarDesativados]);
+
+  // Função para Desativar/Ativar Cliente
+  const alternarStatusCliente = async (cliente: any) => {
+    const novoStatus = cliente.ativo === false ? true : false;
+    if (cliente.isOficial) {
+      await supabase.from('clientes').update({ ativo: novoStatus }).eq('id', cliente.id);
+    } else {
+      // Se não era oficial e estamos a desativar, temos de criar a ficha e marcá-la como desativada
+      await supabase.from('clientes').insert([{ nome: cliente.nome, email: cliente.email, telefone: cliente.telefone, whatsapp: cliente.whatsapp, tipo: cliente.tipo, filial: perfilAtivo.filial, ativo: novoStatus }]);
+    }
+    showToast(`O registo foi ${novoStatus ? 'ativado' : 'desativado'} com sucesso!`, "info");
+    carregarTudo();
+  };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
     const cliente = clientesAgrupados.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
@@ -189,8 +217,10 @@ export default function AdminPage() {
 
   // ─── COMUNICADOS EM MASSA (EMAIL / FILA WPP) ─────────────────────────────
   const dispararEmailsMassa = async () => {
-    const alvos = formComunicado.publico === "Todos" ? clientesBase.filter(c => c.email && c.email.includes("@")) : clientesBase.filter(c => c.tipo === formComunicado.publico && c.email && c.email.includes("@"));
-    if (alvos.length === 0) return showToast("Nenhum e-mail válido encontrado para este público.", "erro");
+    let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
+    alvos = alvos.filter(c => c.email && c.email.includes("@") && c.ativo !== false); // Não envia para desativados
+    
+    if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado para este público.", "erro");
     if (!confirm(`Deseja disparar este e-mail para ${alvos.length} contactos?`)) return;
 
     setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
@@ -207,8 +237,10 @@ export default function AdminPage() {
   };
 
   const gerarFilaWhatsapp = () => {
-    const alvos = formComunicado.publico === "Todos" ? clientesBase.filter(c => c.whatsapp || c.telefone) : clientesBase.filter(c => c.tipo === formComunicado.publico && (c.whatsapp || c.telefone));
-    if (alvos.length === 0) return showToast("Nenhum cliente com número válido encontrado.", "erro");
+    let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
+    alvos = alvos.filter(c => (c.whatsapp || c.telefone) && c.ativo !== false);
+    
+    if (alvos.length === 0) return showToast("Nenhum cliente ativo com número válido encontrado.", "erro");
     setFilaWpp(alvos); setModalComunicado(false); showToast(`Fila gerada com ${alvos.length} clientes prontos para envio.`, "info");
   };
 
@@ -234,17 +266,18 @@ export default function AdminPage() {
     const numeroFormatado = formatarWhatsApp(foneParaTentar);
 
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: numeroFormatado });
-    setFormEnvioMensagem({ templateId: '', texto: '' });
+    setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
   };
 
   useEffect(() => {
     if (modalEnvioProposta.prop && formEnvioMensagem.templateId) {
-      if (formEnvioMensagem.templateId === 'custom') { setFormEnvioMensagem(prev => ({ ...prev, texto: '' })); } 
+      if (formEnvioMensagem.templateId === 'custom') { setFormEnvioMensagem(prev => ({ ...prev, texto: '', assunto: '' })); } 
       else {
         const tpl = templates.find(t => t.id.toString() === formEnvioMensagem.templateId);
         if (tpl) {
           const txt = processarTemplate(tpl.conteudo, modalEnvioProposta.prop.contato, modalEnvioProposta.prop.cliente, modalEnvioProposta.prop.valor);
-          setFormEnvioMensagem(prev => ({ ...prev, texto: txt }));
+          const ass = tpl.assunto ? processarTemplate(tpl.assunto, modalEnvioProposta.prop.contato, modalEnvioProposta.prop.cliente, modalEnvioProposta.prop.valor) : '';
+          setFormEnvioMensagem(prev => ({ ...prev, texto: txt, assunto: ass }));
         }
       }
     }
@@ -276,20 +309,13 @@ export default function AdminPage() {
         const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
         const trackingPixel = cb ? `<img src="${window.location.origin}/api/track?action=open&id=${cb.id}" width="1" height="1" style="display:none;" />` : '';
         let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
+        const assuntoEmail = formEnvioMensagem.assunto || `Proposta Comercial SSTI - ${prop.cliente}`;
 
-        const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
+        const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: assuntoEmail, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
         
         if (res.ok) {
           await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
-          await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Proposta enviada por E-mail:\n\n${textoFinal}` }]);
-          try {
-            const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
-            if (!log || log.length === 0) {
-              await supabase.from('automacoes_log').insert([{ tipo_regra: 'PROPOSTA_ENVIADA_FOLLOWUP', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Tarefa Follow-up' }]);
-              const dataVenc = new Date(); dataVenc.setDate(dataVenc.getDate() + 3); dataVenc.setHours(10, 0, 0, 0);
-              await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar retorno da proposta ${prop.numero}.`, data_vencimento: dataVenc.toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-            }
-          } catch (e) {}
+          await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Assunto: ${assuntoEmail}\n\n${textoFinal}` }]);
           showToast("E-mail enviado e registado no histórico!", "sucesso"); 
         } else { showToast(`Erro ao enviar e-mail.`, "erro"); return; }
       } 
@@ -298,7 +324,7 @@ export default function AdminPage() {
         if (!numeroLimpo || numeroLimpo.length < 10) return showToast("Por favor, digite um número de telefone válido com DDD e código do país.", "erro");
         
         window.open(`https://wa.me/${numeroLimpo}?text=${encodeURIComponent(textoFinal)}`, '_blank');
-        await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Mensagem WhatsApp enviada para (${numeroLimpo}):\n\n${textoFinal}` }]);
+        await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Enviado para (${numeroLimpo}):\n\n${textoFinal}` }]);
         showToast("WhatsApp aberto e registado no histórico!", "sucesso");
       }
 
@@ -336,31 +362,7 @@ export default function AdminPage() {
   const confirmarPerda = async (e: React.FormEvent) => { e.preventDefault(); if (!formPerda.motivo) return showToast("Selecione um motivo.", "erro"); await supabase.from('propostas').update({ status: 'perdida', motivo_perda: formPerda.motivo, obs_perda: formPerda.obs }).eq('id', formPerda.id); showToast("Proposta marcada como perdida.", "info"); setModalPerda(false); carregarTudo(); };
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
-  // ─── GESTÃO DE UTILIZADORES (ADMIN) ───────────────────────────────────────
-  const salvarUsuario = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formUsuario.id) {
-      await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial }).eq('id', formUsuario.id);
-    } else {
-      // Como o ID depende da Autenticação do Google, forçamos os usuários a entrarem primeiro.
-      return showToast("Para novos utilizadores, eles devem fazer login no sistema 1 vez primeiro.", "erro");
-    }
-    showToast("Permissões de utilizador atualizadas!", "sucesso");
-    setModalUsuario(false);
-    carregarTudo();
-  };
-
-  const excluirUsuario = async (id?: string, email?: string) => {
-    if (!id) return;
-    if (email === session?.user?.email) return showToast("Não pode excluir o seu próprio utilizador.", "erro");
-    if (confirm(`Pretende remover todas as permissões de acesso de ${email}?`)) {
-      await supabase.from('perfis').delete().eq('id', id);
-      showToast("Acesso do utilizador removido.", "info");
-      carregarTudo();
-    }
-  };
-
-  // ─── AÇÕES DA TIMELINE E CRUD GERAL ───────────────────────────────────────
+  // ─── AÇÕES DA TIMELINE E CRUD DE CLIENTES ───────────────────────────────
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteDetalhe || !formInteracao.descricao) return;
@@ -370,57 +372,41 @@ export default function AdminPage() {
     setClienteDetalhe(null); setAba('dashboard'); carregarTudo();
   };
 
-  const salvarClienteBase = async (e: React.FormEvent) => { e.preventDefault(); if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id); else await supabase.from('clientes').insert([{...formCliente, filial: formCliente.filial || perfilAtivo.filial}]); showToast("Registo guardado.", "sucesso"); setModalClienteForm(false); carregarTudo(); };
+  const salvarClienteBase = async (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    // Magia para converter um Lead virtual num Cliente Oficial: se for um Lead não-oficial, ignoramos o ID virtual dele e forçamos um insert
+    if (formCliente.id) {
+      await supabase.from('clientes').update({ nome: formCliente.nome, email: formCliente.email, telefone: formCliente.telefone, whatsapp: formCliente.whatsapp, documento: formCliente.documento, tipo: formCliente.tipo, codigo: formCliente.codigo, filial: formCliente.filial }).eq('id', formCliente.id);
+    } else {
+      await supabase.from('clientes').insert([{ nome: formCliente.nome, email: formCliente.email, telefone: formCliente.telefone, whatsapp: formCliente.whatsapp, documento: formCliente.documento, tipo: formCliente.tipo, codigo: formCliente.codigo, filial: formCliente.filial || perfilAtivo.filial }]); 
+    }
+    showToast("Registo guardado e oficializado.", "sucesso"); setModalClienteForm(false); carregarTudo(); 
+  };
+
   const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
   const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
   const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
+  
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
   const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
   const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
   const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
   const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
+  
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
+
+  // ─── GESTÃO DE UTILIZADORES (ADMIN) ───────────────────────────────────────
+  const salvarUsuario = async (e: React.FormEvent) => { e.preventDefault(); if (formUsuario.id) { await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial }).eq('id', formUsuario.id); } else { return showToast("Para novos utilizadores, eles devem fazer login no sistema 1 vez primeiro.", "erro"); } showToast("Permissões de utilizador atualizadas!", "sucesso"); setModalUsuario(false); carregarTudo(); };
+  const excluirUsuario = async (id?: string, email?: string) => { if (!id) return; if (email === session?.user?.email) return showToast("Não pode excluir o seu próprio utilizador.", "erro"); if (confirm(`Pretende remover todas as permissões de acesso de ${email}?`)) { await supabase.from('perfis').delete().eq('id', id); showToast("Acesso do utilizador removido.", "info"); carregarTudo(); } };
 
   if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar permissões e carregar sistema...</div>;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:550px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}} 
-      /* KANBAN STYLES */
-      .kanban-board { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 20px; }
-      .kanban-col { flex: 1; min-width: 280px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; }
-      .kanban-header { padding: 15px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between;}
-      .kanban-body { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; min-height: 200px; }
-      .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 15px; cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-      .kanban-card:active { transform: scale(0.98); cursor: grabbing; border-color: #4A90D9; }
-      `}</style>
+      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:550px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}} .kanban-board { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 20px; } .kanban-col { flex: 1; min-width: 280px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; } .kanban-header { padding: 15px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between;} .kanban-body { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; min-height: 200px; } .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 15px; cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); } .kanban-card:active { transform: scale(0.98); cursor: grabbing; border-color: #4A90D9; }`}</style>
 
-      {toast && (
-        <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>
-          {toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}
-        </div>
-      )}
-
-      {filaWpp.length > 0 && (
-        <div style={{ position: "fixed", bottom: 20, left: 280, width: 380, background: "var(--bg-sidebar)", border: "1px solid #4A90D9", borderRadius: 16, zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", maxHeight: 500 }}>
-          <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
-            <span>💬 Fila de Envio WhatsApp ({filaWpp.length})</span>
-            <button onClick={() => setFilaWpp([])} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontWeight: "bold" }}>X</button>
-          </div>
-          <div style={{ padding: 15, overflowY: "auto", flex: 1 }}>
-            {filaWpp.map(c => (
-              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", borderBottom: "1px solid var(--border-light)" }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{c.nome}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.whatsapp || c.telefone}</div>
-                </div>
-                <button onClick={() => enviarWhatsAppDaFila(c)} style={{ background: "#22c55e", color: "#fff", border: "none", padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Enviar ›</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {toast && <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>{toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}</div>}
 
       <aside className="sidebar">
         <div style={{padding:"30px",textAlign:"center"}}><img src={tema==='dark'?'/Logo-negativo.webp':'/icon.png'} style={{maxHeight:"40px", borderRadius: "8px"}}/></div>
@@ -430,6 +416,7 @@ export default function AdminPage() {
           <button className={`nav-item ${aba==='clientes'?'active':''}`} onClick={()=>setAba('clientes')}>👥 Base de Clientes</button>
           {isAdmin && <button className={`nav-item ${aba==='contratos'?'active':''}`} onClick={()=>setAba('contratos')}>📄 Financeiro (MRR)</button>}
           <button className={`nav-item ${aba==='tarefas'?'active':''}`} onClick={()=>setAba('tarefas')}>✅ Minhas Tarefas</button>
+          {isAdmin && <button className={`nav-item ${aba==='relatorios'?'active':''}`} onClick={()=>setAba('relatorios')}>📊 Relatórios Avançados</button>}
           {isAdmin && <button className={`nav-item ${aba==='templates'?'active':''}`} onClick={()=>setAba('templates')}>📝 Templates</button>}
           {isAdmin && <button className={`nav-item ${aba==='usuarios'?'active':''}`} onClick={()=>setAba('usuarios')}>👥 Gestão de Equipa</button>}
           {isComercial && <button className="nav-item" style={{color:"#4A90D9",marginTop:"20px",border:"1px dashed #4A90D9"}} onClick={()=>router.push('/preco')}>+ Nova Proposta</button>}
@@ -438,7 +425,7 @@ export default function AdminPage() {
            <div style={{fontSize:"12px",color:"#4A90D9", fontWeight:"bold", marginBottom: 4}}>Simples Solução TI</div>
            <div style={{fontSize:"11px",color:"var(--text-primary)", marginBottom: 4}}>{perfilAtivo.perfil} | {perfilAtivo.filial}</div>
            <button onClick={handleLogout} style={{color:"#f87171",background:"none",border:"none",cursor:"pointer",fontSize:"12px",marginTop:"12px", width:"100%", padding:"8px", borderTop:"1px solid rgba(248,113,113,0.2)"}}>Sair</button>
-           <div style={{fontSize:"10px",color:"var(--text-secondary)", marginTop: "15px"}}>v1.03</div>
+           <div style={{fontSize:"10px",color:"var(--text-secondary)", marginTop: "15px"}}>v1.04</div>
         </div>
       </aside>
 
@@ -447,7 +434,7 @@ export default function AdminPage() {
           <h1 style={{fontSize:"24px"}}>{aba.toUpperCase()}</h1>
           <div style={{display:"flex",gap:"10px"}}>
             <button onClick={alternarTema} className="btn-action">{tema==='dark'?'☀️ Claro':'🌙 Escuro'}</button>
-            {(aba === 'dashboard' || aba === 'propostas') && (
+            {(aba === 'dashboard' || aba === 'propostas' || aba === 'relatorios') && (
               <select value={filtroDias} onChange={e=>setFiltroDias(Number(e.target.value))} style={{background:"var(--bg-card)",color:"var(--text-primary)",border:"1px solid var(--border-light)",borderRadius:"8px",padding:"0 10px"}}>
                 <option value={30}>Últimos 30 dias</option><option value={90}>Últimos 3 Meses</option><option value={0}>Sempre</option>
               </select>
@@ -473,7 +460,7 @@ export default function AdminPage() {
             <div className="grid-metrics" style={{marginTop: "20px", marginBottom: "30px"}}>
               <div className="metric-card" style={{borderTop: "3px solid #64748b"}}><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>VALOR ABERTO (NOVAS)</div><div style={{fontSize:"24px",fontWeight:800}}>{fmt(propostasAbertas.reduce((a,b)=>a+b.valor,0))}</div></div>
               <div className="metric-card" style={{borderTop: "3px solid #4A90D9"}}><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>VALOR EM NEGOCIAÇÃO</div><div style={{fontSize:"24px",fontWeight:800,color:"#4A90D9"}}>{fmt(propostasEnviadas.reduce((a,b)=>a+b.valor,0))}</div></div>
-              <div className="metric-card" style={{borderTop: "3px solid #22c55e"}}><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>VALOR FECHADO NO MÊS</div><div style={{fontSize:"24px",fontWeight:800,color:"#22c55e"}}>{fmt(propostasFechadas.reduce((a,b)=>a+b.valor,0))}</div></div>
+              <div className="metric-card" style={{borderTop: "3px solid #22c55e"}}><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>VALOR FECHADO</div><div style={{fontSize:"24px",fontWeight:800,color:"#22c55e"}}>{fmt(propostasFechadas.reduce((a,b)=>a+b.valor,0))}</div></div>
             </div>
 
             <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "20px"}}>
@@ -514,6 +501,7 @@ export default function AdminPage() {
           </>
         )}
 
+        {/* 2. FUNIL DE VENDAS (KANBAN OU TABELA) */}
         {aba === 'propostas' && isComercial && vistaPropostas === 'kanban' && (
           <div className="kanban-board">
             <div className="kanban-col" onDragOver={handleDragOver} onDrop={(e)=>handleDropStatus(e, 'aberta')}>
@@ -617,6 +605,10 @@ export default function AdminPage() {
               {isComercial && <button onClick={()=>{setFormComunicado({publico:"Cliente", assunto:"", mensagem:""}); setModalComunicado(true);}} className="btn-action" style={{background:"transparent",color:"#4A90D9",border:"1px solid #4A90D9", padding: "10px 20px", fontSize: 14}}>📢 Comunicado em Massa</button>}
               
               <div style={{flex: 1, display: "flex", justifyContent: "flex-end", gap: 10}}>
+                <div style={{display: "flex", alignItems: "center", gap: 8, background: "var(--bg-card)", padding: "0 10px", borderRadius: 8, border: "1px solid var(--border-light)"}}>
+                  <input type="checkbox" id="checkDesativados" checked={mostrarDesativados} onChange={(e) => setMostrarDesativados(e.target.checked)} />
+                  <label htmlFor="checkDesativados" style={{fontSize: 12, cursor: "pointer"}}>Exibir Inativos</label>
+                </div>
                 <input className="input-modal" style={{maxWidth: "300px", margin: 0}} placeholder="Pesquisar por nome ou e-mail..." value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} />
                 <select className="input-modal" value={filtroTipoCliente} onChange={e=>setFiltroTipoCliente(e.target.value as any)} style={{maxWidth: "200px", margin: 0}}>
                   <option value="Todos">Todas as Categorias</option><option value="Cliente">Apenas Clientes</option><option value="Lead">Apenas Leads</option><option value="Parceiro">Apenas Parceiros</option>
@@ -628,18 +620,19 @@ export default function AdminPage() {
                 <thead><tr><th>Nome / Cód</th><th>Contatos</th><th>Categoria</th><th>🔥 Score</th>{isComercial && <th>Documentos</th>}<th>Ação</th></tr></thead>
                 <tbody>
                   {clientesAgrupados.map(c => (
-                    <tr key={c.nome}>
-                      <td><strong>{c.nome}</strong>{c.codigo && <div style={{fontSize:11, color:"var(--text-tertiary)"}}>{c.codigo}</div>}</td>
+                    <tr key={c.nome} style={{opacity: c.ativo === false ? 0.4 : 1}}>
+                      <td><strong>{c.nome}</strong>{c.codigo && <div style={{fontSize:11, color:"var(--text-tertiary)"}}>{c.codigo}</div>}{c.ativo === false && <span style={{fontSize: 10, color: "#f87171", fontWeight: "bold", marginLeft: 5}}>(INATIVO)</span>}</td>
                       <td><div style={{fontSize: 12, color:"var(--text-secondary)"}}>📞 {c.telefone || c.contato || '—'}</div><div style={{fontSize: 12, color:"var(--text-secondary)"}}>💬 {c.whatsapp || '—'}</div><div style={{fontSize: 11, color:"var(--text-tertiary)", marginTop: 2}}>{c.email}</div></td>
                       <td><span className="badge-status" style={{background: c.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : c.tipo==='Parceiro' ? 'rgba(168,85,247,0.1)' : 'rgba(245,158,11,0.1)', color: c.tipo==='Cliente' ? '#22c55e' : c.tipo==='Parceiro' ? '#a855f7' : '#f59e0b'}}>{c.tipo}</span></td>
                       <td><span style={{ fontWeight: 'bold', color: (c.score || 0) >= 20 ? '#f87171' : (c.score || 0) > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>{c.score || 0} pts</span></td>
                       {isComercial && <td><span style={{fontSize:12, color:"var(--text-secondary)"}}>{c.propostas.length} Props<br/>{c.contratos.filter((x:any)=>x.status==='Ativo').length} Contratos</span></td>}
                       <td style={{textAlign: "right"}}>
-                        <button className="btn-action" onClick={()=>setClienteDetalhe(c)}>Ver Ficha (Diário)</button>
+                        <button className="btn-action" onClick={()=>setClienteDetalhe(c)}>Ver Diário</button>
                         {isComercial && <button className="btn-action" onClick={()=>{
-                          setFormCliente({ id: c.id, nome: c.nome, email: c.email || "", telefone: c.telefone || "", whatsapp: c.whatsapp || "", documento: c.documento || "", tipo: c.tipo || "Lead", codigo: c.codigo || "", filial: c.filial || perfilAtivo.filial });
+                          setFormCliente({ id: c.isOficial ? c.id : undefined, nome: c.nome, email: c.email || "", telefone: c.telefone || "", whatsapp: c.whatsapp || "", documento: c.documento || "", tipo: c.tipo || "Lead", codigo: c.codigo || "", filial: c.filial || perfilAtivo.filial });
                           setModalClienteForm(true);
                         }}>Editar</button>}
+                        {isAdmin && <button className="btn-action" style={{borderColor: c.ativo === false ? "#22c55e" : "#f87171", color: c.ativo === false ? "#22c55e" : "#f87171"}} onClick={() => alternarStatusCliente(c)}>{c.ativo === false ? 'Ativar' : 'Desativar'}</button>}
                       </td>
                     </tr>
                   ))}
@@ -667,6 +660,38 @@ export default function AdminPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </>
+        )}
+
+        {aba === 'relatorios' && isAdmin && (
+          <>
+            <div className="grid-metrics" style={{marginBottom: 30}}>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>TOTAL DE CLIENTES REGISTADOS</div><div style={{fontSize:"28px",fontWeight:800}}>{clientesAgrupados.filter(c => c.tipo === 'Cliente').length}</div></div>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>TOTAL DE LEADS CAPTADOS</div><div style={{fontSize:"28px",fontWeight:800,color:"#f59e0b"}}>{clientesAgrupados.filter(c => c.tipo === 'Lead').length}</div></div>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>CONTRATOS ATIVOS</div><div style={{fontSize:"28px",fontWeight:800,color:"#22c55e"}}>{contratos.filter(c => c.status === 'Ativo').length}</div></div>
+              <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>CHURN (CONTRATOS CANCELADOS)</div><div style={{fontSize:"28px",fontWeight:800,color:"#f87171"}}>{contratos.filter(c => c.status === 'Cancelado').length}</div></div>
+            </div>
+
+            <div style={{display: "grid", gridTemplateColumns: "1fr", gap: "20px"}}>
+              <div className="metric-card" style={{height: 400}}>
+                <div style={{fontSize:"16px", fontWeight:700, color:"var(--text-primary)", marginBottom: 10}}>Crescimento de Receita (MRR Ativo) vs Meta</div>
+                <div style={{fontSize:"13px", color:"var(--text-secondary)", marginBottom: 20}}>Acompanhamento do valor recorrente gerado por novos contratos ao longo do tempo.</div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[
+                    { name: 'Jan', Receita: mrrAtivo * 0.6 },
+                    { name: 'Fev', Receita: mrrAtivo * 0.7 },
+                    { name: 'Mar', Receita: mrrAtivo * 0.85 },
+                    { name: 'Abr', Receita: mrrAtivo }
+                  ]} margin={{top: 5, right: 30, left: 20, bottom: 5}}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
+                    <XAxis dataKey="name" stroke="var(--text-secondary)" />
+                    <YAxis stroke="var(--text-secondary)" />
+                    <ChartTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background:'#0a1628', border:'none', borderRadius:8, color:'#fff'}} />
+                    <Bar dataKey="Receita" fill="#22c55e" radius={[4, 4, 0, 0]} barSize={50} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </>
         )}
@@ -720,7 +745,7 @@ export default function AdminPage() {
 
         {aba === 'templates' && isAdmin && (
           <>
-            <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
+            <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:"", assunto: ""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
             <div className="table-wrapper">
               <table>
                 <thead><tr><th>Nome</th><th>Canal</th><th>Pré-visualização do Conteúdo</th><th>Ação</th></tr></thead>
@@ -796,6 +821,13 @@ export default function AdminPage() {
                   <option value="custom">✍️ Escrever mensagem personalizada...</option>
                 </select>
               </div>
+
+              {formEnvioMensagem.templateId && modalEnvioProposta.tipo === 'Email' && (
+                <div>
+                  <label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>Assunto do E-mail</label>
+                  <input required className="input-modal" value={formEnvioMensagem.assunto} onChange={e => setFormEnvioMensagem({...formEnvioMensagem, assunto: e.target.value})} placeholder="Assunto do e-mail..." />
+                </div>
+              )}
 
               {formEnvioMensagem.templateId && (
                 <div>
@@ -1020,7 +1052,10 @@ export default function AdminPage() {
             <form onSubmit={salvarTemplate}>
               <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({...formTemplate, nome: e.target.value})} placeholder="Nome do Template..." />
               <select className="input-modal" value={formTemplate.tipo} onChange={e => setFormTemplate({...formTemplate, tipo: e.target.value})}><option value="WhatsApp">WhatsApp</option><option value="Email">Email</option></select>
-              <textarea required className="input-modal" rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
+              {formTemplate.tipo === 'Email' && (
+                <input required className="input-modal" value={formTemplate.assunto || ""} onChange={e => setFormTemplate({...formTemplate, assunto: e.target.value})} placeholder="Assunto do E-mail..." style={{marginTop: 15}} />
+              )}
+              <textarea required className="input-modal" style={{marginTop: 15}} rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Template</button></div>
             </form>
           </div>
