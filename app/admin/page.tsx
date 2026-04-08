@@ -3,29 +3,27 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import {
-  PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line, Area, AreaChart
-} from 'recharts';
+import { DashboardTab } from "@/components/admin/modules/DashboardTab";
+import { RelatoriosTab } from "@/components/admin/modules/RelatoriosTab";
 
 // ─── TIPOS ─────────────────────────────────────────────────────────────────
 interface PropostaDB {
   id: number; created_at: string; numero: string; cliente: string; contato: string;
   telefone?: string; email: string; valor: number; status: string; status_envio: string;
   filial?: string; dados: any; motivo_perda?: string; obs_perda?: string;
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface TarefaDB {
   id: number; titulo: string; descricao: string; data_vencimento: string; status: string;
   usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string;
   data_conclusao?: string; created_at: string; prioridade?: 'Alta' | 'Normal' | 'Baixa';
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface ContratoDB {
   id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string;
   valor_mensal: number; status: string; data_inicio: string; data_fim?: string;
   motivo_cancelamento?: string; filial?: string; created_at: string;
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface TemplateDB {
   id: number; nome: string; tipo: string; conteudo: string; created_at: string; assunto?: string;
@@ -38,7 +36,7 @@ interface ClienteDB {
 interface InteracaoDB {
   id: number; cliente_nome: string; usuario_email: string; tipo: string;
   descricao: string; created_at: string;
-  cliente_id?: string;
+  cliente_id?: string; 
 }
 interface PerfilUsuario {
   id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string;
@@ -62,19 +60,6 @@ const calcDiasAtraso = (dataVenc: string): number => {
   const diff = Math.floor((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24));
   return diff;
 };
-
-// ─── COMPONENTES REUTILIZÁVEIS ──────────────────────────────────────────────
-const MetricCard = ({ label, value, color, borderColor, icon, sub }: {
-  label: string; value: string | number; color?: string; borderColor?: string; icon?: string; sub?: string;
-}) => (
-  <div className="metric-card" style={{ borderTop: borderColor ? `3px solid ${borderColor}` : undefined }}>
-    <div style={{ fontSize: "12px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-      {icon && <span>{icon}</span>}{label}
-    </div>
-    <div style={{ fontSize: "28px", fontWeight: 800, color: color || "var(--text-primary)", marginTop: 8 }}>{value}</div>
-    {sub && <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: 4 }}>{sub}</div>}
-  </div>
-);
 
 const BadgeStatus = ({ status }: { status: string }) => {
   const cores: Record<string, { bg: string; color: string }> = {
@@ -290,7 +275,7 @@ export default function AdminPage() {
         setUsuarios(listaPerfis);
       }
     } catch (err) {
-      showToast("Erro ao carregar dados. Verifique a conexão.", "erro");
+      showToast("Erro ao carregar dados.", "erro");
     } finally {
       setCarregando(false);
     }
@@ -381,17 +366,12 @@ export default function AdminPage() {
     [tarefasComAtraso]
   );
 
-  const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
-
   // ─── BASE DE CLIENTES AGRUPADA COM NOVO RELACIONAMENTO (ID) ───────────────
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
 
-    // 1. Base Oficial (Chave = ID Oficial)
     clientesBase.forEach(c => {
-      mapa.set(`ID_${c.id}`, {
-        ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: []
-      });
+      mapa.set(`ID_${c.id}`, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
 
     const getChaveCliente = (id?: string | number, nomeRef?: string) => {
@@ -404,21 +384,18 @@ export default function AdminPage() {
       return `UNKNOWN`;
     };
 
-    // 2. Interações
     interacoes.forEach(i => {
       const key = getChaveCliente(i.cliente_id, i.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).interacoes.push(i);
     });
 
-    // 3. Propostas
     propostas.forEach(p => {
       const key = getChaveCliente(p.cliente_id, p.cliente);
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
 
-    // 4. Contratos
     contratos.forEach(c => {
       const key = getChaveCliente(c.cliente_id, c.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
@@ -426,13 +403,11 @@ export default function AdminPage() {
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
 
-    // 5. Leads do Site
     leads.forEach(l => {
       const key = `NAME_${l.empresa.trim().toUpperCase()}`; 
       if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
 
-    // 6. Tarefas
     tarefas.forEach(t => {
       if (t.nome_referencia || t.cliente_id) {
         const key = getChaveCliente(t.cliente_id, t.nome_referencia);
@@ -479,12 +454,10 @@ export default function AdminPage() {
   };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
-    const keyToFind = prop.cliente_id ? `ID_${prop.cliente_id}` : `NAME_${prop.cliente.trim().toUpperCase()}`;
     const cliente = clientesAgrupados.find(c => {
        if (prop.cliente_id) return c.id === prop.cliente_id;
        return c.nome.toUpperCase() === prop.cliente.trim().toUpperCase();
     });
-    
     if (cliente) setClienteDetalhe(cliente);
     else showToast("Erro ao abrir a ficha do cliente.", "erro");
   };
@@ -533,10 +506,7 @@ export default function AdminPage() {
   // ─── GERADOR DE PROPOSTA ──────────────────────────────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
     if (!conteudo) return "";
-    return conteudo
-      .replace(/\{\{nome\}\}/g, nome || "Cliente")
-      .replace(/\{\{empresa\}\}/g, empresa || "Empresa")
-      .replace(/\{\{valor\}\}/g, fmt(valor));
+    return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor));
   };
 
   const gerarHtmlProposta = (prop: PropostaDB) => {
@@ -547,15 +517,11 @@ export default function AdminPage() {
 
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     let foneParaTentar = prop.telefone || "";
-    // Tenta encontrar na base via ID ou Nome
     const cb = prop.cliente_id 
       ? clientesBase.find(c => c.id === prop.cliente_id) 
       : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
     
-    if (cb) {
-      foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
-    }
-    
+    if (cb) foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(foneParaTentar) });
     setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
   };
@@ -603,9 +569,7 @@ export default function AdminPage() {
         } catch {}
         
         let trackingPixel = '';
-        if (prop.cliente_id) {
-           trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${prop.cliente_id}" width="1" height="1" style="display:none;" />`;
-        }
+        if (prop.cliente_id) trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${prop.cliente_id}" width="1" height="1" style="display:none;" />`;
 
         let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
         const assuntoEmail = formEnvioMensagem.assunto || `Proposta Comercial SSTI - ${prop.cliente}`;
@@ -663,8 +627,6 @@ export default function AdminPage() {
     await supabase.from('propostas').update({ status: 'fechada' }).eq('id', prop.id);
     try {
       let finalClienteId = prop.cliente_id;
-      
-      // Se a proposta não tinha cliente_id atrelado, tentamos achar ou criamos o cliente agora
       if (!finalClienteId) {
         const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
         if (cEx) {
@@ -673,7 +635,6 @@ export default function AdminPage() {
         } else {
            const { data: newCli } = await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]).select().single();
            finalClienteId = newCli?.id;
-           // Atualizamos a proposta para não ficar orfã
            if (finalClienteId) await supabase.from('propostas').update({ cliente_id: finalClienteId }).eq('id', prop.id);
         }
       }
@@ -720,7 +681,6 @@ export default function AdminPage() {
     setFormInteracao({ tipo: "Nota", descricao: "" });
     showToast("Nota adicionada ao histórico!", "sucesso");
     setClienteDetalhe(null);
-    setAba('dashboard');
     carregarTudo();
   };
 
@@ -1044,7 +1004,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.2</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.3 Modular</div>
         </div>
       </aside>
 
@@ -1083,96 +1043,37 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {/* ─── ABA: DASHBOARD ─────────────────────────────────────────────────── */}
+        {/* COMPONENTES EXTRAÍDOS: DASHBOARD */}
         {aba === 'dashboard' && isComercial && (
-          <>
-            <div className="grid-metrics">
-              {isAdmin && <MetricCard label="MRR ATIVO" value={fmt(mrrAtivo)} borderColor="#22c55e" icon="💰" sub={`${contratos.filter(c => c.status === 'Ativo').length} contratos`} />}
-              <MetricCard label="TAXA DE CONVERSÃO" value={`${taxaConversao.toFixed(1)}%`} color="#4A90D9" borderColor="#4A90D9" icon="📈" />
-              <MetricCard label="GANHAS (VALOR)" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" icon="🏆" sub={`${propostasFechadas.length} negócios`} />
-              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} borderColor="#a855f7" icon="🎟️" />
-              <MetricCard label="PERDIDAS" value={propostasPerdidas.length} color="#f87171" borderColor="#f87171" icon="❌" />
-            </div>
+          <DashboardTab 
+            isAdmin={isAdmin} 
+            mrrAtivo={mrrAtivo} 
+            taxaConversao={taxaConversao} 
+            propostasFechadas={propostasFechadas} 
+            ticketMedio={ticketMedio} 
+            propostasPerdidas={propostasPerdidas} 
+            propostasAbertas={propostasAbertas} 
+            propostasEnviadas={propostasEnviadas} 
+            tarefasUrgentes={tarefasUrgentes} 
+            pFiltradas={pFiltradas} 
+            dadosMotivosPerda={dadosMotivosPerda} 
+            dadosPipelineMensal={dadosPipelineMensal} 
+            fmt={fmt} 
+            setAba={setAba} 
+            contratos={contratos} 
+          />
+        )}
 
-            <div className="grid-metrics" style={{ marginBottom: "24px" }}>
-              <MetricCard label="EM ABERTO (NOVAS)" value={fmt(propostasAbertas.reduce((a, b) => a + b.valor, 0))} borderColor="#64748b" />
-              <MetricCard label="EM NEGOCIAÇÃO" value={fmt(propostasEnviadas.reduce((a, b) => a + b.valor, 0))} color="#4A90D9" borderColor="#4A90D9" />
-              <MetricCard label="FECHADO NO PERÍODO" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" />
-            </div>
-
-            {/* ALERTAS RÁPIDOS */}
-            {tarefasUrgentes.length > 0 && (
-              <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <span style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>⚠️ {tarefasUrgentes.length} tarefa{tarefasUrgentes.length > 1 ? 's' : ''} urgente{tarefasUrgentes.length > 1 ? 's' : ''}</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: 13, marginLeft: 10 }}>{tarefasUrgentes.slice(0, 2).map(t => t.titulo).join(', ')}{tarefasUrgentes.length > 2 ? '...' : ''}</span>
-                </div>
-                <button className="btn-action" style={{ color: "#f87171", borderColor: "#f87171" }} onClick={() => setAba('tarefas')}>Ver Tarefas</button>
-              </div>
-            )}
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: "20px" }}>
-              <div className="metric-card" style={{ height: 320 }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📊 Funil de Negociação</div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[{ name: 'Criadas', qtd: pFiltradas.length }, { name: 'Enviadas', qtd: propostasEnviadas.length + propostasFechadas.length }, { name: 'Ganhas', qtd: propostasFechadas.length }]} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" horizontal={false} />
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} width={80} />
-                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Bar dataKey="qtd" fill="#4A90D9" radius={[0, 6, 6, 0]} barSize={28} label={{ position: 'right', fill: 'var(--text-secondary)', fontSize: 12 }} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="metric-card" style={{ height: 320 }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📉 Motivos de Perda</div>
-                {propostasPerdidas.length === 0 ? (
-                  <div style={{ height: "80%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", flexDirection: "column", gap: 8 }}>
-                    <span style={{ fontSize: 32 }}>🎉</span>
-                    <span>Nenhuma perda no período!</span>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={dadosMotivosPerda} cx="50%" cy="45%" innerRadius={55} outerRadius={90} paddingAngle={5} dataKey="value">
-                        {dadosMotivosPerda.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS_PIE[index % COLORS_PIE.length]} />)}
-                      </Pie>
-                      <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} itemStyle={{ color: '#fff' }} />
-                      <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-
-              {/* NOVO: Evolução mensal */}
-              <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
-                <ResponsiveContainer width="100%" height="85%">
-                  <AreaChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <defs>
-                      <linearGradient id="colorGanhas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorPerdidas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f87171" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
-                    <Area type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" fill="url(#colorGanhas)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" fill="url(#colorPerdidas)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="abertas" name="Em Aberto" stroke="#4A90D9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </>
+        {/* COMPONENTES EXTRAÍDOS: RELATÓRIOS */}
+        {aba === 'relatorios' && isAdmin && (
+          <RelatoriosTab 
+            clientesAgrupados={clientesAgrupados}
+            contratos={contratos}
+            mrrAtivo={mrrAtivo}
+            ticketMedio={ticketMedio}
+            dadosPipelineMensal={dadosPipelineMensal}
+            fmt={fmt}
+          />
         )}
 
         {/* ─── ABA: PROPOSTAS (KANBAN) ─────────────────────────────────────────── */}
@@ -1450,50 +1351,6 @@ export default function AdminPage() {
                   )}
                 </tbody>
               </table>
-            </div>
-          </>
-        )}
-
-        {/* ─── ABA: RELATÓRIOS ─────────────────────────────────────────────────── */}
-        {aba === 'relatorios' && isAdmin && (
-          <>
-            <div className="grid-metrics" style={{ marginBottom: 24 }}>
-              <MetricCard label="CLIENTES ATIVOS" value={clientesAgrupados.filter(c => c.tipo === 'Cliente' && c.ativo !== false).length} icon="👥" />
-              <MetricCard label="LEADS NA BASE" value={clientesAgrupados.filter(c => c.tipo === 'Lead').length} color="#f59e0b" icon="🎯" />
-              <MetricCard label="CONTRATOS ATIVOS" value={contratos.filter(c => c.status === 'Ativo').length} color="#22c55e" icon="📄" />
-              <MetricCard label="CHURN (CANCELADOS)" value={contratos.filter(c => c.status === 'Cancelado').length} color="#f87171" icon="📉" />
-              <MetricCard label="MRR TOTAL" value={fmt(mrrAtivo)} color="#22c55e" icon="💰" />
-              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} icon="🎟️" />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              <div className="metric-card" style={{ height: 360 }}>
-                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>MRR Atual vs Meta Trimestral</div>
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Valor recorrente por contratos ativos</div>
-                <ResponsiveContainer width="100%" height="80%">
-                  <BarChart data={[{ name: 'MRR Atual', Receita: mrrAtivo }, { name: 'Meta (+20%)', Receita: mrrAtivo * 1.2 }]} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" stroke="var(--text-secondary)" tick={{ fontSize: 12 }} axisLine={false} />
-                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} formatter={(v: any) => fmt(v)} />
-                    <Bar dataKey="Receita" fill="#22c55e" radius={[6, 6, 0, 0]} barSize={60} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="metric-card" style={{ height: 360 }}>
-                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>Evolução Mensal de Propostas</div>
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Ganhas vs Perdidas nos últimos 6 meses</div>
-                <ResponsiveContainer width="100%" height="80%">
-                  <LineChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} />
-                    <Line type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" strokeWidth={2} dot={{ fill: '#f87171', r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
             </div>
           </>
         )}
