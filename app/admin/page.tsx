@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { Sidebar } from "@/components/admin/layout/Sidebar";
+import { Header } from "@/components/admin/layout/Header";
 import {
   PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line, Area, AreaChart
@@ -13,19 +15,19 @@ interface PropostaDB {
   id: number; created_at: string; numero: string; cliente: string; contato: string;
   telefone?: string; email: string; valor: number; status: string; status_envio: string;
   filial?: string; dados: any; motivo_perda?: string; obs_perda?: string;
-  cliente_id?: string; // Alterado para string devido ao UUID
+  cliente_id?: string;
 }
 interface TarefaDB {
   id: number; titulo: string; descricao: string; data_vencimento: string; status: string;
   usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string;
   data_conclusao?: string; created_at: string; prioridade?: 'Alta' | 'Normal' | 'Baixa';
-  cliente_id?: string; // Alterado para string devido ao UUID
+  cliente_id?: string;
 }
 interface ContratoDB {
   id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string;
   valor_mensal: number; status: string; data_inicio: string; data_fim?: string;
   motivo_cancelamento?: string; filial?: string; created_at: string;
-  cliente_id?: string; // Alterado para string devido ao UUID
+  cliente_id?: string;
 }
 interface TemplateDB {
   id: number; nome: string; tipo: string; conteudo: string; created_at: string; assunto?: string;
@@ -38,7 +40,7 @@ interface ClienteDB {
 interface InteracaoDB {
   id: number; cliente_nome: string; usuario_email: string; tipo: string;
   descricao: string; created_at: string;
-  cliente_id?: string; // Alterado para string devido ao UUID
+  cliente_id?: string;
 }
 interface PerfilUsuario {
   id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string;
@@ -113,7 +115,6 @@ function useDebounce<T>(value: T, delay: number): T {
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AdminPage() {
-  const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // --- ESTADOS GERAIS ---
@@ -223,7 +224,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { router.push("/"); return; }
+      if (!session) { window.location.href = "/"; return; }
       setSession(session);
       const emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
@@ -241,9 +242,9 @@ export default function AdminPage() {
       else setAba('tarefas');
       setCarregandoAuth(false);
     });
-  }, [router]);
+  }, []);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
+  const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = "/"; };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -546,6 +547,7 @@ export default function AdminPage() {
 
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     let foneParaTentar = prop.telefone || "";
+    // Tenta encontrar na base via ID ou Nome
     const cb = prop.cliente_id 
       ? clientesBase.find(c => c.id === prop.cliente_id) 
       : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
@@ -662,6 +664,7 @@ export default function AdminPage() {
     try {
       let finalClienteId = prop.cliente_id;
       
+      // Se a proposta não tinha cliente_id atrelado, tentamos achar ou criamos o cliente agora
       if (!finalClienteId) {
         const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
         if (cEx) {
@@ -670,6 +673,7 @@ export default function AdminPage() {
         } else {
            const { data: newCli } = await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]).select().single();
            finalClienteId = newCli?.id;
+           // Atualizamos a proposta para não ficar orfã
            if (finalClienteId) await supabase.from('propostas').update({ cliente_id: finalClienteId }).eq('id', prop.id);
         }
       }
@@ -916,168 +920,31 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* FILA WHATSAPP FLUTUANTE */}
-      {filaWpp.length > 0 && (
-        <div style={{ position: "fixed", bottom: 90, right: 30, background: "#22c55e", borderRadius: 16, padding: 16, zIndex: 999, maxWidth: 300, boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>
-          <div style={{ color: "#fff", fontWeight: 700, marginBottom: 10 }}>💬 Fila WhatsApp ({filaWpp.length})</div>
-          {filaWpp.slice(0, 3).map(cli => (
-            <div key={cli.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ color: "#fff", fontSize: 12, flex: 1 }}>{cli.nome}</span>
-              <button onClick={() => enviarWhatsAppDaFila(cli)} style={{ background: "#fff", color: "#22c55e", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Enviar</button>
-            </div>
-          ))}
-          {filaWpp.length > 3 && <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 4 }}>+{filaWpp.length - 3} na fila...</div>}
-          <button onClick={() => setFilaWpp([])} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, cursor: "pointer", marginTop: 8, width: "100%" }}>Limpar Fila</button>
-        </div>
-      )}
-
-      {/* BUSCA GLOBAL (Ctrl+K) */}
-      {mostrarBuscaGlobal && (
-        <div className="busca-global-overlay" onClick={() => { setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
-          <div className="busca-global-box" onClick={e => e.stopPropagation()}>
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 20 }}>🔍</span>
-              <input
-                ref={searchInputRef}
-                value={buscaGlobal}
-                onChange={e => setBuscaGlobal(e.target.value)}
-                placeholder="Pesquisar clientes, propostas, tarefas..."
-                style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 16, outline: "none", fontFamily: "'Outfit', sans-serif" }}
-                autoFocus
-              />
-              <kbd style={{ background: "var(--border-light)", padding: "2px 6px", borderRadius: 4, fontSize: 11, color: "var(--text-secondary)" }}>ESC</kbd>
-            </div>
-            {buscaGlobal.length >= 2 && (
-              <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                {resultadosBuscaGlobal.clientes.length > 0 && (
-                  <>
-                    <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>CLIENTES</div>
-                    {resultadosBuscaGlobal.clientes.map((c: any) => (
-                      <div key={c.nome} className="resultado-busca-item" onClick={() => { setClienteDetalhe(c); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
-                        <span>👤</span><div><div style={{ fontWeight: 600 }}>{c.nome}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{c.tipo} · {c.email || "sem e-mail"}</div></div>
-                      </div>
-                    ))}
-                  </>
-                )}
-                {resultadosBuscaGlobal.propostas.length > 0 && (
-                  <>
-                    <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>PROPOSTAS</div>
-                    {resultadosBuscaGlobal.propostas.map((p: any) => (
-                      <div key={p.id} className="resultado-busca-item" onClick={() => { setAba('propostas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
-                        <span>🎯</span><div><div style={{ fontWeight: 600 }}>{p.cliente}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.numero} · {fmt(p.valor)}</div></div>
-                        <BadgeStatus status={p.status || 'aberta'} />
-                      </div>
-                    ))}
-                  </>
-                )}
-                {resultadosBuscaGlobal.tarefas.length > 0 && (
-                  <>
-                    <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>TAREFAS</div>
-                    {resultadosBuscaGlobal.tarefas.map((t: any) => (
-                      <div key={t.id} className="resultado-busca-item" onClick={() => { setAba('tarefas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
-                        <span>✅</span><div><div style={{ fontWeight: 600 }}>{t.titulo}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.nome_referencia}</div></div>
-                        <BadgeStatus status={t.status} />
-                      </div>
-                    ))}
-                  </>
-                )}
-                {resultadosBuscaGlobal.clientes.length === 0 && resultadosBuscaGlobal.propostas.length === 0 && resultadosBuscaGlobal.tarefas.length === 0 && (
-                  <div style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)", fontSize: 14 }}>Nenhum resultado encontrado para "{buscaGlobal}"</div>
-                )}
-              </div>
-            )}
-            {buscaGlobal.length < 2 && (
-              <div style={{ padding: 30, textAlign: "center", color: "var(--text-secondary)", fontSize: 13 }}>
-                Digite ao menos 2 caracteres para pesquisar
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* SIDEBAR */}
-      <aside className="sidebar">
-        <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
-          <img src={tema === 'dark' ? '/Logo-negativo.webp' : '/icon.png'} style={{ maxHeight: "36px", borderRadius: "8px" }} alt="SSTI" />
-        </div>
-        <nav className="nav-menu">
-          {isComercial && <button className={`nav-item ${aba === 'dashboard' ? 'active' : ''}`} onClick={() => setAba('dashboard')}>📈 Dashboard</button>}
-          {isComercial && (
-            <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
-              🎯 Funil de Vendas
-            </button>
-          )}
-          <button className={`nav-item ${aba === 'clientes' ? 'active' : ''}`} onClick={() => setAba('clientes')}>👥 Base de Clientes</button>
-          {isAdmin && <button className={`nav-item ${aba === 'contratos' ? 'active' : ''}`} onClick={() => setAba('contratos')}>📄 Financeiro (MRR)</button>}
-          <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => setAba('tarefas')}>
-            ✅ Tarefas
-            {tarefasUrgentes.length > 0 && <span className="notificacao-badge">{tarefasUrgentes.length}</span>}
-          </button>
-          {isAdmin && <button className={`nav-item ${aba === 'relatorios' ? 'active' : ''}`} onClick={() => setAba('relatorios')}>📊 Relatórios</button>}
-          {isAdmin && <button className={`nav-item ${aba === 'templates' ? 'active' : ''}`} onClick={() => setAba('templates')}>📝 Templates</button>}
-          {isAdmin && <button className={`nav-item ${aba === 'usuarios' ? 'active' : ''}`} onClick={() => setAba('usuarios')}>🔐 Usuários</button>}
-          {isComercial && (
-            <button
-              className="nav-item"
-              style={{ color: "#4A90D9", marginTop: "16px", border: "1px dashed #4A90D9", borderRadius: 10 }}
-              onClick={() => router.push('/preco')}
-            >
-              ✚ Nova Proposta
-            </button>
-          )}
-        </nav>
-        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-light)" }}>
-          <button
-            onClick={() => { setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }}
-            style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-light)", borderRadius: 8, padding: "8px 12px", color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 12 }}
-          >
-            🔍 <span>Pesquisar...</span>
-            <kbd style={{ marginLeft: "auto", background: "var(--border-light)", padding: "1px 5px", borderRadius: 4, fontSize: 10 }}>⌘K</kbd>
-          </button>
-          <div style={{ fontSize: "11px", color: "#4A90D9", fontWeight: "bold", marginBottom: 2 }}>Simples Solução TI</div>
-          <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: 4 }}>{perfilAtivo.perfil} · {perfilAtivo.filial}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
-            <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
-          </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.1</div>
-        </div>
-      </aside>
+      <Sidebar 
+        aba={aba} 
+        setAba={setAba} 
+        isAdmin={isAdmin} 
+        isComercial={isComercial} 
+        tarefasUrgentesCount={tarefasUrgentes.length} 
+        perfilAtivo={perfilAtivo} 
+        tema={tema} 
+        alternarTema={alternarTema} 
+        handleLogout={handleLogout} 
+        onOpenSearch={() => { setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }} 
+      />
 
       {/* MAIN */}
       <main className="main-content">
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
-          <div>
-            <h1 style={{ fontSize: "22px", fontWeight: 800 }}>
-              {aba === 'dashboard' && '📈 Dashboard'}
-              {aba === 'propostas' && '🎯 Funil de Vendas'}
-              {aba === 'clientes' && '👥 Base de Clientes'}
-              {aba === 'contratos' && '📄 Financeiro (MRR)'}
-              {aba === 'tarefas' && '✅ Tarefas'}
-              {aba === 'relatorios' && '📊 Relatórios'}
-              {aba === 'templates' && '📝 Templates'}
-              {aba === 'usuarios' && '🔐 Usuários'}
-            </h1>
-            {carregando && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>A sincronizar dados...</div>}
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {(aba === 'dashboard' || aba === 'propostas' || aba === 'relatorios') && (
-              <select value={filtroDias} onChange={e => setFiltroDias(Number(e.target.value))} style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-light)", borderRadius: "8px", padding: "8px 12px", fontSize: 13 }}>
-                <option value={30}>Últimos 30 dias</option>
-                <option value={90}>Últimos 3 Meses</option>
-                <option value={180}>Últimos 6 Meses</option>
-                <option value={0}>Sempre</option>
-              </select>
-            )}
-            {aba === 'propostas' && (
-              <div style={{ display: "flex", background: "var(--bg-card)", border: "1px solid var(--border-light)", borderRadius: 8, overflow: "hidden" }}>
-                <button onClick={() => setVistaPropostas('kanban')} style={{ background: vistaPropostas === 'kanban' ? 'rgba(74,144,217,0.2)' : 'transparent', color: vistaPropostas === 'kanban' ? '#4A90D9' : 'var(--text-secondary)', border: "none", padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Kanban</button>
-                <button onClick={() => setVistaPropostas('tabela')} style={{ background: vistaPropostas === 'tabela' ? 'rgba(74,144,217,0.2)' : 'transparent', color: vistaPropostas === 'tabela' ? '#4A90D9' : 'var(--text-secondary)', border: "none", padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Tabela</button>
-              </div>
-            )}
-            <button onClick={carregarTudo} className="btn-action" title="Recarregar dados">🔄</button>
-          </div>
-        </header>
+        
+        <Header 
+          aba={aba} 
+          carregando={carregando} 
+          filtroDias={filtroDias} 
+          setFiltroDias={setFiltroDias} 
+          vistaPropostas={vistaPropostas} 
+          setVistaPropostas={setVistaPropostas} 
+          carregarTudo={carregarTudo} 
+        />
 
         {/* ─── ABA: DASHBOARD ─────────────────────────────────────────────────── */}
         {aba === 'dashboard' && isComercial && (
@@ -1141,7 +1008,6 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* NOVO: Evolução mensal */}
               <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
                 <ResponsiveContainer width="100%" height="85%">
