@@ -223,7 +223,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { router.push("/"); return; }
+      if (!session) { window.location.href = "/"; return; }
       setSession(session);
       const emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
@@ -241,9 +241,9 @@ export default function AdminPage() {
       else setAba('tarefas');
       setCarregandoAuth(false);
     });
-  }, [router]);
+  }, []);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
+  const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = "/"; };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -823,6 +823,7 @@ export default function AdminPage() {
         showToast(`O e-mail ${emailTratado} já existia. Acessos atualizados!`, "sucesso");
       } else {
         const { error } = await supabase.from('perfis').insert([{
+          id: crypto.randomUUID(), 
           email: emailTratado,
           perfil: formUsuario.perfil,
           filial: formUsuario.filial
@@ -1052,7 +1053,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.5 (Modular Seguro)</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.6</div>
         </div>
       </aside>
 
