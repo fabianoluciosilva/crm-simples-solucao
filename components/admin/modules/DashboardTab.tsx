@@ -1,5 +1,4 @@
-"use client";
-
+import React from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, PieChart, Pie, Cell, Legend, AreaChart, Area } from 'recharts';
 import { MetricCard } from '../ui/MetricCard';
 
@@ -45,7 +44,7 @@ export function DashboardTab({
               <XAxis type="number" hide />
               <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} width={80} />
               <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-              <Bar dataKey="qtd" fill="#4A90D9" radius={[0, 6, 6, 0]} barSize={28} label={{ position: 'right', fill: 'var(--text-secondary)', fontSize: 12 }} />
+              <Bar dataKey="qtd" fill="#4A90D9" radius={[0, 6, 6, 0]} barSize={28} label={{ position: 'right', fill: 'var(--text-primary)' }} />
             </BarChart>
           </ResponsiveContainer>
         </div>
