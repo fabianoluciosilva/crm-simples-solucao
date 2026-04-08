@@ -29,6 +29,7 @@ export default function AdminPage() {
   const isSuporte = perfilAtivo.perfil === 'Suporte' || isAdmin;
 
   const showToast = (msg: string, tipo: 'sucesso' | 'erro' | 'info' = 'sucesso') => { setToast({ msg, tipo }); setTimeout(() => setToast(null), 4000); };
+  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   // --- ESTADOS DO CRM E VISUALIZAÇÃO ---
   const [aba, setAba] = useState<"dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates">("dashboard");
@@ -66,8 +67,6 @@ export default function AdminPage() {
   const [modalPerda, setModalPerda] = useState(false);
   const [formPerda, setFormPerda] = useState({ id: 0, motivo: "", obs: "" });
 
-  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
   // ─── AUTENTICAÇÃO E CARREGAMENTO ─────────────────────────────────────────
   useEffect(() => { const t = localStorage.getItem("tema_ssti"); if (t === "light" || t === "dark") setTema(t); }, []);
   const alternarTema = () => { const n = tema === "dark" ? "light" : "dark"; setTema(n); localStorage.setItem("tema_ssti", n); };
@@ -88,6 +87,30 @@ export default function AdminPage() {
   }, [router]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
+
+  const verificarAutomacoesDeTempo = async (listaLeads: any[], listaContratos: any[]) => {
+    try {
+      const hoje = new Date(); const doisDiasAtras = new Date(); doisDiasAtras.setDate(hoje.getDate() - 2); const onzeMesesAtras = new Date(); onzeMesesAtras.setMonth(hoje.getMonth() - 11);
+      for (const lead of listaLeads) {
+        if (new Date(lead.created_at) < doisDiasAtras) {
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'LEAD_SEM_RESPOSTA_2_DIAS').eq('referencia_id', lead.id);
+          if (!log || log.length === 0) {
+            await supabase.from('automacoes_log').insert([{ tipo_regra: 'LEAD_SEM_RESPOSTA_2_DIAS', referencia_id: lead.id, tabela_referencia: 'leads', acao_executada: 'Tarefa de Resgate Criada' }]);
+            await supabase.from('tarefas').insert([{ titulo: `🔥 Resgatar Lead Frio: ${lead.empresa}`, descricao: `Lead sem interação há mais de 48h.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: lead.empresa, lead_id: lead.id }]);
+          }
+        }
+      }
+      for (const contrato of listaContratos) {
+        if (contrato.status === 'Ativo' && new Date(contrato.data_inicio) <= onzeMesesAtras) {
+          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'REAJUSTE_CONTRATO_11M').eq('referencia_id', contrato.id);
+          if (!log || log.length === 0) {
+            await supabase.from('automacoes_log').insert([{ tipo_regra: 'REAJUSTE_CONTRATO_11M', referencia_id: contrato.id, tabela_referencia: 'contratos', acao_executada: 'Tarefa de Reajuste Criada' }]);
+            await supabase.from('tarefas').insert([{ titulo: `📈 Preparar Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `O contrato fará 1 ano no próximo mês. Preparar documentação de reajuste.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: contrato.cliente_nome }]);
+          }
+        }
+      }
+    } catch (e) {}
+  };
 
   const carregarTudo = async () => {
     if (!session || carregandoAuth) return;
@@ -111,10 +134,44 @@ export default function AdminPage() {
     if (ints.data) setInteracoes(ints.data);
     
     setCarregando(false);
+    if (l.data && c.data && isAdmin) verificarAutomacoesDeTempo(l.data, c.data);
   };
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
 
-  // ─── GERADOR DE PDF E EMAILS ──────────────────────────────────────────────
+  // ─── COMUNICADOS E FILA WHATSAPP (A FUNÇÃO EM FALTA ESTÁ AQUI) ───────────
+  const dispararEmailsMassa = async () => {
+    const alvos = formComunicado.publico === "Todos" ? clientesBase.filter(c => c.email && c.email.includes("@")) : clientesBase.filter(c => c.tipo === formComunicado.publico && c.email && c.email.includes("@"));
+    if (alvos.length === 0) return showToast("Nenhum e-mail válido encontrado para este público.", "erro");
+    if (!confirm(`Deseja disparar este e-mail para ${alvos.length} clientes?`)) return;
+
+    setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
+    let enviados = 0;
+    for (const cli of alvos) {
+      try {
+        const trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${cli.id}" width="1" height="1" style="display:none;" />`;
+        let htmlCorpo = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;"><div style="background: #0a1628; padding: 20px; text-align: center; color: #fff;"><h2 style="margin: 0;">Aviso Importante</h2></div><div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none;"><p>Olá <strong>${cli.nome}</strong>,</p><div style="white-space: pre-wrap; font-size: 15px; margin: 20px 0;">${formComunicado.mensagem}</div><hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" /><p style="font-size: 13px; color: #666;">Atenciosamente,<br/><strong>Equipa | Simples Solução TI</strong></p></div>${trackingPixel}</div>`;
+        await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: cli.email, subject: formComunicado.assunto, html: htmlCorpo }) });
+        enviados++; setProgressoEmail(p => ({ ...p, enviado: enviados })); await new Promise(r => setTimeout(r, 500));
+      } catch (e) {}
+    }
+    setProgressoEmail({ ativo: false, total: 0, enviado: 0 }); setModalComunicado(false); showToast(`Disparo concluído! ${enviados} e-mails enviados.`, "sucesso");
+  };
+
+  const gerarFilaWhatsapp = () => {
+    const alvos = formComunicado.publico === "Todos" ? clientesBase.filter(c => c.whatsapp || c.telefone) : clientesBase.filter(c => c.tipo === formComunicado.publico && (c.whatsapp || c.telefone));
+    if (alvos.length === 0) return showToast("Nenhum cliente com número válido encontrado.", "erro");
+    setFilaWpp(alvos); setModalComunicado(false); showToast(`Fila gerada com ${alvos.length} clientes prontos para envio.`, "info");
+  };
+
+  const enviarWhatsAppDaFila = (cli: ClienteDB) => {
+    const numero = (cli.whatsapp || cli.telefone || "").replace(/\D/g, "");
+    if (!numero) return showToast(`Número inválido para ${cli.nome}`, "erro");
+    const texto = `Olá *${cli.nome}*,\n\n*Aviso SSTI:*\n${formComunicado.mensagem}`;
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank');
+    setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
+  };
+
+  // ─── GERADOR DE PDF E EMAILS INDIVIDUAIS ──────────────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => { if (!conteudo) return ""; return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor)); };
   const gerarHtmlProposta = (prop: PropostaDB) => {
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' }); const obs = prop.dados?.obs || "";
@@ -143,7 +200,7 @@ export default function AdminPage() {
       const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
       if (res.ok) {
         await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
-        await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar retorno da proposta ${prop.numero}.`, data_vencimento: new Date(Date.now() + 3*24*60*60*1000).toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+        await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar retorno da proposta ${prop.numero}.`, data_vencimento: new Date(Date.now() + 3*24*60*60*1000).toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
         showToast("E-mail enviado com sucesso!", "sucesso"); carregarTudo();
       } else { showToast(`Erro ao enviar e-mail.`, "erro"); }
     } catch (e) { showToast("Erro de conexão.", "erro"); } finally { setEnviando(null); }
@@ -162,13 +219,11 @@ export default function AdminPage() {
   const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
   const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
   const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
-  
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
   const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
   const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
   const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
   const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
-  
   const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
@@ -196,7 +251,7 @@ export default function AdminPage() {
     await supabase.from('propostas').update({ status: 'fechada' }).eq('id', prop.id);
     try {
       await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente', filial: prop.filial || perfilAtivo.filial }]);
-      await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session.user.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+      await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
       const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
       if (!cEx) { await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]); } 
       else if (cEx.tipo === 'Lead') { await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', cEx.id); }
@@ -265,7 +320,7 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente, interacoes]);
 
-  if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar permissões...</div>;
+  if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar permissões e carregar sistema...</div>;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -285,7 +340,26 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* SIDEBAR MENUS */}
+      {filaWpp.length > 0 && (
+        <div style={{ position: "fixed", bottom: 20, left: 280, width: 380, background: "var(--bg-sidebar)", border: "1px solid #4A90D9", borderRadius: 16, zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", maxHeight: 500 }}>
+          <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
+            <span>💬 Fila de Envio WhatsApp ({filaWpp.length})</span>
+            <button onClick={() => setFilaWpp([])} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontWeight: "bold" }}>X</button>
+          </div>
+          <div style={{ padding: 15, overflowY: "auto", flex: 1 }}>
+            {filaWpp.map(c => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", borderBottom: "1px solid var(--border-light)" }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{c.nome}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.whatsapp || c.telefone}</div>
+                </div>
+                <button onClick={() => enviarWhatsAppDaFila(c)} style={{ background: "#22c55e", color: "#fff", border: "none", padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Enviar ›</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <aside className="sidebar">
         <div style={{padding:"30px",textAlign:"center"}}><img src={tema==='dark'?'/Logo-negativo.webp':'/icon.png'} style={{maxHeight:"40px", borderRadius: "8px"}}/></div>
         <nav className="nav-menu">
@@ -642,6 +716,7 @@ export default function AdminPage() {
                 ))}
               </div>
 
+              {/* Form de Nova Interação */}
               <form onSubmit={salvarInteracao} style={{display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-light)", paddingTop: 15}}>
                 <div style={{display: "flex", gap: 10}}>
                   <select className="input-modal" style={{width: 120, padding: 8}} value={formInteracao.tipo} onChange={e=>setFormInteracao({...formInteracao, tipo: e.target.value})}>
