@@ -8,12 +8,12 @@ const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
 export function DashboardTab({
   isAdmin, mrrAtivo, taxaConversao, propostasFechadas, ticketMedio,
   propostasPerdidas, propostasAbertas, propostasEnviadas, tarefasUrgentes,
-  pFiltradas, dadosMotivosPerda, dadosPipelineMensal, fmt, setAba, contratosAtivosCount
+  pFiltradas, dadosMotivosPerda, dadosPipelineMensal, fmt, setAba, contratos
 }: any) {
   return (
     <>
       <div className="grid-metrics">
-        {isAdmin && <MetricCard label="MRR ATIVO" value={fmt(mrrAtivo)} borderColor="#22c55e" icon="💰" sub={`${contratosAtivosCount} contratos`} />}
+        {isAdmin && <MetricCard label="MRR ATIVO" value={fmt(mrrAtivo)} borderColor="#22c55e" icon="💰" sub={`${contratos.filter((c:any) => c.status === 'Ativo').length} contratos`} />}
         <MetricCard label="TAXA DE CONVERSÃO" value={`${taxaConversao.toFixed(1)}%`} color="#4A90D9" borderColor="#4A90D9" icon="📈" />
         <MetricCard label="GANHAS (VALOR)" value={fmt(propostasFechadas.reduce((a:any, b:any) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" icon="🏆" sub={`${propostasFechadas.length} negócios`} />
         <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} borderColor="#a855f7" icon="🎟️" />
