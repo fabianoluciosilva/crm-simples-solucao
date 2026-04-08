@@ -1,5 +1,4 @@
-"use client";
-
+import React from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, LineChart, Line, Legend } from 'recharts';
 import { MetricCard } from '../ui/MetricCard';
 
