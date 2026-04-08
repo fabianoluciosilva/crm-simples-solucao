@@ -323,7 +323,6 @@ export default function AdminPage() {
     [contratos, clientesDesativadosNomes]
   );
 
-  // NOVO: Ticket médio
   const ticketMedio = propostasFechadas.length > 0
     ? propostasFechadas.reduce((a, b) => a + b.valor, 0) / propostasFechadas.length
     : 0;
@@ -334,7 +333,6 @@ export default function AdminPage() {
     return Object.entries(contagem).map(([name, value]) => ({ name, value }));
   }, [propostasPerdidas]);
 
-  // NOVO: Pipeline por mês (últimos 6 meses)
   const dadosPipelineMensal = useMemo(() => {
     const meses: Record<string, { ganhas: number; perdidas: number; abertas: number }> = {};
     for (let i = 5; i >= 0; i--) {
@@ -355,7 +353,6 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
-  // NOVO: Tarefas com status de atraso automático
   const tarefasComAtraso = useMemo(() =>
     tarefas.map(t => {
       if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) {
@@ -371,7 +368,6 @@ export default function AdminPage() {
     return tarefasComAtraso.filter(t => t.status === filtroStatusTarefa);
   }, [tarefasComAtraso, filtroStatusTarefa]);
 
-  // NOVO: Tarefas urgentes (vence em até 2 dias)
   const tarefasUrgentes = useMemo(() =>
     tarefasComAtraso.filter(t => {
       if (t.status === 'Concluído') return false;
@@ -441,7 +437,6 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, debouncedBusca, interacoes, mostrarDesativados]);
 
-  // NOVO: Resultados de busca global
   const resultadosBuscaGlobal = useMemo(() => {
     if (!buscaGlobal || buscaGlobal.length < 2) return { clientes: [], propostas: [], tarefas: [] };
     const b = buscaGlobal.toLowerCase();
@@ -1813,7 +1808,7 @@ export default function AdminPage() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Prioridade</label>
-                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.prioridade} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value })}>
+                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.prioridade} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value as 'Alta' | 'Normal' | 'Baixa' })}>
                     <option value="Alta">🔴 Alta</option>
                     <option value="Normal">🔵 Normal</option>
                     <option value="Baixa">⚪ Baixa</option>
