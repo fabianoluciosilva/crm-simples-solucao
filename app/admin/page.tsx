@@ -44,6 +44,7 @@ export default function AdminPage() {
   const [carregando, setCarregando] = useState(false);
   const [filtroDias, setFiltroDias] = useState<number>(30);
   const [filtroTipoCliente, setFiltroTipoCliente] = useState<"Todos" | "Cliente" | "Lead" | "Parceiro">("Todos");
+  const [buscaCliente, setBuscaCliente] = useState("");
   const [enviando, setEnviando] = useState<number | null>(null);
 
   // --- ESTADOS DE MODAIS ---
@@ -52,7 +53,6 @@ export default function AdminPage() {
   const [progressoEmail, setProgressoEmail] = useState({ ativo: false, total: 0, enviado: 0 });
   const [filaWpp, setFilaWpp] = useState<ClienteDB[]>([]);
   
-  // NOVO: Modal Inteligente de Envio (Email/Wpp)
   const [modalEnvioProposta, setModalEnvioProposta] = useState<{ativo: boolean, tipo: 'Email' | 'WhatsApp', prop: PropostaDB | null}>({ativo: false, tipo: 'Email', prop: null});
   const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '' });
 
@@ -92,30 +92,6 @@ export default function AdminPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
-  const verificarAutomacoesDeTempo = async (listaLeads: any[], listaContratos: any[]) => {
-    try {
-      const hoje = new Date(); const doisDiasAtras = new Date(); doisDiasAtras.setDate(hoje.getDate() - 2); const onzeMesesAtras = new Date(); onzeMesesAtras.setMonth(hoje.getMonth() - 11);
-      for (const lead of listaLeads) {
-        if (new Date(lead.created_at) < doisDiasAtras) {
-          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'LEAD_SEM_RESPOSTA_2_DIAS').eq('referencia_id', lead.id);
-          if (!log || log.length === 0) {
-            await supabase.from('automacoes_log').insert([{ tipo_regra: 'LEAD_SEM_RESPOSTA_2_DIAS', referencia_id: lead.id, tabela_referencia: 'leads', acao_executada: 'Tarefa de Resgate Criada' }]);
-            await supabase.from('tarefas').insert([{ titulo: `🔥 Resgatar Lead Frio: ${lead.empresa}`, descricao: `Lead sem interação há mais de 48h.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: lead.empresa, lead_id: lead.id }]);
-          }
-        }
-      }
-      for (const contrato of listaContratos) {
-        if (contrato.status === 'Ativo' && new Date(contrato.data_inicio) <= onzeMesesAtras) {
-          const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'REAJUSTE_CONTRATO_11M').eq('referencia_id', contrato.id);
-          if (!log || log.length === 0) {
-            await supabase.from('automacoes_log').insert([{ tipo_regra: 'REAJUSTE_CONTRATO_11M', referencia_id: contrato.id, tabela_referencia: 'contratos', acao_executada: 'Tarefa de Reajuste Criada' }]);
-            await supabase.from('tarefas').insert([{ titulo: `📈 Preparar Reajuste Contratual: ${contrato.cliente_nome}`, descricao: `O contrato fará 1 ano no próximo mês. Preparar documentação de reajuste.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: contrato.cliente_nome }]);
-          }
-        }
-      }
-    } catch (e) {}
-  };
-
   const carregarTudo = async () => {
     if (!session || carregandoAuth) return;
     setCarregando(true);
@@ -138,7 +114,6 @@ export default function AdminPage() {
     if (ints.data) setInteracoes(ints.data);
     
     setCarregando(false);
-    if (l.data && c.data && isAdmin) verificarAutomacoesDeTempo(l.data, c.data);
   };
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
 
@@ -164,26 +139,49 @@ export default function AdminPage() {
 
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
+    // Clientes oficiais
     clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) }); });
+    // Propostas não registadas
     propostas.forEach(p => {
       const key = p.cliente.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
+      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).propostas.push(p);
     });
+    // Contratos não registados
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).contratos.push(c);
       mapa.get(key).tipo = 'Cliente';
     });
+    // Leads do site
+    leads.forEach(l => {
+      const key = l.empresa.trim().toUpperCase();
+      if (!mapa.has(key)) mapa.set(key, { nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
+    });
+
     tarefas.forEach(t => {
       if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
     });
 
     let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
+    
+    // Filtro por Categoria
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
+    
+    // Filtro por Texto (Pesquisa)
+    if (buscaCliente) {
+      const b = buscaCliente.toLowerCase();
+      lista = lista.filter(c => 
+        c.nome?.toLowerCase().includes(b) || 
+        c.email?.toLowerCase().includes(b) || 
+        c.contato?.toLowerCase().includes(b) ||
+        c.codigo?.toLowerCase().includes(b)
+      );
+    }
+    
     return lista;
-  }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente, interacoes]);
+  }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, buscaCliente, interacoes]);
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
     const cliente = clientesAgrupados.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
@@ -194,7 +192,7 @@ export default function AdminPage() {
   const dispararEmailsMassa = async () => {
     const alvos = formComunicado.publico === "Todos" ? clientesBase.filter(c => c.email && c.email.includes("@")) : clientesBase.filter(c => c.tipo === formComunicado.publico && c.email && c.email.includes("@"));
     if (alvos.length === 0) return showToast("Nenhum e-mail válido encontrado para este público.", "erro");
-    if (!confirm(`Deseja disparar este e-mail para ${alvos.length} clientes?`)) return;
+    if (!confirm(`Deseja disparar este e-mail para ${alvos.length} contactos?`)) return;
 
     setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
     let enviados = 0;
@@ -223,7 +221,7 @@ export default function AdminPage() {
     setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
-  // ─── NOVO: ENVIO INTELIGENTE DE MENSAGENS COM TEMPLATES E LOG ─────────────
+  // ─── GERADOR DE PDF E ENVIO INTELIGENTE DE MENSAGENS ─────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => { if (!conteudo) return ""; return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor)); };
   
   const gerarHtmlProposta = (prop: PropostaDB) => {
@@ -236,12 +234,10 @@ export default function AdminPage() {
     setFormEnvioMensagem({ templateId: '', texto: '' });
   };
 
-  // Processar o template ao selecionar na Combo
   useEffect(() => {
     if (modalEnvioProposta.prop && formEnvioMensagem.templateId) {
-      if (formEnvioMensagem.templateId === 'custom') {
-        setFormEnvioMensagem(prev => ({ ...prev, texto: '' }));
-      } else {
+      if (formEnvioMensagem.templateId === 'custom') { setFormEnvioMensagem(prev => ({ ...prev, texto: '' })); } 
+      else {
         const tpl = templates.find(t => t.id.toString() === formEnvioMensagem.templateId);
         if (tpl) {
           const txt = processarTemplate(tpl.conteudo, modalEnvioProposta.prop.contato, modalEnvioProposta.prop.cliente, modalEnvioProposta.prop.valor);
@@ -276,16 +272,13 @@ export default function AdminPage() {
         
         const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
         const trackingPixel = cb ? `<img src="${window.location.origin}/api/track?action=open&id=${cb.id}" width="1" height="1" style="display:none;" />` : '';
-        
         let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
 
         const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
         
         if (res.ok) {
           await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
-          // Adicionar o Log na Interacao
           await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Proposta enviada por E-mail:\n\n${textoFinal}` }]);
-          
           try {
             const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
             if (!log || log.length === 0) {
@@ -295,16 +288,12 @@ export default function AdminPage() {
             }
           } catch (e) {}
           showToast("E-mail enviado e registado no histórico!", "sucesso"); 
-        } else { 
-          showToast(`Erro ao enviar e-mail.`, "erro"); return; 
-        }
+        } else { showToast(`Erro ao enviar e-mail.`, "erro"); return; }
       } 
       else if (tipo === 'WhatsApp') {
         const numero = (prop.telefone || "").replace(/\D/g, "");
         if (!numero) return showToast("Número de telefone inválido.", "erro");
         window.open(`https://wa.me/${numero}?text=${encodeURIComponent(textoFinal)}`, '_blank');
-        
-        // Adicionar o Log na Interacao
         await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Proposta enviada no WhatsApp:\n\n${textoFinal}` }]);
         showToast("WhatsApp aberto e registado no histórico!", "sucesso");
       }
@@ -320,19 +309,11 @@ export default function AdminPage() {
   // ─── AÇÕES DE KANBAN E STATUS ─────────────────────────────────────────────
   const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => { e.dataTransfer.setData("propId", prop.id.toString()); };
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
-  
   const handleDropStatus = async (e: React.DragEvent, novoStatus: string) => {
-    e.preventDefault();
-    const propId = Number(e.dataTransfer.getData("propId"));
-    const prop = propostas.find(p => p.id === propId);
+    e.preventDefault(); const propId = Number(e.dataTransfer.getData("propId")); const prop = propostas.find(p => p.id === propId);
     if (!prop || prop.status === novoStatus) return;
-
-    if (novoStatus === 'fechada') { alterarStatusParaGanho(prop); }
-    else if (novoStatus === 'perdida') { abrirModalPerda(prop); }
-    else {
-      await supabase.from('propostas').update({ status: novoStatus }).eq('id', prop.id);
-      showToast(`Proposta movida para ${novoStatus.toUpperCase()}`, "info");
-      carregarTudo();
+    if (novoStatus === 'fechada') { alterarStatusParaGanho(prop); } else if (novoStatus === 'perdida') { abrirModalPerda(prop); } else {
+      await supabase.from('propostas').update({ status: novoStatus }).eq('id', prop.id); showToast(`Proposta movida para ${novoStatus.toUpperCase()}`, "info"); carregarTudo();
     }
   };
 
@@ -342,18 +323,13 @@ export default function AdminPage() {
       await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente', filial: prop.filial || perfilAtivo.filial }]);
       await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding: ${prop.cliente}`, descricao: `Novo cliente fechado!`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
       const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-      if (!cEx) { await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]); } 
-      else if (cEx.tipo === 'Lead') { await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', cEx.id); }
+      if (!cEx) { await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]); } else if (cEx.tipo === 'Lead') { await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', cEx.id); }
       showToast("Negócio Fechado! Contrato e Onboarding ativados.", "sucesso");
     } catch (e) {} carregarTudo();
   };
 
   const abrirModalPerda = (prop: PropostaDB) => { setFormPerda({ id: prop.id, motivo: "", obs: "" }); setModalPerda(true); };
-  const confirmarPerda = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!formPerda.motivo) return showToast("Selecione um motivo.", "erro");
-    await supabase.from('propostas').update({ status: 'perdida', motivo_perda: formPerda.motivo, obs_perda: formPerda.obs }).eq('id', formPerda.id);
-    showToast("Proposta marcada como perdida.", "info"); setModalPerda(false); carregarTudo();
-  };
+  const confirmarPerda = async (e: React.FormEvent) => { e.preventDefault(); if (!formPerda.motivo) return showToast("Selecione um motivo.", "erro"); await supabase.from('propostas').update({ status: 'perdida', motivo_perda: formPerda.motivo, obs_perda: formPerda.obs }).eq('id', formPerda.id); showToast("Proposta marcada como perdida.", "info"); setModalPerda(false); carregarTudo(); };
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
   // ─── AÇÕES DA TIMELINE E CRUD ─────────────────────────────────────────────
@@ -362,13 +338,8 @@ export default function AdminPage() {
     if (!clienteDetalhe || !formInteracao.descricao) return;
     await supabase.from('interacoes').insert([{ cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao }]);
     setFormInteracao({ tipo: "Nota", descricao: "" });
-    
-    // Sucesso: Retorna automaticamente para o Dashboard
     showToast("Nota adicionada ao histórico!", "sucesso");
-    setClienteDetalhe(null); // Fecha a janela da ficha do cliente
-    setAba('dashboard'); // Redireciona para o painel
-    
-    carregarTudo();
+    setClienteDetalhe(null); setAba('dashboard'); carregarTudo();
   };
 
   const salvarClienteBase = async (e: React.FormEvent) => { e.preventDefault(); if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id); else await supabase.from('clientes').insert([{...formCliente, filial: formCliente.filial || perfilAtivo.filial}]); showToast("Registo guardado.", "sucesso"); setModalClienteForm(false); carregarTudo(); };
@@ -388,35 +359,18 @@ export default function AdminPage() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:550px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}} 
-      /* KANBAN STYLES */
-      .kanban-board { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 20px; }
-      .kanban-col { flex: 1; min-width: 280px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; }
-      .kanban-header { padding: 15px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between;}
-      .kanban-body { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; min-height: 200px; }
-      .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 15px; cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-      .kanban-card:active { transform: scale(0.98); cursor: grabbing; border-color: #4A90D9; }
-      `}</style>
+      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:550px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}} .kanban-board { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 20px; } .kanban-col { flex: 1; min-width: 280px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; } .kanban-header { padding: 15px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between;} .kanban-body { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; min-height: 200px; } .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 15px; cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); } .kanban-card:active { transform: scale(0.98); cursor: grabbing; border-color: #4A90D9; }`}</style>
 
-      {toast && (
-        <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>
-          {toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}
-        </div>
-      )}
+      {toast && <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>{toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}</div>}
 
+      {/* FILA DO WHATSAPP */}
       {filaWpp.length > 0 && (
         <div style={{ position: "fixed", bottom: 20, left: 280, width: 380, background: "var(--bg-sidebar)", border: "1px solid #4A90D9", borderRadius: 16, zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", maxHeight: 500 }}>
-          <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
-            <span>💬 Fila de Envio WhatsApp ({filaWpp.length})</span>
-            <button onClick={() => setFilaWpp([])} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontWeight: "bold" }}>X</button>
-          </div>
+          <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}><span>💬 Fila de Envio WhatsApp ({filaWpp.length})</span><button onClick={() => setFilaWpp([])} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontWeight: "bold" }}>X</button></div>
           <div style={{ padding: 15, overflowY: "auto", flex: 1 }}>
             {filaWpp.map(c => (
               <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", borderBottom: "1px solid var(--border-light)" }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{c.nome}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.whatsapp || c.telefone}</div>
-                </div>
+                <div><div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{c.nome}</div><div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.whatsapp || c.telefone}</div></div>
                 <button onClick={() => enviarWhatsAppDaFila(c)} style={{ background: "#22c55e", color: "#fff", border: "none", padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Enviar ›</button>
               </div>
             ))}
@@ -439,6 +393,7 @@ export default function AdminPage() {
            <div style={{fontSize:"12px",color:"#4A90D9", fontWeight:"bold", marginBottom: 4}}>Simples Solução TI</div>
            <div style={{fontSize:"11px",color:"var(--text-primary)", marginBottom: 4}}>{perfilAtivo.perfil} | {perfilAtivo.filial}</div>
            <button onClick={handleLogout} style={{color:"#f87171",background:"none",border:"none",cursor:"pointer",fontSize:"12px",marginTop:"12px", width:"100%", padding:"8px", borderTop:"1px solid rgba(248,113,113,0.2)"}}>Sair</button>
+           <div style={{fontSize:"10px",color:"var(--text-secondary)", marginTop: "15px"}}>v1.01</div>
         </div>
       </aside>
 
@@ -606,15 +561,26 @@ export default function AdminPage() {
 
         {aba === 'clientes' && (
           <>
-            {isComercial && (
-              <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-                <button onClick={()=>{setFormCliente({nome:"", email:"", telefone:"", whatsapp:"", documento:"", tipo:"Cliente", codigo:"", filial: perfilAtivo.filial}); setModalClienteForm(true);}} className="btn-action" style={{background:"#4A90D9",color:"#fff",border:"none", padding: "10px 20px", fontSize: 14}}>+ Novo Registo</button>
-                <button onClick={()=>{setFormComunicado({publico:"Cliente", assunto:"", mensagem:""}); setModalComunicado(true);}} className="btn-action" style={{background:"transparent",color:"#4A90D9",border:"1px solid #4A90D9", padding: "10px 20px", fontSize: 14}}>📢 Comunicado em Massa</button>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "20px", alignItems: "center" }}>
+              {isComercial && <button onClick={()=>{setFormCliente({nome:"", email:"", telefone:"", whatsapp:"", documento:"", tipo:"Cliente", codigo:"", filial: perfilAtivo.filial}); setModalClienteForm(true);}} className="btn-action" style={{background:"#4A90D9",color:"#fff",border:"none", padding: "10px 20px", fontSize: 14}}>+ Novo Registo</button>}
+              {isComercial && <button onClick={()=>{setFormComunicado({publico:"Cliente", assunto:"", mensagem:""}); setModalComunicado(true);}} className="btn-action" style={{background:"transparent",color:"#4A90D9",border:"1px solid #4A90D9", padding: "10px 20px", fontSize: 14}}>📢 Comunicado em Massa</button>}
+              
+              <div style={{flex: 1, display: "flex", justifyContent: "flex-end", gap: 10}}>
+                <input 
+                  className="input-modal" 
+                  style={{maxWidth: "300px", margin: 0}} 
+                  placeholder="Pesquisar por nome ou e-mail..." 
+                  value={buscaCliente} 
+                  onChange={e => setBuscaCliente(e.target.value)} 
+                />
+                <select className="input-modal" value={filtroTipoCliente} onChange={e=>setFiltroTipoCliente(e.target.value as any)} style={{maxWidth: "200px", margin: 0}}>
+                  <option value="Todos">Todas as Categorias</option><option value="Cliente">Apenas Clientes</option><option value="Lead">Apenas Leads</option><option value="Parceiro">Apenas Parceiros</option>
+                </select>
               </div>
-            )}
+            </div>
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Nome / Cód</th><th>Contatos</th><th>Status</th><th>🔥 Score</th>{isComercial && <th>Documentos</th>}<th>Ação</th></tr></thead>
+                <thead><tr><th>Nome / Cód</th><th>Contatos</th><th>Categoria</th><th>🔥 Score</th>{isComercial && <th>Documentos</th>}<th>Ação</th></tr></thead>
                 <tbody>
                   {clientesAgrupados.map(c => (
                     <tr key={c.nome}>
@@ -625,7 +591,10 @@ export default function AdminPage() {
                       {isComercial && <td><span style={{fontSize:12, color:"var(--text-secondary)"}}>{c.propostas.length} Props<br/>{c.contratos.filter((x:any)=>x.status==='Ativo').length} Contratos</span></td>}
                       <td style={{textAlign: "right"}}>
                         <button className="btn-action" onClick={()=>setClienteDetalhe(c)}>Ver Ficha (Diário)</button>
-                        {c.id && isComercial && <button className="btn-action" onClick={()=>{setFormCliente(c); setModalClienteForm(true);}}>Editar</button>}
+                        {isComercial && <button className="btn-action" onClick={()=>{
+                          setFormCliente({ id: c.id, nome: c.nome, email: c.email || "", telefone: c.telefone || "", whatsapp: c.whatsapp || "", documento: c.documento || "", tipo: c.tipo || "Lead", codigo: c.codigo || "", filial: c.filial || perfilAtivo.filial });
+                          setModalClienteForm(true);
+                        }}>Editar</button>}
                       </td>
                     </tr>
                   ))}
@@ -884,7 +853,7 @@ export default function AdminPage() {
       {modalClienteForm && (
         <div className="modal-overlay" onClick={() => setModalClienteForm(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formCliente.id ? "Editar Cliente" : "Novo Registo"}</h2>
+            <h2>{formCliente.id ? "Editar Registo" : "Novo Registo"}</h2>
             <form onSubmit={salvarClienteBase} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
               <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.codigo} onChange={e => setFormCliente({...formCliente, codigo: e.target.value})} placeholder="Código (Opcional)..." /><select className="input-modal" style={{flex: 1}} value={formCliente.tipo} onChange={e => setFormCliente({...formCliente, tipo: e.target.value})}><option value="Cliente">Cliente</option><option value="Lead">Lead</option><option value="Parceiro">Parceiro</option></select></div>
               <input required className="input-modal" value={formCliente.nome} onChange={e => setFormCliente({...formCliente, nome: e.target.value})} placeholder="Nome da Empresa..." />
