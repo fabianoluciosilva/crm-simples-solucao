@@ -43,7 +43,7 @@ export default function AdminPage() {
   const [interacoes, setInteracoes] = useState<InteracaoDB[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [filtroDias, setFiltroDias] = useState<number>(30);
-  const [filtroTipoCliente, setFiltroTipoCliente] = useState<"Todos" | "Cliente" | "Lead">("Todos");
+  const [filtroTipoCliente, setFiltroTipoCliente] = useState<"Todos" | "Cliente" | "Lead" | "Parceiro">("Todos");
   const [enviando, setEnviando] = useState<number | null>(null);
 
   // --- ESTADOS DE MODAIS ---
@@ -52,6 +52,10 @@ export default function AdminPage() {
   const [progressoEmail, setProgressoEmail] = useState({ ativo: false, total: 0, enviado: 0 });
   const [filaWpp, setFilaWpp] = useState<ClienteDB[]>([]);
   
+  // NOVO: Modal Inteligente de Envio (Email/Wpp)
+  const [modalEnvioProposta, setModalEnvioProposta] = useState<{ativo: boolean, tipo: 'Email' | 'WhatsApp', prop: PropostaDB | null}>({ativo: false, tipo: 'Email', prop: null});
+  const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '' });
+
   const [modalTarefa, setModalTarefa] = useState(false);
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "" });
   const [modalContrato, setModalContrato] = useState(false);
@@ -138,7 +142,7 @@ export default function AdminPage() {
   };
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
 
-  // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTOS (AQUI CARREGA OS CLIENTES) ──────
+  // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTOS ──────────────────────────────
   const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
   const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
   
@@ -181,14 +185,9 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente, interacoes]);
 
-  // Função para abrir o Diário de Bordo diretamente do Kanban
   const abrirNotasDaProposta = (prop: PropostaDB) => {
     const cliente = clientesAgrupados.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    if (cliente) {
-      setClienteDetalhe(cliente);
-    } else {
-      showToast("Erro ao abrir a ficha do cliente associado.", "erro");
-    }
+    if (cliente) { setClienteDetalhe(cliente); } else { showToast("Erro ao abrir a ficha do cliente associado.", "erro"); }
   };
 
   // ─── COMUNICADOS EM MASSA (EMAIL / FILA WPP) ─────────────────────────────
@@ -224,64 +223,99 @@ export default function AdminPage() {
     setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
-  // ─── GERADOR DE PDF E EMAILS INDIVIDUAIS ──────────────────────────────────
+  // ─── NOVO: ENVIO INTELIGENTE DE MENSAGENS COM TEMPLATES E LOG ─────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => { if (!conteudo) return ""; return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor)); };
+  
   const gerarHtmlProposta = (prop: PropostaDB) => {
     const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' }); const obs = prop.dados?.obs || "";
     return `<div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;"><div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;"><div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">Simples Solução TI</h2></div><div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div></div><h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SERVIÇOS TÉCNICOS</h1><p>Rio de Janeiro, ${dataFormatada}</p><p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p><p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p><p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>.</p><div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div><h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2><table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;"><tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr><tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção de TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr></table>${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações Adicionais</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}</div>`;
   };
 
-  const enviarPorEmailNormal = async (prop: PropostaDB) => {
-    if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
-    setEnviando(prop.id); showToast("A processar PDF e a enviar e-mail...", "info");
-    let pdfBase64 = "";
-    try {
-      if (!(window as any).html2pdf) { await new Promise((resolve) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = resolve; document.body.appendChild(s); }); }
-      const el = document.createElement('div'); el.innerHTML = gerarHtmlProposta(prop);
-      const uri = await (window as any).html2pdf().set({ margin: 10, filename: `Proposta.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(el).outputPdf('datauristring');
-      pdfBase64 = uri.split(',')[1];
-    } catch (err) {}
-    
-    const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    const trackingPixel = cb ? `<img src="${window.location.origin}/api/track?action=open&id=${cb.id}" width="1" height="1" style="display:none;" />` : '';
-    const tplEmail = templates.find(t => t.tipo === 'Email');
-    let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><h2 style="color: #0a1628;">Proposta Comercial</h2><p>Olá <strong>${prop.contato}</strong>,</p><p>Segue em anexo a nossa proposta para a <strong>${prop.cliente}</strong>.</p><p><strong>Valor Mensal:</strong> ${fmt(prop.valor)}</p><br /><p>Simples Solução TI</p></div>`;
-    if (tplEmail && tplEmail.conteudo) { corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${processarTemplate(tplEmail.conteudo, prop.contato, prop.cliente, prop.valor).replace(/\n/g, '<br/>')}</div>`; }
-    corpoEmail += trackingPixel;
+  const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
+    setModalEnvioProposta({ ativo: true, tipo, prop });
+    setFormEnvioMensagem({ templateId: '', texto: '' });
+  };
+
+  // Processar o template ao selecionar na Combo
+  useEffect(() => {
+    if (modalEnvioProposta.prop && formEnvioMensagem.templateId) {
+      if (formEnvioMensagem.templateId === 'custom') {
+        setFormEnvioMensagem(prev => ({ ...prev, texto: '' }));
+      } else {
+        const tpl = templates.find(t => t.id.toString() === formEnvioMensagem.templateId);
+        if (tpl) {
+          const txt = processarTemplate(tpl.conteudo, modalEnvioProposta.prop.contato, modalEnvioProposta.prop.cliente, modalEnvioProposta.prop.valor);
+          setFormEnvioMensagem(prev => ({ ...prev, texto: txt }));
+        }
+      }
+    }
+  }, [formEnvioMensagem.templateId, modalEnvioProposta.prop, templates]);
+
+  const confirmarEnvioMensagem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const { tipo, prop } = modalEnvioProposta;
+    if (!prop) return;
+
+    const textoFinal = formEnvioMensagem.texto;
+    if (!textoFinal.trim()) return showToast("A mensagem não pode estar vazia.", "erro");
+
+    setEnviando(prop.id);
 
     try {
-      const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
-      if (res.ok) {
-        await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
-        await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar retorno da proposta ${prop.numero}.`, data_vencimento: new Date(Date.now() + 3*24*60*60*1000).toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
-        showToast("E-mail enviado com sucesso!", "sucesso"); carregarTudo();
-      } else { showToast(`Erro ao enviar e-mail.`, "erro"); }
+      if (tipo === 'Email') {
+        if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
+        showToast("A processar PDF e a enviar e-mail...", "info");
+        
+        let pdfBase64 = "";
+        try {
+          if (!(window as any).html2pdf) { await new Promise((resolve) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = resolve; document.body.appendChild(s); }); }
+          const el = document.createElement('div'); el.innerHTML = gerarHtmlProposta(prop);
+          const uri = await (window as any).html2pdf().set({ margin: 10, filename: `Proposta.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(el).outputPdf('datauristring');
+          pdfBase64 = uri.split(',')[1];
+        } catch (err) {}
+        
+        const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+        const trackingPixel = cb ? `<img src="${window.location.origin}/api/track?action=open&id=${cb.id}" width="1" height="1" style="display:none;" />` : '';
+        
+        let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
+
+        const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
+        
+        if (res.ok) {
+          await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
+          // Adicionar o Log na Interacao
+          await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Proposta enviada por E-mail:\n\n${textoFinal}` }]);
+          
+          try {
+            const { data: log } = await supabase.from('automacoes_log').select('id').eq('tipo_regra', 'PROPOSTA_ENVIADA_FOLLOWUP').eq('referencia_id', prop.id);
+            if (!log || log.length === 0) {
+              await supabase.from('automacoes_log').insert([{ tipo_regra: 'PROPOSTA_ENVIADA_FOLLOWUP', referencia_id: prop.id, tabela_referencia: 'propostas', acao_executada: 'Tarefa Follow-up' }]);
+              const dataVenc = new Date(); dataVenc.setDate(dataVenc.getDate() + 3); dataVenc.setHours(10, 0, 0, 0);
+              await supabase.from('tarefas').insert([{ titulo: `📞 Follow-up: ${prop.cliente}`, descricao: `Validar retorno da proposta ${prop.numero}.`, data_vencimento: dataVenc.toISOString(), status: 'Pendente', usuario_email: session?.user?.email, nome_referencia: prop.cliente, proposta_id: prop.id }]);
+            }
+          } catch (e) {}
+          showToast("E-mail enviado e registado no histórico!", "sucesso"); 
+        } else { 
+          showToast(`Erro ao enviar e-mail.`, "erro"); return; 
+        }
+      } 
+      else if (tipo === 'WhatsApp') {
+        const numero = (prop.telefone || "").replace(/\D/g, "");
+        if (!numero) return showToast("Número de telefone inválido.", "erro");
+        window.open(`https://wa.me/${numero}?text=${encodeURIComponent(textoFinal)}`, '_blank');
+        
+        // Adicionar o Log na Interacao
+        await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Proposta enviada no WhatsApp:\n\n${textoFinal}` }]);
+        showToast("WhatsApp aberto e registado no histórico!", "sucesso");
+      }
+
+      setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null });
+      carregarTudo();
+
     } catch (e) { showToast("Erro de conexão.", "erro"); } finally { setEnviando(null); }
   };
 
-  const enviarWhatsAppNormal = (prop: PropostaDB) => {
-    const tplWpp = templates.find(t => t.tipo === 'WhatsApp');
-    let texto = `Olá ${prop.contato}, envio a nossa proposta (cód: ${prop.numero}) no valor de ${fmt(prop.valor)} mensais.`;
-    if (tplWpp && tplWpp.conteudo) { texto = processarTemplate(tplWpp.conteudo, prop.contato, prop.cliente, prop.valor); }
-    window.open(`https://wa.me/${prop.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(texto)}`, '_blank');
-  };
   const visualizarProposta = (prop: PropostaDB) => { const h = gerarHtmlProposta(prop); const w = window.open("", "_blank")!; w.document.write(`<html><body>${h}</body></html>`); w.document.close(); setTimeout(() => w.print(), 500); };
-
-  // ─── DEMAIS AÇÕES DE CRUD ──────────────────────────────────────────────────
-  const salvarClienteBase = async (e: React.FormEvent) => { e.preventDefault(); if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id); else await supabase.from('clientes').insert([{...formCliente, filial: formCliente.filial || perfilAtivo.filial}]); showToast("Registo guardado.", "sucesso"); setModalClienteForm(false); carregarTudo(); };
-  const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
-  const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
-  const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
-  
-  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
-  const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
-  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
-  const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
-  const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
-  
-  const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
-  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
-  const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
 
   // ─── AÇÕES DE KANBAN E STATUS ─────────────────────────────────────────────
   const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => { e.dataTransfer.setData("propId", prop.id.toString()); };
@@ -322,17 +356,35 @@ export default function AdminPage() {
   };
   const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
-  // ─── AÇÕES DA TIMELINE (DIÁRIO DE BORDO) ──────────────────────────────────
+  // ─── AÇÕES DA TIMELINE E CRUD ─────────────────────────────────────────────
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteDetalhe || !formInteracao.descricao) return;
     await supabase.from('interacoes').insert([{ cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao }]);
     setFormInteracao({ tipo: "Nota", descricao: "" });
+    
+    // Sucesso: Retorna automaticamente para o Dashboard
     showToast("Nota adicionada ao histórico!", "sucesso");
+    setClienteDetalhe(null); // Fecha a janela da ficha do cliente
+    setAba('dashboard'); // Redireciona para o painel
+    
     carregarTudo();
   };
 
-  if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar permissões...</div>;
+  const salvarClienteBase = async (e: React.FormEvent) => { e.preventDefault(); if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id); else await supabase.from('clientes').insert([{...formCliente, filial: formCliente.filial || perfilAtivo.filial}]); showToast("Registo guardado.", "sucesso"); setModalClienteForm(false); carregarTudo(); };
+  const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
+  const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
+  const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
+  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
+  const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
+  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
+  const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
+  const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
+  const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
+  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
+  const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
+
+  if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar permissões e carregar sistema...</div>;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -409,7 +461,6 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {/* 1. DASHBOARD AVANÇADO */}
         {aba === 'dashboard' && isComercial && (
           <>
             <div className="grid-metrics">
@@ -457,10 +508,8 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* 2. FUNIL DE VENDAS (KANBAN OU TABELA) */}
         {aba === 'propostas' && isComercial && vistaPropostas === 'kanban' && (
           <div className="kanban-board">
-            
             <div className="kanban-col" onDragOver={handleDragOver} onDrop={(e)=>handleDropStatus(e, 'aberta')}>
               <div className="kanban-header">Novas <span style={{background:"rgba(255,255,255,0.1)", padding:"2px 8px", borderRadius:10}}>{propostasAbertas.length}</span></div>
               <div className="kanban-body">
@@ -471,8 +520,8 @@ export default function AdminPage() {
                     <div style={{fontSize:12, color:"var(--text-secondary)", marginBottom:8}}>{p.contato}</div>
                     <div style={{fontWeight:800, color:"#4A90D9", marginBottom:10}}>{fmt(p.valor)}</div>
                     <div style={{display:"flex", gap:5}}>
-                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>enviarWhatsAppNormal(p)}>Wpp</button>
-                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>enviarPorEmailNormal(p)}>E-mail</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>abrirModalEnvio(p, 'WhatsApp')}>Wpp</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>abrirModalEnvio(p, 'Email')}>E-mail</button>
                       <button className="btn-action" style={{flex:1, padding: "6px 4px", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "#4A90D9"}} onClick={()=>abrirNotasDaProposta(p)}>📝 Notas</button>
                     </div>
                   </div>
@@ -489,8 +538,9 @@ export default function AdminPage() {
                     <div style={{fontSize:12, color:"var(--text-secondary)", marginBottom:8}}>{p.contato}</div>
                     <div style={{fontWeight:800, color:"#4A90D9", marginBottom:10}}>{fmt(p.valor)}</div>
                     <div style={{display:"flex", gap:5}}>
-                      <button className="btn-action" style={{flex:1}} onClick={()=>abrirNovaTarefa(`Follow-up: ${p.cliente}`, undefined, p.id)}>📅 Lembrete</button>
-                      <button className="btn-action" style={{flex:1, background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "#4A90D9"}} onClick={()=>abrirNotasDaProposta(p)}>📝 Notas</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>abrirModalEnvio(p, 'WhatsApp')}>Wpp</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>abrirModalEnvio(p, 'Email')}>E-mail</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "#4A90D9"}} onClick={()=>abrirNotasDaProposta(p)}>📝 Notas</button>
                     </div>
                   </div>
                 ))}
@@ -522,11 +572,9 @@ export default function AdminPage() {
                 ))}
               </div>
             </div>
-
           </div>
         )}
 
-        {/* MODO TABELA ANTIGO */}
         {aba === 'propostas' && isComercial && vistaPropostas === 'tabela' && (
             <div className="table-wrapper">
               <table>
@@ -544,8 +592,8 @@ export default function AdminPage() {
                       <td style={{textAlign:"right"}}>
                         <button className="btn-action" onClick={()=>abrirNotasDaProposta(p)}>📝 Notas</button>
                         <button className="btn-action" onClick={()=>visualizarProposta(p)}>PDF</button>
-                        <button className="btn-action" onClick={()=>enviarWhatsAppNormal(p)}>Wpp</button>
-                        <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmailNormal(p)}>{enviando===p.id?'...':'E-mail'}</button>
+                        <button className="btn-action" onClick={()=>abrirModalEnvio(p, 'WhatsApp')}>Wpp</button>
+                        <button className="btn-action" disabled={enviando===p.id} onClick={()=>abrirModalEnvio(p, 'Email')}>{enviando===p.id?'...':'E-mail'}</button>
                         {p.status !== 'fechada' && <button className="btn-action" style={{color:"#22c55e",borderColor:"#22c55e"}} onClick={()=>alterarStatusParaGanho(p)}>✓ Ganhou</button>}
                         {p.status !== 'perdida' && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>abrirModalPerda(p)}>Perdeu</button>}
                       </td>
@@ -572,7 +620,7 @@ export default function AdminPage() {
                     <tr key={c.nome}>
                       <td><strong>{c.nome}</strong>{c.codigo && <div style={{fontSize:11, color:"var(--text-tertiary)"}}>{c.codigo}</div>}</td>
                       <td><div style={{fontSize: 12, color:"var(--text-secondary)"}}>📞 {c.telefone || c.contato || '—'}</div><div style={{fontSize: 12, color:"var(--text-secondary)"}}>💬 {c.whatsapp || '—'}</div><div style={{fontSize: 11, color:"var(--text-tertiary)", marginTop: 2}}>{c.email}</div></td>
-                      <td><span className="badge-status" style={{background: c.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: c.tipo==='Cliente' ? '#22c55e' : '#f59e0b'}}>{c.tipo}</span></td>
+                      <td><span className="badge-status" style={{background: c.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : c.tipo==='Parceiro' ? 'rgba(168,85,247,0.1)' : 'rgba(245,158,11,0.1)', color: c.tipo==='Cliente' ? '#22c55e' : c.tipo==='Parceiro' ? '#a855f7' : '#f59e0b'}}>{c.tipo}</span></td>
                       <td><span style={{ fontWeight: 'bold', color: (c.score || 0) >= 20 ? '#f87171' : (c.score || 0) > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>{c.score || 0} pts</span></td>
                       {isComercial && <td><span style={{fontSize:12, color:"var(--text-secondary)"}}>{c.propostas.length} Props<br/>{c.contratos.filter((x:any)=>x.status==='Ativo').length} Contratos</span></td>}
                       <td style={{textAlign: "right"}}>
@@ -681,13 +729,61 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* 3. A NOVA FICHA DO CLIENTE (DIÁRIO E INFORMAÇÕES) */}
+      {/* MODAL DE ENVIO INTELIGENTE (E-MAIL E WHATSAPP) COM TEMPLATES */}
+      {modalEnvioProposta.ativo && modalEnvioProposta.prop && (
+        <div className="modal-overlay" onClick={() => setModalEnvioProposta({ativo: false, tipo: 'Email', prop: null})}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>Enviar {modalEnvioProposta.tipo}</h2>
+            <p style={{fontSize: 13, color: "var(--text-secondary)", marginBottom: 15}}>
+              Cliente: <strong>{modalEnvioProposta.prop.cliente}</strong>
+            </p>
+            
+            <form onSubmit={confirmarEnvioMensagem} style={{display: "flex", flexDirection: "column", gap: 15}}>
+              <div>
+                <label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>Escolha o Template</label>
+                <select className="input-modal" value={formEnvioMensagem.templateId} onChange={e => setFormEnvioMensagem({...formEnvioMensagem, templateId: e.target.value})}>
+                  <option value="" disabled>Selecione um template...</option>
+                  {templates.filter(t => t.tipo === modalEnvioProposta.tipo).map(t => (
+                    <option key={t.id} value={t.id.toString()}>{t.nome}</option>
+                  ))}
+                  <option value="custom">✍️ Escrever mensagem personalizada...</option>
+                </select>
+              </div>
+
+              {formEnvioMensagem.templateId && (
+                <div>
+                  <label style={{fontSize: 12, color: "var(--text-secondary)", marginBottom: 5, display: "block"}}>
+                    Conteúdo da Mensagem (Pode editar antes de enviar)
+                  </label>
+                  <textarea 
+                    required 
+                    className="input-modal" 
+                    rows={8} 
+                    value={formEnvioMensagem.texto} 
+                    onChange={e => setFormEnvioMensagem({...formEnvioMensagem, texto: e.target.value})} 
+                    placeholder="Digite a mensagem aqui..."
+                  />
+                </div>
+              )}
+
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}>
+                <button type="button" onClick={() => setModalEnvioProposta({ativo: false, tipo: 'Email', prop: null})} className="btn-action" style={{flex:1}}>Cancelar</button>
+                <button type="submit" disabled={!formEnvioMensagem.templateId || !formEnvioMensagem.texto.trim() || enviando === modalEnvioProposta.prop.id} className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>
+                  {enviando === modalEnvioProposta.prop.id ? 'A Enviar...' : `Enviar ${modalEnvioProposta.tipo}`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* A NOVA FICHA DO CLIENTE (DIÁRIO E INFORMAÇÕES) */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={()=>setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e=>e.stopPropagation()} style={{maxWidth: 800, display: "flex", gap: 30}}>
             
             <div style={{flex: 1}}>
-              <h2>{clienteDetalhe.nome} <span className="badge-status" style={{background: clienteDetalhe.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: clienteDetalhe.tipo==='Cliente' ? '#22c55e' : '#f59e0b', marginLeft: 10}}>{clienteDetalhe.tipo}</span></h2>
+              <h2>{clienteDetalhe.nome} <span className="badge-status" style={{background: clienteDetalhe.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : clienteDetalhe.tipo==='Parceiro' ? 'rgba(168,85,247,0.1)' : 'rgba(245,158,11,0.1)', color: clienteDetalhe.tipo==='Cliente' ? '#22c55e' : clienteDetalhe.tipo==='Parceiro' ? '#a855f7' : '#f59e0b', marginLeft: 10}}>{clienteDetalhe.tipo}</span></h2>
               <div style={{fontSize:13, color:"var(--text-secondary)", marginTop:10, marginBottom: 20}}>
                 <div>📞 {clienteDetalhe.telefone || clienteDetalhe.contato} | 💬 {clienteDetalhe.whatsapp}</div>
                 <div>📧 {clienteDetalhe.email}</div>
@@ -736,7 +832,7 @@ export default function AdminPage() {
                   </select>
                   <textarea required className="input-modal" style={{flex: 1, padding: 8}} rows={2} placeholder="Registe o que foi conversado..." value={formInteracao.descricao} onChange={e=>setFormInteracao({...formInteracao, descricao: e.target.value})} />
                 </div>
-                <button type="submit" className="btn-action" style={{background: "#4A90D9", color: "#fff", border: "none"}}>Gravar no Histórico</button>
+                <button type="submit" className="btn-action" style={{background: "#4A90D9", color: "#fff", border: "none"}}>Gravar no Histórico e Voltar ao Início</button>
               </form>
             </div>
 
@@ -745,24 +841,6 @@ export default function AdminPage() {
       )}
 
       {/* OUTROS MODAIS MANTIDOS (Perda, ClienteForm, Contrato, Tarefa, etc) */}
-      
-      {/* Função de Atalho para o Kanban */}
-      {(() => {
-        // Função auxiliar chamada pelos botões do Kanban/Tabela
-        const abrirNotasDaProposta = (prop: PropostaDB) => {
-          const cliente = clientesAgrupados.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-          if (cliente) {
-            setClienteDetalhe(cliente);
-          } else {
-            showToast("Erro ao abrir a ficha do cliente.", "erro");
-          }
-        };
-
-        // Injetamos a função no escopo global do componente temporariamente para uso nos botões
-        (window as any).abrirNotasDaProposta = abrirNotasDaProposta;
-        return null;
-      })()}
-
       {modalPerda && (
         <div className="modal-overlay" onClick={() => setModalPerda(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -793,7 +871,7 @@ export default function AdminPage() {
               </div>
             ) : (
               <form style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
-                <select className="input-modal" value={formComunicado.publico} onChange={e => setFormComunicado({...formComunicado, publico: e.target.value})}><option value="Todos">Todos (Clientes + Leads)</option><option value="Cliente">Apenas Clientes Ativos</option><option value="Lead">Apenas Leads</option></select>
+                <select className="input-modal" value={formComunicado.publico} onChange={e => setFormComunicado({...formComunicado, publico: e.target.value})}><option value="Todos">Todos (Clientes, Leads e Parceiros)</option><option value="Cliente">Apenas Clientes Ativos</option><option value="Lead">Apenas Leads</option><option value="Parceiro">Apenas Parceiros</option></select>
                 <input required className="input-modal" value={formComunicado.assunto} onChange={e => setFormComunicado({...formComunicado, assunto: e.target.value})} placeholder="Assunto (Apenas para E-mail)..." />
                 <textarea required className="input-modal" rows={6} value={formComunicado.mensagem} onChange={e => setFormComunicado({...formComunicado, mensagem: e.target.value})} placeholder="Escreva o comunicado aqui..." />
                 <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalComunicado(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="button" onClick={gerarFilaWhatsapp} className="btn-action" style={{flex:1,background:"#22c55e",color:"#fff",borderColor:"#22c55e"}}>💬 Fila WhatsApp</button><button type="button" onClick={dispararEmailsMassa} className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>📧 Disparar E-mails</button></div>
@@ -808,7 +886,7 @@ export default function AdminPage() {
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{formCliente.id ? "Editar Cliente" : "Novo Registo"}</h2>
             <form onSubmit={salvarClienteBase} style={{marginTop:"15px",display:"flex",flexDirection:"column",gap:"15px"}}>
-              <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.codigo} onChange={e => setFormCliente({...formCliente, codigo: e.target.value})} placeholder="Código (Opcional)..." /><select className="input-modal" style={{flex: 1}} value={formCliente.tipo} onChange={e => setFormCliente({...formCliente, tipo: e.target.value})}><option value="Cliente">Cliente</option><option value="Lead">Lead</option></select></div>
+              <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.codigo} onChange={e => setFormCliente({...formCliente, codigo: e.target.value})} placeholder="Código (Opcional)..." /><select className="input-modal" style={{flex: 1}} value={formCliente.tipo} onChange={e => setFormCliente({...formCliente, tipo: e.target.value})}><option value="Cliente">Cliente</option><option value="Lead">Lead</option><option value="Parceiro">Parceiro</option></select></div>
               <input required className="input-modal" value={formCliente.nome} onChange={e => setFormCliente({...formCliente, nome: e.target.value})} placeholder="Nome da Empresa..." />
               <input className="input-modal" value={formCliente.email} onChange={e => setFormCliente({...formCliente, email: e.target.value})} placeholder="E-mail principal..." />
               <div style={{display:"flex", gap:"10px"}}><input className="input-modal" style={{flex: 1}} value={formCliente.telefone} onChange={e => setFormCliente({...formCliente, telefone: e.target.value})} placeholder="Telefone Fixo..." /><input className="input-modal" style={{flex: 1}} value={formCliente.whatsapp} onChange={e => setFormCliente({...formCliente, whatsapp: e.target.value})} placeholder="WhatsApp (com DDD)..." /></div>
