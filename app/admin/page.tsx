@@ -138,7 +138,60 @@ export default function AdminPage() {
   };
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
 
-  // ─── COMUNICADOS E FILA WHATSAPP (A FUNÇÃO EM FALTA ESTÁ AQUI) ───────────
+  // ─── CÁLCULOS DO DASHBOARD E AGRUPAMENTOS (AQUI CARREGA OS CLIENTES) ──────
+  const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
+  const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
+  
+  const propostasFechadas = pFiltradas.filter(p => p.status === 'fechada');
+  const propostasPerdidas = pFiltradas.filter(p => p.status === 'perdida');
+  const propostasAbertas = pFiltradas.filter(p => !p.status || p.status === 'aberta');
+  const propostasEnviadas = pFiltradas.filter(p => p.status === 'enviada' || p.status === 'negociacao');
+  
+  const taxaConversao = pFiltradas.length > 0 ? (propostasFechadas.length / pFiltradas.length) * 100 : 0;
+  const mrrAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
+
+  const dadosMotivosPerda = useMemo(() => {
+    const contagem: Record<string, number> = {};
+    propostasPerdidas.forEach(p => { const m = p.motivo_perda || "Não informado"; contagem[m] = (contagem[m] || 0) + 1; });
+    return Object.entries(contagem).map(([name, value]) => ({ name, value }));
+  }, [propostasPerdidas]);
+
+  const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
+
+  const clientesAgrupados = useMemo(() => {
+    const mapa = new Map<string, any>();
+    clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) }); });
+    propostas.forEach(p => {
+      const key = p.cliente.trim().toUpperCase();
+      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
+      mapa.get(key).propostas.push(p);
+    });
+    contratos.forEach(c => {
+      const key = c.cliente_nome.trim().toUpperCase();
+      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
+      mapa.get(key).contratos.push(c);
+      mapa.get(key).tipo = 'Cliente';
+    });
+    tarefas.forEach(t => {
+      if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
+    });
+
+    let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
+    if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
+    return lista;
+  }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente, interacoes]);
+
+  // Função para abrir o Diário de Bordo diretamente do Kanban
+  const abrirNotasDaProposta = (prop: PropostaDB) => {
+    const cliente = clientesAgrupados.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    if (cliente) {
+      setClienteDetalhe(cliente);
+    } else {
+      showToast("Erro ao abrir a ficha do cliente associado.", "erro");
+    }
+  };
+
+  // ─── COMUNICADOS EM MASSA (EMAIL / FILA WPP) ─────────────────────────────
   const dispararEmailsMassa = async () => {
     const alvos = formComunicado.publico === "Todos" ? clientesBase.filter(c => c.email && c.email.includes("@")) : clientesBase.filter(c => c.tipo === formComunicado.publico && c.email && c.email.includes("@"));
     if (alvos.length === 0) return showToast("Nenhum e-mail válido encontrado para este público.", "erro");
@@ -219,11 +272,13 @@ export default function AdminPage() {
   const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
   const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
   const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
+  
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
   const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
   const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
   const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
   const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
+  
   const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
@@ -277,50 +332,7 @@ export default function AdminPage() {
     carregarTudo();
   };
 
-  // ─── CÁLCULOS DO DASHBOARD AVANÇADO E AGRUPAMENTOS ────────────────────────
-  const limiteFiltro = new Date(); if (filtroDias > 0) limiteFiltro.setDate(limiteFiltro.getDate() - filtroDias);
-  const pFiltradas = propostas.filter(p => filtroDias === 0 || new Date(p.created_at) >= limiteFiltro);
-  
-  const propostasFechadas = pFiltradas.filter(p => p.status === 'fechada');
-  const propostasPerdidas = pFiltradas.filter(p => p.status === 'perdida');
-  const propostasAbertas = pFiltradas.filter(p => !p.status || p.status === 'aberta');
-  const propostasEnviadas = pFiltradas.filter(p => p.status === 'enviada' || p.status === 'negociacao');
-  
-  const taxaConversao = pFiltradas.length > 0 ? (propostasFechadas.length / pFiltradas.length) * 100 : 0;
-  const mrrAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
-
-  const dadosMotivosPerda = useMemo(() => {
-    const contagem: Record<string, number> = {};
-    propostasPerdidas.forEach(p => { const m = p.motivo_perda || "Não informado"; contagem[m] = (contagem[m] || 0) + 1; });
-    return Object.entries(contagem).map(([name, value]) => ({ name, value }));
-  }, [propostasPerdidas]);
-
-  const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
-
-  const clientesAgrupados = useMemo(() => {
-    const mapa = new Map<string, any>();
-    clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) }); });
-    propostas.forEach(p => {
-      const key = p.cliente.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
-      mapa.get(key).propostas.push(p);
-    });
-    contratos.forEach(c => {
-      const key = c.cliente_nome.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
-      mapa.get(key).contratos.push(c);
-      mapa.get(key).tipo = 'Cliente';
-    });
-    tarefas.forEach(t => {
-      if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
-    });
-
-    let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
-    if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
-    return lista;
-  }, [propostas, contratos, tarefas, clientesBase, filtroTipoCliente, interacoes]);
-
-  if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar permissões e carregar sistema...</div>;
+  if (carregandoAuth) return <div style={{minHeight:"100vh",background:"#080f1e",display:"flex",alignItems:"center",justifyContent:"center",color:"#4A90D9"}}>A validar permissões...</div>;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -408,8 +420,6 @@ export default function AdminPage() {
             </div>
 
             <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "20px"}}>
-              
-              {/* Gráfico 1: Funil Simples */}
               <div className="metric-card" style={{height: 350}}>
                 <div style={{fontSize:"14px", fontWeight:700, color:"var(--text-secondary)", marginBottom: 20}}>📊 Funil de Negociação</div>
                 <ResponsiveContainer width="100%" height="100%">
@@ -427,7 +437,6 @@ export default function AdminPage() {
                 </ResponsiveContainer>
               </div>
 
-              {/* Gráfico 2: Motivos de Perda (Pie Chart) */}
               <div className="metric-card" style={{height: 350}}>
                 <div style={{fontSize:"14px", fontWeight:700, color:"var(--text-secondary)", marginBottom: 20}}>📉 Análise de Perdas</div>
                 {propostasPerdidas.length === 0 ? (
@@ -444,7 +453,6 @@ export default function AdminPage() {
                   </ResponsiveContainer>
                 )}
               </div>
-
             </div>
           </>
         )}
@@ -463,8 +471,9 @@ export default function AdminPage() {
                     <div style={{fontSize:12, color:"var(--text-secondary)", marginBottom:8}}>{p.contato}</div>
                     <div style={{fontWeight:800, color:"#4A90D9", marginBottom:10}}>{fmt(p.valor)}</div>
                     <div style={{display:"flex", gap:5}}>
-                      <button className="btn-action" style={{flex:1}} onClick={()=>enviarWhatsAppNormal(p)}>Wpp</button>
-                      <button className="btn-action" style={{flex:1}} onClick={()=>enviarPorEmailNormal(p)}>E-mail</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>enviarWhatsAppNormal(p)}>Wpp</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px"}} onClick={()=>enviarPorEmailNormal(p)}>E-mail</button>
+                      <button className="btn-action" style={{flex:1, padding: "6px 4px", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "#4A90D9"}} onClick={()=>abrirNotasDaProposta(p)}>📝 Notas</button>
                     </div>
                   </div>
                 ))}
@@ -479,7 +488,10 @@ export default function AdminPage() {
                     <div style={{fontWeight:700, color:"var(--text-primary)", fontSize:15}}>{p.cliente}</div>
                     <div style={{fontSize:12, color:"var(--text-secondary)", marginBottom:8}}>{p.contato}</div>
                     <div style={{fontWeight:800, color:"#4A90D9", marginBottom:10}}>{fmt(p.valor)}</div>
-                    <button className="btn-action" style={{width:"100%"}} onClick={()=>abrirNovaTarefa(`Follow-up: ${p.cliente}`, undefined, p.id)}>+ Lembrete Tarefa</button>
+                    <div style={{display:"flex", gap:5}}>
+                      <button className="btn-action" style={{flex:1}} onClick={()=>abrirNovaTarefa(`Follow-up: ${p.cliente}`, undefined, p.id)}>📅 Lembrete</button>
+                      <button className="btn-action" style={{flex:1, background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "#4A90D9"}} onClick={()=>abrirNotasDaProposta(p)}>📝 Notas</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -491,7 +503,8 @@ export default function AdminPage() {
                 {propostasFechadas.map(p => (
                   <div key={p.id} className="kanban-card" style={{borderLeft:"3px solid #22c55e", opacity: 0.8}}>
                     <div style={{fontWeight:700}}>{p.cliente}</div>
-                    <div style={{fontWeight:800, color:"#22c55e"}}>{fmt(p.valor)}</div>
+                    <div style={{fontWeight:800, color:"#22c55e", marginBottom:10}}>{fmt(p.valor)}</div>
+                    <button className="btn-action" style={{width:"100%", background: "transparent", borderColor: "#22c55e", color: "#22c55e"}} onClick={()=>abrirNotasDaProposta(p)}>📝 Ver Histórico</button>
                   </div>
                 ))}
               </div>
@@ -503,7 +516,8 @@ export default function AdminPage() {
                 {propostasPerdidas.map(p => (
                   <div key={p.id} className="kanban-card" style={{borderLeft:"3px solid #f87171", opacity: 0.6}}>
                     <div style={{fontWeight:700}}>{p.cliente}</div>
-                    <div style={{fontSize:11, color:"var(--text-tertiary)", marginTop:4}}>{p.motivo_perda}</div>
+                    <div style={{fontSize:11, color:"var(--text-tertiary)", marginTop:4, marginBottom:10}}>{p.motivo_perda}</div>
+                    <button className="btn-action" style={{width:"100%", background: "transparent", borderColor: "#f87171", color: "#f87171"}} onClick={()=>abrirNotasDaProposta(p)}>📝 Ver Motivo</button>
                   </div>
                 ))}
               </div>
@@ -528,6 +542,7 @@ export default function AdminPage() {
                         {p.motivo_perda && <div style={{fontSize: 10, color: "var(--text-tertiary)", marginTop: 4}}>{p.motivo_perda}</div>}
                       </td>
                       <td style={{textAlign:"right"}}>
+                        <button className="btn-action" onClick={()=>abrirNotasDaProposta(p)}>📝 Notas</button>
                         <button className="btn-action" onClick={()=>visualizarProposta(p)}>PDF</button>
                         <button className="btn-action" onClick={()=>enviarWhatsAppNormal(p)}>Wpp</button>
                         <button className="btn-action" disabled={enviando===p.id} onClick={()=>enviarPorEmailNormal(p)}>{enviando===p.id?'...':'E-mail'}</button>
@@ -671,7 +686,6 @@ export default function AdminPage() {
         <div className="modal-overlay" onClick={()=>setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e=>e.stopPropagation()} style={{maxWidth: 800, display: "flex", gap: 30}}>
             
-            {/* Coluna 1: Dados do CRM */}
             <div style={{flex: 1}}>
               <h2>{clienteDetalhe.nome} <span className="badge-status" style={{background: clienteDetalhe.tipo==='Cliente' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', color: clienteDetalhe.tipo==='Cliente' ? '#22c55e' : '#f59e0b', marginLeft: 10}}>{clienteDetalhe.tipo}</span></h2>
               <div style={{fontSize:13, color:"var(--text-secondary)", marginTop:10, marginBottom: 20}}>
@@ -697,7 +711,6 @@ export default function AdminPage() {
               {clienteDetalhe.tarefas.filter((t:any)=>t.status!=='Concluído').map((t:any)=><div key={t.id} style={{fontSize:"13px",padding:"5px 0"}}>{t.titulo} - {new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</div>)}
             </div>
 
-            {/* Coluna 2: Timeline de Interações */}
             <div style={{flex: 1.2, background: "var(--bg-main)", borderRadius: 12, padding: 20, display: "flex", flexDirection: "column"}}>
               <h4 style={{marginBottom: 15}}>Diário de Bordo (Interações)</h4>
               
@@ -716,7 +729,6 @@ export default function AdminPage() {
                 ))}
               </div>
 
-              {/* Form de Nova Interação */}
               <form onSubmit={salvarInteracao} style={{display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-light)", paddingTop: 15}}>
                 <div style={{display: "flex", gap: 10}}>
                   <select className="input-modal" style={{width: 120, padding: 8}} value={formInteracao.tipo} onChange={e=>setFormInteracao({...formInteracao, tipo: e.target.value})}>
@@ -733,6 +745,24 @@ export default function AdminPage() {
       )}
 
       {/* OUTROS MODAIS MANTIDOS (Perda, ClienteForm, Contrato, Tarefa, etc) */}
+      
+      {/* Função de Atalho para o Kanban */}
+      {(() => {
+        // Função auxiliar chamada pelos botões do Kanban/Tabela
+        const abrirNotasDaProposta = (prop: PropostaDB) => {
+          const cliente = clientesAgrupados.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+          if (cliente) {
+            setClienteDetalhe(cliente);
+          } else {
+            showToast("Erro ao abrir a ficha do cliente.", "erro");
+          }
+        };
+
+        // Injetamos a função no escopo global do componente temporariamente para uso nos botões
+        (window as any).abrirNotasDaProposta = abrirNotasDaProposta;
+        return null;
+      })()}
+
       {modalPerda && (
         <div className="modal-overlay" onClick={() => setModalPerda(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
