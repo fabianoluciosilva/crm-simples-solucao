@@ -31,6 +31,14 @@ export default function AdminPage() {
   const showToast = (msg: string, tipo: 'sucesso' | 'erro' | 'info' = 'sucesso') => { setToast({ msg, tipo }); setTimeout(() => setToast(null), 4000); };
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+  // Limpeza inteligente de números para WhatsApp
+  const formatarWhatsApp = (numStr?: string) => {
+    if (!numStr) return "";
+    let n = numStr.replace(/\D/g, "");
+    if (n.length === 10 || n.length === 11) return "55" + n;
+    return n;
+  };
+
   // --- ESTADOS DO CRM E VISUALIZAÇÃO ---
   const [aba, setAba] = useState<"dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates">("dashboard");
   const [vistaPropostas, setVistaPropostas] = useState<"kanban" | "tabela">("kanban");
@@ -139,47 +147,32 @@ export default function AdminPage() {
 
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
-    // Clientes oficiais
     clientesBase.forEach(c => { const key = c.nome.trim().toUpperCase(); mapa.set(key, { ...c, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) }); });
-    // Propostas não registadas
     propostas.forEach(p => {
       const key = p.cliente.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).propostas.push(p);
     });
-    // Contratos não registados
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
       mapa.get(key).contratos.push(c);
       mapa.get(key).tipo = 'Cliente';
     });
-    // Leads do site
     leads.forEach(l => {
       const key = l.empresa.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
     });
-
     tarefas.forEach(t => {
       if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
     });
 
     let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
-    
-    // Filtro por Categoria
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
-    
-    // Filtro por Texto (Pesquisa)
     if (buscaCliente) {
       const b = buscaCliente.toLowerCase();
-      lista = lista.filter(c => 
-        c.nome?.toLowerCase().includes(b) || 
-        c.email?.toLowerCase().includes(b) || 
-        c.contato?.toLowerCase().includes(b) ||
-        c.codigo?.toLowerCase().includes(b)
-      );
+      lista = lista.filter(c => c.nome?.toLowerCase().includes(b) || c.email?.toLowerCase().includes(b) || c.contato?.toLowerCase().includes(b) || c.codigo?.toLowerCase().includes(b));
     }
-    
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, buscaCliente, interacoes]);
 
@@ -214,7 +207,7 @@ export default function AdminPage() {
   };
 
   const enviarWhatsAppDaFila = (cli: ClienteDB) => {
-    const numero = (cli.whatsapp || cli.telefone || "").replace(/\D/g, "");
+    const numero = formatarWhatsApp(cli.whatsapp || cli.telefone);
     if (!numero) return showToast(`Número inválido para ${cli.nome}`, "erro");
     const texto = `Olá *${cli.nome}*,\n\n*Aviso SSTI:*\n${formComunicado.mensagem}`;
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank');
@@ -272,6 +265,7 @@ export default function AdminPage() {
         
         const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
         const trackingPixel = cb ? `<img src="${window.location.origin}/api/track?action=open&id=${cb.id}" width="1" height="1" style="display:none;" />` : '';
+        
         let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
 
         const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: `Proposta Comercial SSTI - ${prop.cliente}`, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
@@ -288,13 +282,19 @@ export default function AdminPage() {
             }
           } catch (e) {}
           showToast("E-mail enviado e registado no histórico!", "sucesso"); 
-        } else { showToast(`Erro ao enviar e-mail.`, "erro"); return; }
+        } else { 
+          showToast(`Erro ao enviar e-mail.`, "erro"); return; 
+        }
       } 
       else if (tipo === 'WhatsApp') {
-        const numero = (prop.telefone || "").replace(/\D/g, "");
-        if (!numero) return showToast("Número de telefone inválido.", "erro");
+        const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+        const foneParaTentar = prop.telefone || cb?.whatsapp || cb?.telefone || "";
+        const numero = formatarWhatsApp(foneParaTentar);
+        
+        if (!numero) return showToast("Número de telefone inválido ou não encontrado.", "erro");
         window.open(`https://wa.me/${numero}?text=${encodeURIComponent(textoFinal)}`, '_blank');
-        await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Proposta enviada no WhatsApp:\n\n${textoFinal}` }]);
+        
+        await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Mensagem WhatsApp:\n\n${textoFinal}` }]);
         showToast("WhatsApp aberto e registado no histórico!", "sucesso");
       }
 
@@ -351,7 +351,6 @@ export default function AdminPage() {
   const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
   const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
   const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
-  const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
   const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
   const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
 
@@ -359,18 +358,35 @@ export default function AdminPage() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:550px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}} .kanban-board { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 20px; } .kanban-col { flex: 1; min-width: 280px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; } .kanban-header { padding: 15px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between;} .kanban-body { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; min-height: 200px; } .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 15px; cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); } .kanban-card:active { transform: scale(0.98); cursor: grabbing; border-color: #4A90D9; }`}</style>
+      <style>{`:root{--bg-main:${tema==='dark'?'#080f1e':'#f4f7f9'};--bg-sidebar:${tema==='dark'?'#050a14':'#ffffff'};--bg-card:${tema==='dark'?'rgba(255,255,255,0.02)':'#ffffff'};--text-primary:${tema==='dark'?'#ffffff':'#0f172a'};--text-secondary:${tema==='dark'?'rgba(255,255,255,0.5)':'#64748b'};--border-light:${tema==='dark'?'rgba(255,255,255,0.05)':'#e2e8f0'}} *{box-sizing:border-box;margin:0;padding:0} body{background:var(--bg-main);color:var(--text-primary);font-family:'Outfit',sans-serif}.sidebar{width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border-light);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:10}.main-content{flex:1;margin-left:260px;padding:40px}.nav-menu{padding:20px;flex:1;display:flex;flex-direction:column;gap:8px}.nav-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;color:var(--text-secondary);cursor:pointer;border:none;background:transparent;font-weight:600;width:100%;text-align:left}.nav-item.active{background:rgba(74,144,217,0.1);color:#4A90D9}.grid-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px}.metric-card{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;padding:24px}.table-wrapper{background:var(--bg-card);border:1px solid var(--border-light);border-radius:16px;overflow:hidden;margin-bottom:30px;}table{width:100%;border-collapse:collapse}th{background:rgba(0,0,0,0.1);padding:16px;font-size:12px;text-transform:uppercase;color:var(--text-secondary);text-align:left}td{padding:16px;border-bottom:1px solid var(--border-light);font-size:14px}.badge-status{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.btn-action{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:rgba(255,255,255,0.05);color:var(--text-primary);margin-right:4px;margin-bottom:4px}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100}.modal-content{background:var(--bg-sidebar);padding:30px;border-radius:20px;width:100%;max-width:550px;max-height:90vh;overflow-y:auto}.input-modal{width:100%;background:var(--bg-main);border:1px solid var(--border-light);color:var(--text-primary);padding:12px;border-radius:8px;margin-bottom:15px;font-family:'Outfit',sans-serif} .toast{position:fixed;bottom:30px;right:30px;padding:16px 24px;border-radius:12px;color:#fff;font-weight:600;z-index:9999;box-shadow:0 10px 25px rgba(0,0,0,0.2);animation:slideIn .3s forwards;display:flex;align-items:center;gap:10px;} @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}} 
+      /* KANBAN STYLES */
+      .kanban-board { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 20px; }
+      .kanban-col { flex: 1; min-width: 280px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; }
+      .kanban-header { padding: 15px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between;}
+      .kanban-body { padding: 15px; flex: 1; display: flex; flex-direction: column; gap: 15px; min-height: 200px; }
+      .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 15px; cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+      .kanban-card:active { transform: scale(0.98); cursor: grabbing; border-color: #4A90D9; }
+      `}</style>
 
-      {toast && <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>{toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}</div>}
+      {toast && (
+        <div className="toast" style={{ background: toast.tipo === 'sucesso' ? '#22c55e' : toast.tipo === 'erro' ? '#f87171' : '#4A90D9' }}>
+          {toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}
+        </div>
+      )}
 
-      {/* FILA DO WHATSAPP */}
       {filaWpp.length > 0 && (
         <div style={{ position: "fixed", bottom: 20, left: 280, width: 380, background: "var(--bg-sidebar)", border: "1px solid #4A90D9", borderRadius: 16, zIndex: 50, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", maxHeight: 500 }}>
-          <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}><span>💬 Fila de Envio WhatsApp ({filaWpp.length})</span><button onClick={() => setFilaWpp([])} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontWeight: "bold" }}>X</button></div>
+          <div style={{ background: "#4A90D9", color: "#fff", padding: "12px 20px", borderTopLeftRadius: 15, borderTopRightRadius: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
+            <span>💬 Fila de Envio WhatsApp ({filaWpp.length})</span>
+            <button onClick={() => setFilaWpp([])} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontWeight: "bold" }}>X</button>
+          </div>
           <div style={{ padding: 15, overflowY: "auto", flex: 1 }}>
             {filaWpp.map(c => (
               <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", borderBottom: "1px solid var(--border-light)" }}>
-                <div><div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{c.nome}</div><div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.whatsapp || c.telefone}</div></div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{c.nome}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.whatsapp || c.telefone}</div>
+                </div>
                 <button onClick={() => enviarWhatsAppDaFila(c)} style={{ background: "#22c55e", color: "#fff", border: "none", padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Enviar ›</button>
               </div>
             ))}
@@ -393,7 +409,7 @@ export default function AdminPage() {
            <div style={{fontSize:"12px",color:"#4A90D9", fontWeight:"bold", marginBottom: 4}}>Simples Solução TI</div>
            <div style={{fontSize:"11px",color:"var(--text-primary)", marginBottom: 4}}>{perfilAtivo.perfil} | {perfilAtivo.filial}</div>
            <button onClick={handleLogout} style={{color:"#f87171",background:"none",border:"none",cursor:"pointer",fontSize:"12px",marginTop:"12px", width:"100%", padding:"8px", borderTop:"1px solid rgba(248,113,113,0.2)"}}>Sair</button>
-           <div style={{fontSize:"10px",color:"var(--text-secondary)", marginTop: "15px"}}>v1.01</div>
+           <div style={{fontSize:"10px",color:"var(--text-secondary)", marginTop: "15px"}}>v1.02</div>
         </div>
       </aside>
 
@@ -419,10 +435,17 @@ export default function AdminPage() {
         {aba === 'dashboard' && isComercial && (
           <>
             <div className="grid-metrics">
-              {isAdmin && <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>MRR ATIVO</div><div style={{fontSize:"28px",fontWeight:800}}>{fmt(mrrAtivo)}</div></div>}
+              {isAdmin && <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>MRR ATIVO ({perfilAtivo.filial})</div><div style={{fontSize:"28px",fontWeight:800}}>{fmt(mrrAtivo)}</div></div>}
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>CONVERSÃO GERAL</div><div style={{fontSize:"28px",fontWeight:800,color:"#4A90D9"}}>{taxaConversao.toFixed(1)}%</div></div>
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>GANHAS (VALOR)</div><div style={{fontSize:"28px",fontWeight:800,color:"#22c55e"}}>{fmt(propostasFechadas.reduce((a,b)=>a+b.valor,0))}</div></div>
               <div className="metric-card"><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>PERDIDAS (QTD)</div><div style={{fontSize:"28px",fontWeight:800,color:"#f87171"}}>{propostasPerdidas.length}</div></div>
+            </div>
+
+            {/* NOVOS DADOS FINANCEIROS DO FUNIL */}
+            <div className="grid-metrics" style={{marginTop: "20px", marginBottom: "30px"}}>
+              <div className="metric-card" style={{borderTop: "3px solid #64748b"}}><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>VALOR ABERTO (NOVAS)</div><div style={{fontSize:"24px",fontWeight:800}}>{fmt(propostasAbertas.reduce((a,b)=>a+b.valor,0))}</div></div>
+              <div className="metric-card" style={{borderTop: "3px solid #4A90D9"}}><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>VALOR EM NEGOCIAÇÃO</div><div style={{fontSize:"24px",fontWeight:800,color:"#4A90D9"}}>{fmt(propostasEnviadas.reduce((a,b)=>a+b.valor,0))}</div></div>
+              <div className="metric-card" style={{borderTop: "3px solid #22c55e"}}><div style={{fontSize:"12px",color:"var(--text-secondary)"}}>VALOR FECHADO</div><div style={{fontSize:"24px",fontWeight:800,color:"#22c55e"}}>{fmt(propostasFechadas.reduce((a,b)=>a+b.valor,0))}</div></div>
             </div>
 
             <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "20px"}}>
@@ -663,7 +686,7 @@ export default function AdminPage() {
                     <td><strong>{l.empresa}</strong><br/>{l.nome}</td>
                     <td>{l.produto}</td>
                     <td>
-                      <button className="btn-action" onClick={()=>enviarWhatsAppLead(l)}>Chamar no Wpp</button>
+                      <button className="btn-action" onClick={()=>enviarWhatsAppDaFila({nome: l.nome, whatsapp: l.telefone} as any)}>Chamar no Wpp</button>
                       <button className="btn-action" onClick={()=>abrirNovaTarefa(`Contato Lead: ${l.empresa}`, l.id)}>+ Agendar Tarefa</button>
                     </td>
                   </tr>
@@ -801,7 +824,7 @@ export default function AdminPage() {
                   </select>
                   <textarea required className="input-modal" style={{flex: 1, padding: 8}} rows={2} placeholder="Registe o que foi conversado..." value={formInteracao.descricao} onChange={e=>setFormInteracao({...formInteracao, descricao: e.target.value})} />
                 </div>
-                <button type="submit" className="btn-action" style={{background: "#4A90D9", color: "#fff", border: "none"}}>Gravar no Histórico e Voltar ao Início</button>
+                <button type="submit" className="btn-action" style={{background: "#4A90D9", color: "#fff", border: "none"}}>Gravar no Histórico e Voltar</button>
               </form>
             </div>
 
@@ -809,7 +832,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* OUTROS MODAIS MANTIDOS (Perda, ClienteForm, Contrato, Tarefa, etc) */}
+      {/* OUTROS MODAIS MANTIDOS */}
       {modalPerda && (
         <div className="modal-overlay" onClick={() => setModalPerda(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
