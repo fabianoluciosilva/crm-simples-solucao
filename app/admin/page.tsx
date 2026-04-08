@@ -157,7 +157,23 @@ export default function AdminPage() {
   };
   const visualizarProposta = (prop: PropostaDB) => { const h = gerarHtmlProposta(prop); const w = window.open("", "_blank")!; w.document.write(`<html><body>${h}</body></html>`); w.document.close(); setTimeout(() => w.print(), 500); };
 
-  // ─── AÇÕES DE KANBAN (DRAG & DROP) E STATUS ──────────────────────────────
+  // ─── DEMAIS AÇÕES DE CRUD ──────────────────────────────────────────────────
+  const salvarClienteBase = async (e: React.FormEvent) => { e.preventDefault(); if (formCliente.id) await supabase.from('clientes').update(formCliente).eq('id', formCliente.id); else await supabase.from('clientes').insert([{...formCliente, filial: formCliente.filial || perfilAtivo.filial}]); showToast("Registo guardado.", "sucesso"); setModalClienteForm(false); carregarTudo(); };
+  const abrirNovoContrato = (prop?: PropostaDB) => { if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" }); else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" }); setModalContrato(true); };
+  const editarContrato = (c: ContratoDB) => { setFormContrato({ ...c }); setModalContrato(true); };
+  const salvarContrato = async (e: React.FormEvent) => { e.preventDefault(); if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro"); const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() }; if (formContrato.id) { await supabase.from('contratos').update(payload).eq('id', formContrato.id); showToast("Contrato atualizado.", "sucesso"); } else { await supabase.from('contratos').insert([payload]); showToast("Novo contrato ativado.", "sucesso"); } setModalContrato(false); carregarTudo(); };
+  
+  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => { setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId }); setModalTarefa(true); };
+  const editarTarefa = (t: TarefaDB) => { const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16); setFormTarefa({ ...t, data_vencimento: dataFormatada }); setModalTarefa(true); };
+  const salvarTarefa = async (e: React.FormEvent) => { e.preventDefault(); const payload = { ...formTarefa, updated_at: new Date().toISOString() }; if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id); else await supabase.from('tarefas').insert([payload]); showToast("Tarefa gravada.", "sucesso"); setModalTarefa(false); carregarTudo(); };
+  const excluirTarefa = async (id: number) => { if (confirm("Excluir tarefa?")) { await supabase.from('tarefas').delete().eq('id', id); showToast("Tarefa apagada.", "info"); carregarTudo(); } };
+  const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => { await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id); showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso"); carregarTudo(); };
+  
+  const enviarWhatsAppLead = (lead: any) => { window.open(`https://wa.me/${lead.telefone?.replace(/\D/g, "") || ''}?text=${encodeURIComponent(`Olá ${lead.nome}, tudo bem? Sou da Simples Solução TI.`)}`, '_blank'); };
+  const salvarTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id); else await supabase.from('templates').insert([formTemplate]); showToast("Template salvo.", "sucesso"); setModalTemplate(false); carregarTudo(); };
+  const excluirTemplate = async (id: number) => { if (confirm("Excluir template?")) { await supabase.from('templates').delete().eq('id', id); showToast("Template excluído.", "info"); carregarTudo(); }};
+
+  // ─── AÇÕES DE KANBAN E STATUS ─────────────────────────────────────────────
   const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => { e.dataTransfer.setData("propId", prop.id.toString()); };
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
   
@@ -194,17 +210,13 @@ export default function AdminPage() {
     await supabase.from('propostas').update({ status: 'perdida', motivo_perda: formPerda.motivo, obs_perda: formPerda.obs }).eq('id', formPerda.id);
     showToast("Proposta marcada como perdida.", "info"); setModalPerda(false); carregarTudo();
   };
+  const excluirProposta = async (id: number, nome: string) => { if (confirm(`Excluir permanentemente ${nome}?`)) { await supabase.from('propostas').delete().eq('id', id); showToast("Proposta excluída.", "info"); carregarTudo(); }};
 
   // ─── AÇÕES DA TIMELINE (DIÁRIO DE BORDO) ──────────────────────────────────
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteDetalhe || !formInteracao.descricao) return;
-    await supabase.from('interacoes').insert([{ 
-      cliente_nome: clienteDetalhe.nome, 
-      usuario_email: perfilAtivo.email, 
-      tipo: formInteracao.tipo, 
-      descricao: formInteracao.descricao 
-    }]);
+    await supabase.from('interacoes').insert([{ cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao }]);
     setFormInteracao({ tipo: "Nota", descricao: "" });
     showToast("Nota adicionada ao histórico!", "sucesso");
     carregarTudo();
@@ -222,7 +234,6 @@ export default function AdminPage() {
   const taxaConversao = pFiltradas.length > 0 ? (propostasFechadas.length / pFiltradas.length) * 100 : 0;
   const mrrAtivo = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
 
-  // Dados para os Gráficos
   const dadosMotivosPerda = useMemo(() => {
     const contagem: Record<string, number> = {};
     propostasPerdidas.forEach(p => { const m = p.motivo_perda || "Não informado"; contagem[m] = (contagem[m] || 0) + 1; });
@@ -242,9 +253,12 @@ export default function AdminPage() {
     contratos.forEach(c => {
       const key = c.cliente_nome.trim().toUpperCase();
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, propostas: [], contratos: [], tarefas: [], interacoes: interacoes.filter(i=>i.cliente_nome.toUpperCase()===key) });
-      mapa.get(key).contratos.push(c); mapa.get(key).tipo = 'Cliente';
+      mapa.get(key).contratos.push(c);
+      mapa.get(key).tipo = 'Cliente';
     });
-    tarefas.forEach(t => { if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); } });
+    tarefas.forEach(t => {
+      if (t.nome_referencia) { const key = t.nome_referencia.trim().toUpperCase(); if (mapa.has(key)) mapa.get(key).tarefas.push(t); }
+    });
 
     let lista = Array.from(mapa.values()).sort((a,b) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
@@ -365,7 +379,6 @@ export default function AdminPage() {
         {aba === 'propostas' && isComercial && vistaPropostas === 'kanban' && (
           <div className="kanban-board">
             
-            {/* Coluna NOVA/ABERTA */}
             <div className="kanban-col" onDragOver={handleDragOver} onDrop={(e)=>handleDropStatus(e, 'aberta')}>
               <div className="kanban-header">Novas <span style={{background:"rgba(255,255,255,0.1)", padding:"2px 8px", borderRadius:10}}>{propostasAbertas.length}</span></div>
               <div className="kanban-body">
@@ -384,7 +397,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Coluna ENVIADA/NEGOCIAÇÃO */}
             <div className="kanban-col" onDragOver={handleDragOver} onDrop={(e)=>handleDropStatus(e, 'negociacao')}>
               <div className="kanban-header">Em Negociação <span style={{background:"rgba(74,144,217,0.2)", color:"#4A90D9", padding:"2px 8px", borderRadius:10}}>{propostasEnviadas.length}</span></div>
               <div className="kanban-body">
@@ -399,7 +411,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Coluna GANHA */}
             <div className="kanban-col" onDragOver={handleDragOver} onDrop={(e)=>handleDropStatus(e, 'fechada')} style={{borderColor: "rgba(34,197,94,0.3)"}}>
               <div className="kanban-header" style={{color:"#22c55e"}}>Ganhou 🎉 <span style={{background:"rgba(34,197,94,0.2)", padding:"2px 8px", borderRadius:10}}>{propostasFechadas.length}</span></div>
               <div className="kanban-body">
@@ -412,7 +423,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Coluna PERDIDA */}
             <div className="kanban-col" onDragOver={handleDragOver} onDrop={(e)=>handleDropStatus(e, 'perdida')} style={{borderColor: "rgba(248,113,113,0.3)"}}>
               <div className="kanban-header" style={{color:"#f87171"}}>Perdeu ❌ <span style={{background:"rgba(248,113,113,0.2)", padding:"2px 8px", borderRadius:10}}>{propostasPerdidas.length}</span></div>
               <div className="kanban-body">
@@ -488,7 +498,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* CONTRATOS, TAREFAS E RESTO MANTIDO IGUAL */}
         {aba === 'contratos' && isAdmin && (
           <>
             <button onClick={()=>abrirNovoContrato()} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Contrato</button>
@@ -528,6 +537,51 @@ export default function AdminPage() {
                         {t.status !== 'Concluído' && <button className="btn-action" onClick={()=>alterarStatusTarefaRapido(t.id,'Concluído')}>✓</button>}
                         <button className="btn-action" onClick={()=>editarTarefa(t)}>Editar</button>
                         {isAdmin && <button className="btn-action" style={{color:"#f87171"}} onClick={()=>excluirTarefa(t.id)}>X</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        
+        {aba === 'leads' && isComercial && (
+          <div className="table-wrapper">
+            <table>
+              <thead><tr><th>Data de Entrada</th><th>Empresa Solicitante</th><th>Interesse no Site</th><th>Ações de Venda</th></tr></thead>
+              <tbody>
+                {leads.map(l => (
+                  <tr key={l.id}>
+                    <td>{new Date(l.created_at).toLocaleDateString('pt-BR')}</td>
+                    <td><strong>{l.empresa}</strong><br/>{l.nome}</td>
+                    <td>{l.produto}</td>
+                    <td>
+                      <button className="btn-action" onClick={()=>enviarWhatsAppLead(l)}>Chamar no Wpp</button>
+                      <button className="btn-action" onClick={()=>abrirNovaTarefa(`Contato Lead: ${l.empresa}`, l.id)}>+ Agendar Tarefa</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {aba === 'templates' && isAdmin && (
+          <>
+            <button onClick={()=>{setFormTemplate({nome:"", tipo:"WhatsApp", conteudo:""}); setModalTemplate(true);}} className="btn-action" style={{marginBottom:"20px",background:"#4A90D9",color:"#fff",border:"none"}}>+ Novo Template</button>
+            <div className="table-wrapper">
+              <table>
+                <thead><tr><th>Nome</th><th>Canal</th><th>Pré-visualização do Conteúdo</th><th>Ação</th></tr></thead>
+                <tbody>
+                  {templates.map(t => (
+                    <tr key={t.id}>
+                      <td><strong>{t.nome}</strong></td>
+                      <td><span className="badge-status" style={{background:"rgba(74,144,217,0.15)",color:"#4A90D9"}}>{t.tipo}</span></td>
+                      <td><div style={{maxWidth:"400px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontSize:"12px",color:"var(--text-secondary)"}}>{t.conteudo}</div></td>
+                      <td>
+                        <button className="btn-action" onClick={()=>{setFormTemplate(t); setModalTemplate(true);}}>Editar</button>
+                        <button className="btn-action" style={{color:"#f87171"}} onClick={()=>excluirTemplate(t.id)}>X</button>
                       </td>
                     </tr>
                   ))}
@@ -588,7 +642,6 @@ export default function AdminPage() {
                 ))}
               </div>
 
-              {/* Form de Nova Interação */}
               <form onSubmit={salvarInteracao} style={{display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-light)", paddingTop: 15}}>
                 <div style={{display: "flex", gap: 10}}>
                   <select className="input-modal" style={{width: 120, padding: 8}} value={formInteracao.tipo} onChange={e=>setFormInteracao({...formInteracao, tipo: e.target.value})}>
@@ -687,6 +740,21 @@ export default function AdminPage() {
               <select className="input-modal" value={formContrato.status} onChange={e => setFormContrato({...formContrato, status: e.target.value})}><option value="Ativo">Ativo</option><option value="Suspenso">Suspenso</option><option value="Cancelado">Cancelado</option></select>
               {formContrato.status === 'Cancelado' && <input required className="input-modal" style={{borderColor:"#f87171"}} value={formContrato.motivo_cancelamento} onChange={e => setFormContrato({...formContrato, motivo_cancelamento: e.target.value})} placeholder="Motivo do Cancelamento..." />}
               <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Contrato</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modalTemplate && (
+        <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formTemplate.id ? "Editar Template" : "Novo Template"}</h2>
+            <p style={{fontSize:"12px",color:"var(--text-secondary)",marginBottom:"15px"}}>Use as variáveis: {'{{nome}}'}, {'{{empresa}}'}, {'{{valor}}'}</p>
+            <form onSubmit={salvarTemplate}>
+              <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({...formTemplate, nome: e.target.value})} placeholder="Nome do Template..." />
+              <select className="input-modal" value={formTemplate.tipo} onChange={e => setFormTemplate({...formTemplate, tipo: e.target.value})}><option value="WhatsApp">WhatsApp</option><option value="Email">Email</option></select>
+              <textarea required className="input-modal" rows={6} value={formTemplate.conteudo} onChange={e => setFormTemplate({...formTemplate, conteudo: e.target.value})} placeholder="Olá {{nome}}..." />
+              <div style={{display:"flex",gap:"10px",marginTop:"10px"}}><button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{flex:1}}>Cancelar</button><button type="submit" className="btn-action" style={{flex:1,background:"#4A90D9",color:"#fff",borderColor:"#4A90D9"}}>Gravar Template</button></div>
             </form>
           </div>
         </div>
