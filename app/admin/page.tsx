@@ -13,16 +13,19 @@ interface PropostaDB {
   id: number; created_at: string; numero: string; cliente: string; contato: string;
   telefone?: string; email: string; valor: number; status: string; status_envio: string;
   filial?: string; dados: any; motivo_perda?: string; obs_perda?: string;
+  cliente_id?: number; // NOVO
 }
 interface TarefaDB {
   id: number; titulo: string; descricao: string; data_vencimento: string; status: string;
   usuario_email: string; lead_id?: number; proposta_id?: number; nome_referencia?: string;
   data_conclusao?: string; created_at: string; prioridade?: 'Alta' | 'Normal' | 'Baixa';
+  cliente_id?: number; // NOVO
 }
 interface ContratoDB {
   id: number; proposta_id?: number; cliente_nome: string; servicos_inclusos?: string;
   valor_mensal: number; status: string; data_inicio: string; data_fim?: string;
   motivo_cancelamento?: string; filial?: string; created_at: string;
+  cliente_id?: number; // NOVO
 }
 interface TemplateDB {
   id: number; nome: string; tipo: string; conteudo: string; created_at: string; assunto?: string;
@@ -35,6 +38,7 @@ interface ClienteDB {
 interface InteracaoDB {
   id: number; cliente_nome: string; usuario_email: string; tipo: string;
   descricao: string; created_at: string;
+  cliente_id?: number; // NOVO
 }
 interface PerfilUsuario {
   id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string;
@@ -205,7 +209,7 @@ export default function AdminPage() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // ─── AUTENTICAÇÃO ─────────────────────────────────────────────────────────
+  // ─── AUTENTICAÇÃO E TEMA ─────────────────────────────────────────────────
   useEffect(() => {
     const t = localStorage.getItem("tema_ssti");
     if (t === "light" || t === "dark") setTema(t);
@@ -323,7 +327,6 @@ export default function AdminPage() {
     [contratos, clientesDesativadosNomes]
   );
 
-  // Ticket médio
   const ticketMedio = propostasFechadas.length > 0
     ? propostasFechadas.reduce((a, b) => a + b.valor, 0) / propostasFechadas.length
     : 0;
@@ -334,7 +337,6 @@ export default function AdminPage() {
     return Object.entries(contagem).map(([name, value]) => ({ name, value }));
   }, [propostasPerdidas]);
 
-  // Pipeline por mês (últimos 6 meses)
   const dadosPipelineMensal = useMemo(() => {
     const meses: Record<string, { ganhas: number; perdidas: number; abertas: number }> = {};
     for (let i = 5; i >= 0; i--) {
@@ -355,7 +357,6 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
-  // Tarefas com status de atraso automático
   const tarefasComAtraso = useMemo(() =>
     tarefas.map(t => {
       if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) {
@@ -371,7 +372,6 @@ export default function AdminPage() {
     return tarefasComAtraso.filter(t => t.status === filtroStatusTarefa);
   }, [tarefasComAtraso, filtroStatusTarefa]);
 
-  // Tarefas urgentes (vence em até 2 dias)
   const tarefasUrgentes = useMemo(() =>
     tarefasComAtraso.filter(t => {
       if (t.status === 'Concluído') return false;
@@ -383,47 +383,61 @@ export default function AdminPage() {
 
   const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
 
-  // ─── BASE DE CLIENTES AGRUPADA ────────────────────────────────────────────
+  // ─── BASE DE CLIENTES AGRUPADA COM NOVO RELACIONAMENTO (ID) ───────────────
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
 
+    // 1. Base Oficial (Chave = ID Oficial)
     clientesBase.forEach(c => {
-      const key = c.nome.trim().toUpperCase();
-      mapa.set(key, {
-        ...c, isOficial: true, propostas: [], contratos: [], tarefas: [],
-        interacoes: interacoes.filter(i => i.cliente_nome.toUpperCase() === key)
+      mapa.set(`ID_${c.id}`, {
+        ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: []
       });
     });
+
+    // Função auxiliar para mapear para a chave correta
+    const getChaveCliente = (id?: number, nomeRef?: string) => {
+      if (id) return `ID_${id}`;
+      // Fallback para legado: tenta achar o cliente pelo nome
+      if (nomeRef) {
+        const oficial = clientesBase.find(c => c.nome.trim().toUpperCase() === nomeRef.trim().toUpperCase());
+        if (oficial) return `ID_${oficial.id}`;
+        return `NAME_${nomeRef.trim().toUpperCase()}`; // Mantém o legado se não achar o ID
+      }
+      return `UNKNOWN`;
+    };
+
+    // 2. Interações
+    interacoes.forEach(i => {
+      const key = getChaveCliente(i.cliente_id, i.cliente_nome);
+      if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
+      mapa.get(key).interacoes.push(i);
+    });
+
+    // 3. Propostas
     propostas.forEach(p => {
-      const key = p.cliente.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, {
-        nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone,
-        tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [],
-        interacoes: interacoes.filter(i => i.cliente_nome.toUpperCase() === key)
-      });
+      const key = getChaveCliente(p.cliente_id, p.cliente);
+      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
+
+    // 4. Contratos
     contratos.forEach(c => {
-      const key = c.cliente_nome.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, {
-        nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true,
-        propostas: [], contratos: [], tarefas: [],
-        interacoes: interacoes.filter(i => i.cliente_nome.toUpperCase() === key)
-      });
+      const key = getChaveCliente(c.cliente_id, c.cliente_nome);
+      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).contratos.push(c);
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
+
+    // 5. Leads do Site
     leads.forEach(l => {
-      const key = l.empresa.trim().toUpperCase();
-      if (!mapa.has(key)) mapa.set(key, {
-        id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone,
-        tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [],
-        interacoes: interacoes.filter(i => i.cliente_nome.toUpperCase() === key)
-      });
+      const key = `NAME_${l.empresa.trim().toUpperCase()}`; // Leads web raramente terão ID oficial inicialmente
+      if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
+
+    // 6. Tarefas
     tarefas.forEach(t => {
-      if (t.nome_referencia) {
-        const key = t.nome_referencia.trim().toUpperCase();
+      if (t.nome_referencia || t.cliente_id) {
+        const key = getChaveCliente(t.cliente_id, t.nome_referencia);
         if (mapa.has(key)) mapa.get(key).tarefas.push(t);
       }
     });
@@ -441,7 +455,6 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, debouncedBusca, interacoes, mostrarDesativados]);
 
-  // Resultados de busca global
   const resultadosBuscaGlobal = useMemo(() => {
     if (!buscaGlobal || buscaGlobal.length < 2) return { clientes: [], propostas: [], tarefas: [] };
     const b = buscaGlobal.toLowerCase();
@@ -468,7 +481,13 @@ export default function AdminPage() {
   };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
-    const cliente = clientesAgrupados.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    // Procura no Map usando a mesma lógica de chave (ID ou fallback de Nome)
+    const keyToFind = prop.cliente_id ? `ID_${prop.cliente_id}` : `NAME_${prop.cliente.trim().toUpperCase()}`;
+    const cliente = clientesAgrupados.find(c => {
+       if (prop.cliente_id) return c.id === prop.cliente_id;
+       return c.nome.toUpperCase() === prop.cliente.trim().toUpperCase();
+    });
+    
     if (cliente) setClienteDetalhe(cliente);
     else showToast("Erro ao abrir a ficha do cliente.", "erro");
   };
@@ -529,8 +548,16 @@ export default function AdminPage() {
   };
 
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
-    const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    const foneParaTentar = prop.telefone || cb?.whatsapp || cb?.telefone || "";
+    let foneParaTentar = prop.telefone || "";
+    // Tenta encontrar na base via ID ou Nome
+    const cb = prop.cliente_id 
+      ? clientesBase.find(c => c.id === prop.cliente_id) 
+      : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    
+    if (cb) {
+      foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
+    }
+    
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(foneParaTentar) });
     setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
   };
@@ -576,21 +603,26 @@ export default function AdminPage() {
           const uri = await (window as any).html2pdf().set({ margin: 10, filename: `Proposta.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(el).outputPdf('datauristring');
           pdfBase64 = uri.split(',')[1];
         } catch {}
-        const cb = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-        const trackingPixel = cb ? `<img src="${window.location.origin}/api/track?action=open&id=${cb.id}" width="1" height="1" style="display:none;" />` : '';
+        
+        let trackingPixel = '';
+        if (prop.cliente_id) {
+           trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${prop.cliente_id}" width="1" height="1" style="display:none;" />`;
+        }
+
         let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
         const assuntoEmail = formEnvioMensagem.assunto || `Proposta Comercial SSTI - ${prop.cliente}`;
         const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: assuntoEmail, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
+        
         if (res.ok) {
           await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
-          await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Assunto: ${assuntoEmail}\n\n${textoFinal}` }]);
+          await supabase.from('interacoes').insert([{ cliente_id: prop.cliente_id, cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Assunto: ${assuntoEmail}\n\n${textoFinal}` }]);
           showToast("E-mail enviado e registado no histórico!", "sucesso");
         } else { showToast("Erro ao enviar e-mail.", "erro"); return; }
       } else if (tipo === 'WhatsApp') {
         const numeroLimpo = modalEnvioProposta.numeroWpp.replace(/\D/g, "");
         if (!numeroLimpo || numeroLimpo.length < 10) return showToast("Digite um número válido com DDD e código do país.", "erro");
         window.open(`https://wa.me/${numeroLimpo}?text=${encodeURIComponent(textoFinal)}`, '_blank');
-        await supabase.from('interacoes').insert([{ cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Enviado para (${numeroLimpo}):\n\n${textoFinal}` }]);
+        await supabase.from('interacoes').insert([{ cliente_id: prop.cliente_id, cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'WhatsApp', descricao: `Enviado para (${numeroLimpo}):\n\n${textoFinal}` }]);
         showToast("WhatsApp aberto e registado no histórico!", "sucesso");
       }
       setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
@@ -632,8 +664,24 @@ export default function AdminPage() {
   const alterarStatusParaGanho = async (prop: PropostaDB) => {
     await supabase.from('propostas').update({ status: 'fechada' }).eq('id', prop.id);
     try {
+      let finalClienteId = prop.cliente_id;
+      
+      // Se a proposta não tinha cliente_id atrelado, tentamos achar ou criamos o cliente agora
+      if (!finalClienteId) {
+        const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+        if (cEx) {
+           finalClienteId = cEx.id;
+           if (cEx.tipo === 'Lead') await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', cEx.id);
+        } else {
+           const { data: newCli } = await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]).select().single();
+           finalClienteId = newCli?.id;
+           // Atualizamos a proposta para não ficar orfã
+           if (finalClienteId) await supabase.from('propostas').update({ cliente_id: finalClienteId }).eq('id', prop.id);
+        }
+      }
+
       await supabase.from('contratos').insert([{
-        proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor,
+        proposta_id: prop.id, cliente_id: finalClienteId, cliente_nome: prop.cliente, valor_mensal: prop.valor,
         status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0],
         servicos_inclusos: 'Gerado automaticamente', filial: prop.filial || perfilAtivo.filial
       }]);
@@ -641,14 +689,9 @@ export default function AdminPage() {
         titulo: `🚀 Onboarding: ${prop.cliente}`,
         descricao: `Novo cliente fechado! Realizar ativação e configuração inicial.`,
         data_vencimento: new Date().toISOString(), status: 'Pendente',
-        usuario_email: session?.user?.email, nome_referencia: prop.cliente, proposta_id: prop.id
+        usuario_email: session?.user?.email, cliente_id: finalClienteId, nome_referencia: prop.cliente, proposta_id: prop.id
       }]);
-      const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-      if (!cEx) {
-        await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]);
-      } else if (cEx.tipo === 'Lead') {
-        await supabase.from('clientes').update({ tipo: 'Cliente' }).eq('id', cEx.id);
-      }
+      
       showToast("🎉 Negócio Fechado! Contrato e Onboarding ativados.", "sucesso");
     } catch {}
     carregarTudo();
@@ -675,7 +718,7 @@ export default function AdminPage() {
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteDetalhe || !formInteracao.descricao) return;
-    await supabase.from('interacoes').insert([{ cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao }]);
+    await supabase.from('interacoes').insert([{ cliente_id: clienteDetalhe.id, cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao }]);
     setFormInteracao({ tipo: "Nota", descricao: "" });
     showToast("Nota adicionada ao histórico!", "sucesso");
     setClienteDetalhe(null);
@@ -698,7 +741,7 @@ export default function AdminPage() {
 
   // ─── CRUD CONTRATOS ───────────────────────────────────────────────────────
   const abrirNovoContrato = (prop?: PropostaDB) => {
-    if (prop) setFormContrato({ proposta_id: prop.id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" });
+    if (prop) setFormContrato({ proposta_id: prop.id, cliente_id: prop.cliente_id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" });
     else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
     setModalContrato(true);
   };
@@ -719,8 +762,8 @@ export default function AdminPage() {
   };
 
   // ─── CRUD TAREFAS ─────────────────────────────────────────────────────────
-  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number) => {
-    setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId, prioridade: "Normal" });
+  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number, clienteId?: number) => {
+    setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", cliente_id: clienteId, nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId, prioridade: "Normal" });
     setModalTarefa(true);
   };
   const editarTarefa = (t: TarefaDB) => {
@@ -1003,7 +1046,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.0</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.1</div>
         </div>
       </aside>
 
@@ -1625,7 +1668,7 @@ export default function AdminPage() {
                 )}
               </div>
               <div style={{ marginTop: 16 }}>
-                <button className="btn-action" style={{ width: "100%", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", padding: 10 }} onClick={() => { abrirNovaTarefa(clienteDetalhe.nome); setClienteDetalhe(null); }}>
+                <button className="btn-action" style={{ width: "100%", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", padding: 10 }} onClick={() => { abrirNovaTarefa(clienteDetalhe.nome, undefined, undefined, clienteDetalhe.id); setClienteDetalhe(null); }}>
                   + Criar Tarefa para este Cliente
                 </button>
               </div>
@@ -1808,121 +1851,6 @@ export default function AdminPage() {
               <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
                 <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
                 <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Registo</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: TAREFA ────────────────────────────────────────────────────── */}
-      {modalTarefa && (
-        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formTarefa.id ? "✏️ Editar Tarefa" : "➕ Nova Tarefa"}</h2>
-            <form onSubmit={salvarTarefa} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <input required className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.titulo} onChange={e => setFormTarefa({ ...formTarefa, titulo: e.target.value })} placeholder="Título da tarefa *" />
-              <textarea className="input-modal" style={{ marginBottom: 0, resize: "vertical" }} rows={3} value={formTarefa.descricao} onChange={e => setFormTarefa({ ...formTarefa, descricao: e.target.value })} placeholder="Descrição (opcional)..." />
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Prazo</label>
-                  <input required type="datetime-local" className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.data_vencimento} onChange={e => setFormTarefa({ ...formTarefa, data_vencimento: e.target.value })} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Prioridade</label>
-                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.prioridade} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value as 'Alta' | 'Normal' | 'Baixa' })}>
-                    <option value="Alta">🔴 Alta</option>
-                    <option value="Normal">🔵 Normal</option>
-                    <option value="Baixa">⚪ Baixa</option>
-                  </select>
-                </div>
-              </div>
-              <input className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.nome_referencia} onChange={e => setFormTarefa({ ...formTarefa, nome_referencia: e.target.value })} placeholder="Cliente relacionado (opcional)..." />
-              {isAdmin && (
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Atribuir a</label>
-                  <select className="input-modal" style={{ marginBottom: 0 }} value={formTarefa.usuario_email} onChange={e => setFormTarefa({ ...formTarefa, usuario_email: e.target.value })}>
-                    {usuarios.map(u => <option key={u.email} value={u.email}>{u.email.split('@')[0]} ({u.perfil})</option>)}
-                  </select>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Tarefa</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      
-      {/* ─── MODAL: CONTRATO ──────────────────────────────────────────────────── */}
-      {modalContrato && (
-        <div className="modal-overlay" onClick={() => setModalContrato(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formContrato.id ? "✏️ Gerir Contrato" : "➕ Novo Contrato"}</h2>
-            <form onSubmit={salvarContrato} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <input required className="input-modal" style={{ marginBottom: 0 }} value={formContrato.cliente_nome} onChange={e => setFormContrato({ ...formContrato, cliente_nome: e.target.value })} placeholder="Nome do Cliente *" />
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Valor Mensal (R$)</label>
-                  <input required type="number" step="0.01" className="input-modal" style={{ marginBottom: 0 }} value={formContrato.valor_mensal || ""} onChange={e => setFormContrato({ ...formContrato, valor_mensal: Number(e.target.value) })} placeholder="Valor Mensal..." />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Filial</label>
-                  <input className="input-modal" style={{ marginBottom: 0 }} value={formContrato.filial || ""} onChange={e => setFormContrato({ ...formContrato, filial: e.target.value })} placeholder="Ex: Matriz..." />
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Data de Início</label>
-                  <input type="date" required className="input-modal" style={{ marginBottom: 0 }} value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Status</label>
-                  <select className="input-modal" style={{ marginBottom: 0 }} value={formContrato.status} onChange={e => setFormContrato({ ...formContrato, status: e.target.value })}>
-                    <option value="Ativo">Ativo</option>
-                    <option value="Suspenso">Suspenso</option>
-                    <option value="Cancelado">Cancelado</option>
-                  </select>
-                </div>
-              </div>
-              <textarea className="input-modal" style={{ marginBottom: 0, resize: "vertical" }} rows={2} value={formContrato.servicos_inclusos} onChange={e => setFormContrato({ ...formContrato, servicos_inclusos: e.target.value })} placeholder="Serviços inclusos no contrato..." />
-              {formContrato.status === 'Cancelado' && (
-                <textarea required className="input-modal" style={{ marginBottom: 0, borderColor: "#f87171" }} rows={2} value={formContrato.motivo_cancelamento} onChange={e => setFormContrato({ ...formContrato, motivo_cancelamento: e.target.value })} placeholder="Motivo do cancelamento (obrigatório) *" />
-              )}
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Salvar Contrato</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: TEMPLATE ──────────────────────────────────────────────────── */}
-      {modalTemplate && (
-        <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 650 }}>
-            <h2>{formTemplate.id ? "✏️ Editar Template" : "➕ Novo Template"}</h2>
-            <form onSubmit={salvarTemplate} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input required className="input-modal" style={{ flex: 2, marginBottom: 0 }} value={formTemplate.nome} onChange={e => setFormTemplate({ ...formTemplate, nome: e.target.value })} placeholder="Nome do template *" />
-                <select className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formTemplate.tipo} onChange={e => setFormTemplate({ ...formTemplate, tipo: e.target.value })}>
-                  <option value="WhatsApp">WhatsApp</option>
-                  <option value="Email">E-mail</option>
-                </select>
-              </div>
-              {formTemplate.tipo === 'Email' && (
-                <input className="input-modal" style={{ marginBottom: 0 }} value={formTemplate.assunto} onChange={e => setFormTemplate({ ...formTemplate, assunto: e.target.value })} placeholder="Assunto do e-mail (opcional)..." />
-              )}
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-                  Conteúdo — variáveis disponíveis: <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{nome}}'}</code> <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{empresa}}'}</code> <code style={{ background: "var(--bg-main)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>{'{{valor}}'}</code>
-                </label>
-                <textarea required className="input-modal" style={{ marginBottom: 0, resize: "vertical", fontFamily: "monospace", fontSize: 13 }} rows={10} value={formTemplate.conteudo} onChange={e => setFormTemplate({ ...formTemplate, conteudo: e.target.value })} placeholder="Conteúdo do template..." />
-              </div>
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Salvar Template</button>
               </div>
             </form>
           </div>
