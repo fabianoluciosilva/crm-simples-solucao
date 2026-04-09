@@ -186,7 +186,7 @@ export default function AdminPage() {
 
   const [modalUsuario, setModalUsuario] = useState(false);
   const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario & { senha?: string }>>({ email: '', nome: '', senha: '', perfil: 'Comercial', filial: 'Matriz' });
-  
+  const [modalInfoNovoUser, setModalInfoNovoUser] = useState(false);
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
@@ -387,6 +387,7 @@ export default function AdminPage() {
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
 
+    // 1. Base Oficial (Chave = ID Oficial)
     clientesBase.forEach(c => {
       mapa.set(`ID_${c.id}`, {
         ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: []
@@ -403,18 +404,21 @@ export default function AdminPage() {
       return `UNKNOWN`;
     };
 
+    // 2. Interações
     interacoes.forEach(i => {
       const key = getChaveCliente(i.cliente_id, i.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).interacoes.push(i);
     });
 
+    // 3. Propostas
     propostas.forEach(p => {
       const key = getChaveCliente(p.cliente_id, p.cliente);
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
 
+    // 4. Contratos
     contratos.forEach(c => {
       const key = getChaveCliente(c.cliente_id, c.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
@@ -422,11 +426,13 @@ export default function AdminPage() {
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
 
+    // 5. Leads do Site
     leads.forEach(l => {
       const key = `NAME_${l.empresa.trim().toUpperCase()}`; 
       if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
 
+    // 6. Tarefas
     tarefas.forEach(t => {
       if (t.nome_referencia || t.cliente_id) {
         const key = getChaveCliente(t.cliente_id, t.nome_referencia);
@@ -473,6 +479,7 @@ export default function AdminPage() {
   };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
+    const keyToFind = prop.cliente_id ? `ID_${prop.cliente_id}` : `NAME_${prop.cliente.trim().toUpperCase()}`;
     const cliente = clientesAgrupados.find(c => {
        if (prop.cliente_id) return c.id === prop.cliente_id;
        return c.nome.toUpperCase() === prop.cliente.trim().toUpperCase();
@@ -1051,7 +1058,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.6</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.7</div>
         </div>
       </aside>
 
@@ -1152,6 +1159,7 @@ export default function AdminPage() {
                 )}
               </div>
 
+              {/* NOVO: Evolução mensal */}
               <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
                 <ResponsiveContainer width="100%" height="85%">
@@ -1536,17 +1544,18 @@ export default function AdminPage() {
         {aba === 'usuarios' && isAdmin && (
           <>
             <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-              <button onClick={() => { setFormUsuario({ id: undefined, email: '', perfil: 'Comercial', filial: perfilAtivo.filial }); setModalUsuario(true); }} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Pré-registar Membro</button>
+              <button onClick={() => { setFormUsuario({ id: undefined, email: '', nome: '', senha: '', perfil: 'Comercial', filial: perfilAtivo.filial }); setModalUsuario(true); }} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Registar Membro</button>
             </div>
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>E-mail</th><th>Perfil</th><th>Filial</th><th style={{ textAlign: "right" }}>Ações</th></tr></thead>
+                <thead><tr><th>Nome / E-mail</th><th>Perfil</th><th>Filial</th><th style={{ textAlign: "right" }}>Ações</th></tr></thead>
                 <tbody>
                   {usuarios.map(u => (
                     <tr key={u.email}>
                       <td>
-                        <strong>{u.email}</strong>
+                        <strong>{u.nome || "Não definido"}</strong>
                         {u.email === session?.user?.email && <span style={{ marginLeft: 8, fontSize: 10, color: "#4A90D9", background: "rgba(74,144,217,0.1)", padding: "2px 6px", borderRadius: 10 }}>Você</span>}
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{u.email}</div>
                       </td>
                       <td><span className="badge-status" style={{ background: "rgba(74,144,217,0.1)", color: "#4A90D9" }}>{u.perfil}</span></td>
                       <td>{u.filial}</td>
@@ -1722,25 +1731,52 @@ export default function AdminPage() {
       {modalUsuario && (
         <div className="modal-overlay" onClick={() => setModalUsuario(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Pré-registar Novo Membro"}</h2>
+            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Registar Novo Membro"}</h2>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
               {formUsuario.id 
                 ? "Altere o nível de acesso e a filial deste membro da equipa."
-                : "Digite o e-mail da conta Google que o seu novo membro usará para entrar. Quando ele fizer login, já terá as permissões certas!"}
+                : "Crie uma conta para o seu novo membro. Ele usará este E-mail e Senha para entrar no CRM."}
             </p>
             <form onSubmit={salvarUsuario} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail (Conta Google)</label>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nome do Colaborador</label>
                 <input 
                   required 
+                  className="input-modal" 
+                  value={formUsuario.nome || ''} 
+                  onChange={e => setFormUsuario({ ...formUsuario, nome: e.target.value })}
+                  placeholder="Ex: Gabriel" 
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail de Acesso</label>
+                <input 
+                  required 
+                  type="email"
                   className="input-modal" 
                   value={formUsuario.email} 
                   onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })}
                   disabled={!!formUsuario.id} 
                   style={{ opacity: formUsuario.id ? 0.6 : 1 }} 
-                  placeholder="exemplo@gmail.com" 
+                  placeholder="exemplo@simplessolucao.com.br" 
                 />
               </div>
+              
+              {/* O campo de senha SÓ aparece ao CRIAR um usuário, nunca ao EDITAR */}
+              {!formUsuario.id && (
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Senha Temporária * (Mín. 6 caracteres)</label>
+                  <input 
+                    required 
+                    type="password"
+                    className="input-modal" 
+                    value={formUsuario.senha || ''} 
+                    onChange={e => setFormUsuario({ ...formUsuario, senha: e.target.value })}
+                    placeholder="******" 
+                  />
+                </div>
+              )}
+
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nível de Acesso (Perfil)</label>
                 <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
