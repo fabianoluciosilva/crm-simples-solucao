@@ -124,6 +124,7 @@ export default function AdminPage() {
   const [toast, setToast] = useState<{ msg: string; tipo: 'sucesso' | 'erro' | 'info' } | null>(null);
   const [buscaGlobal, setBuscaGlobal] = useState("");
   const [mostrarBuscaGlobal, setMostrarBuscaGlobal] = useState(false);
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false); // ESTADO NOVO MOBILE
 
   const isAdmin = perfilAtivo.perfil === 'Admin';
   const isComercial = perfilAtivo.perfil === 'Comercial' || isAdmin;
@@ -233,7 +234,6 @@ export default function AdminPage() {
       if (perfilData) {
         pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, nome: perfilData.nome };
       } else {
-        // Se o perfil sumiu ou nunca foi gravado (Auto-Healing), recriamos com UPSERT!
         const isDono = emailUser === 'fabiano@simplessolucao.com.br';
         pFinal = { id: session.user.id, email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz', nome: isDono ? 'Fabiano' : '' };
         await supabase.from('perfis').upsert([{ 
@@ -254,6 +254,11 @@ export default function AdminPage() {
   }, [router]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
+
+  const mudarAba = (novaAba: AbaType) => {
+    setAba(novaAba);
+    setMenuMobileAberto(false); // Fecha o menu ao clicar (Mobile)
+  };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -296,7 +301,6 @@ export default function AdminPage() {
 
       if (perfis.data) {
         let listaPerfis = [...(perfis.data as PerfilUsuario[])];
-        // Garante que o próprio utilizador logado aparece sempre na lista
         if (!listaPerfis.find(u => u.email === perfilAtivo.email)) listaPerfis.push(perfilAtivo);
         setUsuarios(listaPerfis);
       }
@@ -899,8 +903,7 @@ export default function AdminPage() {
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; }
-        .sidebar { width: 260px; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); position: fixed; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; z-index: 10; }
-        .main-content { flex: 1; margin-left: 260px; padding: 40px; }
+        .main-content { flex: 1; margin-left: 260px; padding: 40px; transition: margin-left 0.3s ease; }
         .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
         .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; width: 100%; text-align: left; font-size: 13px; transition: all 0.15s; }
         .nav-item:hover { background: rgba(74,144,217,0.07); color: var(--text-primary); }
@@ -908,9 +911,9 @@ export default function AdminPage() {
         .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .metric-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; padding: 20px; transition: box-shadow 0.2s; }
         .metric-card:hover { box-shadow: var(--shadow); }
-        .table-wrapper { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; overflow: hidden; margin-bottom: 24px; }
+        .table-wrapper { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; overflow-x: auto; margin-bottom: 24px; -webkit-overflow-scrolling: touch; }
         table { width: 100%; border-collapse: collapse; }
-        th { background: rgba(0,0,0,0.1); padding: 14px 16px; font-size: 11px; text-transform: uppercase; color: var(--text-secondary); text-align: left; letter-spacing: 0.05em; }
+        th { background: rgba(0,0,0,0.1); padding: 14px 16px; font-size: 11px; text-transform: uppercase; color: var(--text-secondary); text-align: left; letter-spacing: 0.05em; white-space: nowrap; }
         td { padding: 14px 16px; border-bottom: 1px solid var(--border-light); font-size: 14px; }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background: rgba(74,144,217,0.03); }
@@ -924,7 +927,7 @@ export default function AdminPage() {
         .input-modal:focus { outline: none; border-color: #4A90D9; }
         .toast { position: fixed; bottom: 30px; right: 30px; padding: 14px 22px; border-radius: 12px; color: #fff; font-weight: 600; z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.3); animation: slideIn .3s forwards; display: flex; align-items: center; gap: 10px; font-size: 14px; }
         @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; }
+        .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; -webkit-overflow-scrolling: touch; }
         .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; transition: border-color 0.2s; }
         .kanban-col.drag-over { border-color: #4A90D9; background: rgba(74,144,217,0.04); }
         .kanban-header { padding: 14px 16px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.05em; }
@@ -940,10 +943,28 @@ export default function AdminPage() {
         .busca-global-box { background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 16px; width: 100%; max-width: 600px; overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.5); }
         .resultado-busca-item { padding: 10px 20px; cursor: pointer; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; gap: 12px; font-size: 14px; transition: background 0.1s; }
         .resultado-busca-item:hover { background: rgba(74,144,217,0.1); }
-        @media (max-width: 768px) { .sidebar { display: none; } .main-content { margin-left: 0; padding: 20px; } }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 4px; }
+        
+        /* ─── MOBILE STYLES ─── */
+        .sidebar { transition: transform 0.3s ease; }
+        .mobile-menu-btn { display: none; background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer; padding: 0 10px 0 0; }
+        .close-menu-btn { display: none; background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; position: absolute; top: 15px; right: 15px; z-index: 1001; }
+        .mobile-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 9; backdrop-filter: blur(3px); }
+        .header-controls { display: flex; gap: 8px; align-items: center; }
+        
+        @media (max-width: 768px) {
+          .sidebar { transform: translateX(-100%); z-index: 1000; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
+          .sidebar.open { transform: translateX(0); }
+          .main-content { margin-left: 0; padding: 15px; }
+          .mobile-menu-btn { display: block; }
+          .close-menu-btn { display: block; }
+          .mobile-overlay.open { display: block; }
+          header { flex-direction: column; align-items: flex-start !important; gap: 15px; }
+          .header-controls { width: 100%; flex-wrap: wrap; }
+          .metric-card { padding: 15px; }
+          .grid-metrics { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+          table th, table td { font-size: 12px; padding: 10px; }
+          .modal-content { padding: 20px; margin: 10px; }
+        }
       `}</style>
 
       {/* TOAST */}
@@ -952,6 +973,9 @@ export default function AdminPage() {
           {toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : 'ℹ️'} {toast.msg}
         </div>
       )}
+
+      {/* OVERLAY PARA MENU MOBILE */}
+      <div className={`mobile-overlay ${menuMobileAberto ? 'open' : ''}`} onClick={() => setMenuMobileAberto(false)}></div>
 
       {/* FILA WHATSAPP FLUTUANTE */}
       {filaWpp.length > 0 && (
@@ -1000,7 +1024,7 @@ export default function AdminPage() {
                   <>
                     <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>PROPOSTAS</div>
                     {resultadosBuscaGlobal.propostas.map((p: any) => (
-                      <div key={p.id} className="resultado-busca-item" onClick={() => { setAba('propostas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
+                      <div key={p.id} className="resultado-busca-item" onClick={() => { mudarAba('propostas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
                         <span>🎯</span><div><div style={{ fontWeight: 600 }}>{p.cliente}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.numero} · {fmt(p.valor)}</div></div>
                         <BadgeStatus status={p.status || 'aberta'} />
                       </div>
@@ -1011,7 +1035,7 @@ export default function AdminPage() {
                   <>
                     <div style={{ padding: "8px 20px", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>TAREFAS</div>
                     {resultadosBuscaGlobal.tarefas.map((t: any) => (
-                      <div key={t.id} className="resultado-busca-item" onClick={() => { setAba('tarefas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
+                      <div key={t.id} className="resultado-busca-item" onClick={() => { mudarAba('tarefas'); setMostrarBuscaGlobal(false); setBuscaGlobal(""); }}>
                         <span>✅</span><div><div style={{ fontWeight: 600 }}>{t.titulo}</div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t.nome_referencia}</div></div>
                         <BadgeStatus status={t.status} />
                       </div>
@@ -1032,27 +1056,28 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* SIDEBAR */}
-      <aside className="sidebar">
+      {/* SIDEBAR COM SUPORTE MOBILE */}
+      <aside className={`sidebar ${menuMobileAberto ? 'open' : ''}`}>
+        <button className="close-menu-btn" onClick={() => setMenuMobileAberto(false)}>✕</button>
         <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
           <img src={tema === 'dark' ? '/Logo-negativo.webp' : '/icon.png'} style={{ maxHeight: "36px", borderRadius: "8px" }} alt="SSTI" />
         </div>
         <nav className="nav-menu">
-          {isComercial && <button className={`nav-item ${aba === 'dashboard' ? 'active' : ''}`} onClick={() => setAba('dashboard')}>📈 Dashboard</button>}
+          {isComercial && <button className={`nav-item ${aba === 'dashboard' ? 'active' : ''}`} onClick={() => mudarAba('dashboard')}>📈 Dashboard</button>}
           {isComercial && (
-            <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => setAba('propostas')}>
+            <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => mudarAba('propostas')}>
               🎯 Funil de Vendas
             </button>
           )}
-          <button className={`nav-item ${aba === 'clientes' ? 'active' : ''}`} onClick={() => setAba('clientes')}>👥 Base de Clientes</button>
-          {isAdmin && <button className={`nav-item ${aba === 'contratos' ? 'active' : ''}`} onClick={() => setAba('contratos')}>📄 Financeiro (MRR)</button>}
-          <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => setAba('tarefas')}>
+          <button className={`nav-item ${aba === 'clientes' ? 'active' : ''}`} onClick={() => mudarAba('clientes')}>👥 Base de Clientes</button>
+          {isAdmin && <button className={`nav-item ${aba === 'contratos' ? 'active' : ''}`} onClick={() => mudarAba('contratos')}>📄 Financeiro (MRR)</button>}
+          <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => mudarAba('tarefas')}>
             ✅ Tarefas
             {tarefasUrgentes.length > 0 && <span className="notificacao-badge">{tarefasUrgentes.length}</span>}
           </button>
-          {isAdmin && <button className={`nav-item ${aba === 'relatorios' ? 'active' : ''}`} onClick={() => setAba('relatorios')}>📊 Relatórios</button>}
-          {isAdmin && <button className={`nav-item ${aba === 'templates' ? 'active' : ''}`} onClick={() => setAba('templates')}>📝 Templates</button>}
-          {isAdmin && <button className={`nav-item ${aba === 'usuarios' ? 'active' : ''}`} onClick={() => setAba('usuarios')}>🔐 Usuários</button>}
+          {isAdmin && <button className={`nav-item ${aba === 'relatorios' ? 'active' : ''}`} onClick={() => mudarAba('relatorios')}>📊 Relatórios</button>}
+          {isAdmin && <button className={`nav-item ${aba === 'templates' ? 'active' : ''}`} onClick={() => mudarAba('templates')}>📝 Templates</button>}
+          {isAdmin && <button className={`nav-item ${aba === 'usuarios' ? 'active' : ''}`} onClick={() => mudarAba('usuarios')}>🔐 Usuários</button>}
           {isComercial && (
             <button
               className="nav-item"
@@ -1065,7 +1090,7 @@ export default function AdminPage() {
         </nav>
         <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-light)" }}>
           <button
-            onClick={() => { setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }}
+            onClick={() => { setMenuMobileAberto(false); setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }}
             style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-light)", borderRadius: 8, padding: "8px 12px", color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 12 }}
           >
             🔍 <span>Pesquisar...</span>
@@ -1077,27 +1102,31 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.8</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.9 Mobile Ready</div>
         </div>
       </aside>
 
       {/* MAIN */}
       <main className="main-content">
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
-          <div>
-            <h1 style={{ fontSize: "22px", fontWeight: 800 }}>
-              {aba === 'dashboard' && '📈 Dashboard'}
-              {aba === 'propostas' && '🎯 Funil de Vendas'}
-              {aba === 'clientes' && '👥 Base de Clientes'}
-              {aba === 'contratos' && '📄 Financeiro (MRR)'}
-              {aba === 'tarefas' && '✅ Tarefas'}
-              {aba === 'relatorios' && '📊 Relatórios'}
-              {aba === 'templates' && '📝 Templates'}
-              {aba === 'usuarios' && '🔐 Usuários'}
-            </h1>
-            {carregando && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>A sincronizar dados...</div>}
+          <div style={{ display: "flex", alignItems: "center" }}>
+            {/* BOTÃO HAMBÚRGUER MOBILE */}
+            <button className="mobile-menu-btn" onClick={() => setMenuMobileAberto(true)}>☰</button>
+            <div>
+              <h1 style={{ fontSize: "22px", fontWeight: 800 }}>
+                {aba === 'dashboard' && '📈 Dashboard'}
+                {aba === 'propostas' && '🎯 Funil de Vendas'}
+                {aba === 'clientes' && '👥 Base de Clientes'}
+                {aba === 'contratos' && '📄 Financeiro (MRR)'}
+                {aba === 'tarefas' && '✅ Tarefas'}
+                {aba === 'relatorios' && '📊 Relatórios'}
+                {aba === 'templates' && '📝 Templates'}
+                {aba === 'usuarios' && '🔐 Usuários'}
+              </h1>
+              {carregando && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>A sincronizar dados...</div>}
+            </div>
           </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <div className="header-controls">
             {(aba === 'dashboard' || aba === 'propostas' || aba === 'relatorios') && (
               <select value={filtroDias} onChange={e => setFiltroDias(Number(e.target.value))} style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-light)", borderRadius: "8px", padding: "8px 12px", fontSize: 13 }}>
                 <option value={30}>Últimos 30 dias</option>
@@ -1112,7 +1141,7 @@ export default function AdminPage() {
                 <button onClick={() => setVistaPropostas('tabela')} style={{ background: vistaPropostas === 'tabela' ? 'rgba(74,144,217,0.2)' : 'transparent', color: vistaPropostas === 'tabela' ? '#4A90D9' : 'var(--text-secondary)', border: "none", padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Tabela</button>
               </div>
             )}
-            <button onClick={carregarTudo} className="btn-action" title="Recarregar dados">🔄</button>
+            <button onClick={carregarTudo} className="btn-action" style={{ margin: 0 }} title="Recarregar dados">🔄</button>
           </div>
         </header>
 
@@ -1135,16 +1164,16 @@ export default function AdminPage() {
 
             {/* ALERTAS RÁPIDOS */}
             {tarefasUrgentes.length > 0 && (
-              <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
                 <div>
                   <span style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>⚠️ {tarefasUrgentes.length} tarefa{tarefasUrgentes.length > 1 ? 's' : ''} urgente{tarefasUrgentes.length > 1 ? 's' : ''}</span>
                   <span style={{ color: "var(--text-secondary)", fontSize: 13, marginLeft: 10 }}>{tarefasUrgentes.slice(0, 2).map(t => t.titulo).join(', ')}{tarefasUrgentes.length > 2 ? '...' : ''}</span>
                 </div>
-                <button className="btn-action" style={{ color: "#f87171", borderColor: "#f87171" }} onClick={() => setAba('tarefas')}>Ver Tarefas</button>
+                <button className="btn-action" style={{ color: "#f87171", borderColor: "#f87171", margin: 0 }} onClick={() => mudarAba('tarefas')}>Ver Tarefas</button>
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: "20px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
               <div className="metric-card" style={{ height: 320 }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📊 Funil de Negociação</div>
                 <ResponsiveContainer width="100%" height="100%">
@@ -1195,7 +1224,7 @@ export default function AdminPage() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
                     <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
                     <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
                     <Area type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" fill="url(#colorGanhas)" strokeWidth={2} />
@@ -1246,9 +1275,9 @@ export default function AdminPage() {
                       <div style={{ fontWeight: 800, color: "#4A90D9", marginBottom: 10, fontSize: 16 }}>{fmt(p.valor)}</div>
                       {p.motivo_perda && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8, padding: "4px 8px", background: "rgba(248,113,113,0.08)", borderRadius: 6 }}>{p.motivo_perda}</div>}
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11 }} onClick={() => abrirModalEnvio(p, 'WhatsApp')}>💬 Wpp</button>
-                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11 }} onClick={() => abrirModalEnvio(p, 'Email')}>📧 E-mail</button>
-                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, background: "rgba(74,144,217,0.08)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)" }} onClick={() => abrirNotasDaProposta(p)}>📝 Notas</button>
+                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0 }} onClick={() => abrirModalEnvio(p, 'WhatsApp')}>💬 Wpp</button>
+                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0 }} onClick={() => abrirModalEnvio(p, 'Email')}>📧 E-mail</button>
+                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, background: "rgba(74,144,217,0.08)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", margin: 0 }} onClick={() => abrirNotasDaProposta(p)}>📝 Notas</button>
                       </div>
                     </div>
                   ))}
@@ -1279,7 +1308,7 @@ export default function AdminPage() {
                       <BadgeStatus status={p.status || 'aberta'} />
                       {p.motivo_perda && <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 3 }}>{p.motivo_perda}</div>}
                     </td>
-                    <td style={{ textAlign: "right" }}>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <button className="btn-action" onClick={() => abrirNotasDaProposta(p)}>📝</button>
                       <button className="btn-action" onClick={() => visualizarProposta(p)}>PDF</button>
                       <button className="btn-action" onClick={() => abrirModalEnvio(p, 'WhatsApp')}>💬</button>
@@ -1291,7 +1320,7 @@ export default function AdminPage() {
                           await supabase.from('propostas').update({ status: 'negociacao' }).eq('id', p.id);
                           showToast("Proposta reaberta!", "info");
                           carregarTudo();
-                        }}>↩️ Reabrir</button>
+                        }}>↩️</button>
                       )}
                       {isAdmin && <button className="btn-action" style={{ color: "#f87171" }} onClick={() => excluirProposta(p.id, p.cliente)}>🗑️</button>}
                     </td>
@@ -1309,13 +1338,13 @@ export default function AdminPage() {
               {isComercial && (
                 <button
                   onClick={() => { setFormCliente({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "", filial: perfilAtivo.filial }); setModalClienteForm(true); }}
-                  className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}
+                  className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13, margin: 0 }}
                 >+ Novo Registo</button>
               )}
               {isComercial && (
                 <button
                   onClick={() => { setFormComunicado({ publico: "Cliente", assunto: "", mensagem: "" }); setModalComunicado(true); }}
-                  className="btn-action" style={{ color: "#4A90D9", border: "1px solid #4A90D9", padding: "9px 18px", fontSize: 13 }}
+                  className="btn-action" style={{ color: "#4A90D9", border: "1px solid #4A90D9", padding: "9px 18px", fontSize: 13, margin: 0 }}
                 >📢 Comunicado em Massa</button>
               )}
               <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
@@ -1323,8 +1352,8 @@ export default function AdminPage() {
                   <input type="checkbox" checked={mostrarDesativados} onChange={e => setMostrarDesativados(e.target.checked)} />
                   Exibir Inativos
                 </label>
-                <input className="input-modal" style={{ maxWidth: "240px", margin: 0 }} placeholder="🔍 Pesquisar..." value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} />
-                <select className="input-modal" value={filtroTipoCliente} onChange={e => setFiltroTipoCliente(e.target.value as any)} style={{ maxWidth: "180px", margin: 0 }}>
+                <input className="input-modal" style={{ maxWidth: "240px", margin: 0, padding: "8px 12px" }} placeholder="🔍 Pesquisar..." value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} />
+                <select className="input-modal" value={filtroTipoCliente} onChange={e => setFiltroTipoCliente(e.target.value as any)} style={{ maxWidth: "180px", margin: 0, padding: "8px 12px" }}>
                   <option value="Todos">Todas as Categorias</option>
                   <option value="Cliente">Apenas Clientes</option>
                   <option value="Lead">Apenas Leads</option>
@@ -1348,27 +1377,27 @@ export default function AdminPage() {
                         {c.codigo && <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{c.codigo}</div>}
                         {c.ativo === false && <span style={{ fontSize: 10, color: "#f87171", fontWeight: "bold" }}> (INATIVO)</span>}
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: "nowrap" }}>
                         <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>📞 {c.telefone || c.contato || '—'}</div>
                         <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>💬 {c.whatsapp || '—'}</div>
                         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{c.email}</div>
                       </td>
                       <td><BadgeStatus status={c.tipo} /></td>
-                      <td>
+                      <td style={{ whiteSpace: "nowrap" }}>
                         <span style={{ fontWeight: 'bold', color: (c.score || 0) >= 20 ? '#f87171' : (c.score || 0) > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>
                           {c.score || 0} pts
                         </span>
                       </td>
                       {isComercial && (
-                        <td>
+                        <td style={{ whiteSpace: "nowrap" }}>
                           <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                             {c.propostas.length} prop{c.propostas.length !== 1 ? 's' : ''}
                             {c.contratos.filter((x: any) => x.status === 'Ativo').length > 0 && ` · ${c.contratos.filter((x: any) => x.status === 'Ativo').length} contrato(s)`}
-                            {c.interacoes.length > 0 && <span style={{ color: "#4A90D9" }}> · {c.interacoes.length} nota(s)</span>}
+                            {c.interacoes.length > 0 && <span style={{ color: "#4A90D9", display: "block" }}>{c.interacoes.length} nota(s)</span>}
                           </span>
                         </td>
                       )}
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <button className="btn-action" onClick={() => setClienteDetalhe(c)}>📋 Diário</button>
                         {isComercial && (
                           <button className="btn-action" onClick={() => {
@@ -1377,7 +1406,7 @@ export default function AdminPage() {
                           }}>Editar</button>
                         )}
                         {isAdmin && (
-                          <button className="btn-action" style={{ borderColor: c.ativo === false ? "#22c55e" : "#f87171", color: c.ativo === false ? "#22c55e" : "#f87171" }} onClick={() => alternarStatusCliente(c)}>
+                          <button className="btn-action" style={{ borderColor: c.ativo === false ? "#22c55e" : "#f87171", color: c.ativo === false ? "#22c55e" : "#f87171", margin: 0 }} onClick={() => alternarStatusCliente(c)}>
                             {c.ativo === false ? 'Ativar' : 'Desativar'}
                           </button>
                         )}
@@ -1393,10 +1422,10 @@ export default function AdminPage() {
         {/* ─── ABA: CONTRATOS (MRR) ────────────────────────────────────────────── */}
         {aba === 'contratos' && isAdmin && (
           <>
-            <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center" }}>
-              <button onClick={() => abrirNovoContrato()} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Novo Contrato</button>
+            <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={() => abrirNovoContrato()} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13, margin: 0 }}>+ Novo Contrato</button>
               <div style={{ flex: 1 }} />
-              <div className="metric-card" style={{ padding: "10px 20px", marginBottom: 0, display: "flex", gap: 20 }}>
+              <div className="metric-card" style={{ padding: "10px 20px", marginBottom: 0, display: "flex", gap: 20, alignItems: "center" }}>
                 <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>MRR Total:</span>
                 <span style={{ fontWeight: 800, color: "#22c55e", fontSize: 16 }}>{fmt(mrrAtivo)}</span>
               </div>
@@ -1409,10 +1438,10 @@ export default function AdminPage() {
                     <tr key={c.id} style={{ opacity: c.status === 'Cancelado' ? 0.5 : 1 }}>
                       <td style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{new Date(c.data_inicio).toLocaleDateString('pt-BR')}</td>
                       <td><strong>{c.cliente_nome}</strong></td>
-                      <td style={{ fontWeight: 700, color: "#22c55e" }}>{fmt(c.valor_mensal)}</td>
+                      <td style={{ fontWeight: 700, color: "#22c55e", whiteSpace: "nowrap" }}>{fmt(c.valor_mensal)}</td>
                       <td style={{ fontSize: 12, color: "var(--text-secondary)", maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.servicos_inclusos || '—'}</div></td>
                       <td><BadgeStatus status={c.status} /></td>
-                      <td><button className="btn-action" onClick={() => editarContrato(c)}>Gerir</button></td>
+                      <td style={{ whiteSpace: "nowrap" }}><button className="btn-action" style={{ margin: 0 }} onClick={() => editarContrato(c)}>Gerir</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1425,8 +1454,8 @@ export default function AdminPage() {
         {aba === 'tarefas' && (
           <>
             <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={() => abrirNovaTarefa()} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Nova Tarefa</button>
-              <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => abrirNovaTarefa()} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13, margin: 0 }}>+ Nova Tarefa</button>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flex: 1, justifyContent: "flex-end" }}>
                 {(["Todos", "Pendente", "Em Andamento", "Concluído", "Atrasado"] as const).map(s => (
                   <button
                     key={s}
@@ -1436,7 +1465,7 @@ export default function AdminPage() {
                       background: filtroStatusTarefa === s ? 'rgba(74,144,217,0.2)' : 'transparent',
                       color: filtroStatusTarefa === s ? '#4A90D9' : 'var(--text-secondary)',
                       borderColor: filtroStatusTarefa === s ? '#4A90D9' : 'var(--border-light)',
-                      fontSize: 12
+                      fontSize: 12, margin: 0
                     }}
                   >
                     {s === 'Atrasado' ? '⚠️ ' : ''}{s}
@@ -1466,9 +1495,9 @@ export default function AdminPage() {
                           <strong style={{ fontSize: 14 }}>{t.titulo}</strong>
                           {t.descricao && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{t.descricao.substring(0, 60)}{t.descricao.length > 60 ? '...' : ''}</div>}
                         </td>
-                        <td style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t.nome_referencia || '—'}</td>
+                        <td style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{t.nome_referencia || '—'}</td>
                         <td><BadgeStatus status={t.status} /></td>
-                        <td>
+                        <td style={{ whiteSpace: "nowrap" }}>
                           {t.status !== 'Concluído' && (
                             <button className="btn-action" style={{ color: "#22c55e", borderColor: "#22c55e" }} onClick={() => alterarStatusTarefaRapido(t.id, 'Concluído')}>✓</button>
                           )}
@@ -1476,7 +1505,7 @@ export default function AdminPage() {
                             <button className="btn-action" style={{ color: "#4A90D9" }} onClick={() => alterarStatusTarefaRapido(t.id, 'Em Andamento')}>▶</button>
                           )}
                           <button className="btn-action" onClick={() => editarTarefa(t as TarefaDB)}>Editar</button>
-                          {isAdmin && <button className="btn-action" style={{ color: "#f87171" }} onClick={() => excluirTarefa(t.id)}>🗑️</button>}
+                          {isAdmin && <button className="btn-action" style={{ color: "#f87171", margin: 0 }} onClick={() => excluirTarefa(t.id)}>🗑️</button>}
                         </td>
                       </tr>
                     );
@@ -1501,7 +1530,7 @@ export default function AdminPage() {
               <MetricCard label="MRR TOTAL" value={fmt(mrrAtivo)} color="#22c55e" icon="💰" />
               <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} icon="🎟️" />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
               <div className="metric-card" style={{ height: 360 }}>
                 <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>MRR Atual vs Meta Trimestral</div>
                 <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Valor recorrente por contratos ativos</div>
@@ -1509,7 +1538,7 @@ export default function AdminPage() {
                   <BarChart data={[{ name: 'MRR Atual', Receita: mrrAtivo }, { name: 'Meta (+20%)', Receita: mrrAtivo * 1.2 }]} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
                     <XAxis dataKey="name" stroke="var(--text-secondary)" tick={{ fontSize: 12 }} axisLine={false} />
-                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={50} />
                     <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} formatter={(v: any) => fmt(v)} />
                     <Bar dataKey="Receita" fill="#22c55e" radius={[6, 6, 0, 0]} barSize={60} />
                   </BarChart>
@@ -1522,7 +1551,7 @@ export default function AdminPage() {
                   <LineChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
                     <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Line type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} />
@@ -1540,16 +1569,16 @@ export default function AdminPage() {
             <button onClick={() => { setFormTemplate({ nome: "", tipo: "WhatsApp", conteudo: "", assunto: "" }); setModalTemplate(true); }} className="btn-action" style={{ marginBottom: "20px", background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px" }}>+ Novo Template</button>
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Nome</th><th>Canal</th><th>Pré-visualização</th><th>Ação</th></tr></thead>
+                <thead><tr><th>Nome</th><th>Canal</th><th>Pré-visualização</th><th style={{ textAlign: "right" }}>Ação</th></tr></thead>
                 <tbody>
                   {templates.map(t => (
                     <tr key={t.id}>
-                      <td><strong>{t.nome}</strong></td>
+                      <td style={{ whiteSpace: "nowrap" }}><strong>{t.nome}</strong></td>
                       <td><span className="badge-status" style={{ background: t.tipo === 'WhatsApp' ? 'rgba(34,197,94,0.15)' : 'rgba(74,144,217,0.15)', color: t.tipo === 'WhatsApp' ? '#22c55e' : '#4A90D9' }}>{t.tipo}</span></td>
-                      <td><div style={{ maxWidth: "400px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "12px", color: "var(--text-secondary)" }}>{t.conteudo}</div></td>
-                      <td>
+                      <td><div style={{ maxWidth: "300px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "12px", color: "var(--text-secondary)" }}>{t.conteudo}</div></td>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <button className="btn-action" onClick={() => { setFormTemplate(t); setModalTemplate(true); }}>Editar</button>
-                        <button className="btn-action" style={{ color: "#f87171" }} onClick={() => excluirTemplate(t.id)}>🗑️</button>
+                        <button className="btn-action" style={{ color: "#f87171", margin: 0 }} onClick={() => excluirTemplate(t.id)}>🗑️</button>
                       </td>
                     </tr>
                   ))}
@@ -1571,16 +1600,16 @@ export default function AdminPage() {
                 <tbody>
                   {usuarios.map(u => (
                     <tr key={u.email}>
-                      <td>
+                      <td style={{ whiteSpace: "nowrap" }}>
                         <strong>{u.nome || "Não definido"}</strong>
                         {u.email === session?.user?.email && <span style={{ marginLeft: 8, fontSize: 10, color: "#4A90D9", background: "rgba(74,144,217,0.1)", padding: "2px 6px", borderRadius: 10 }}>Você</span>}
                         <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{u.email}</div>
                       </td>
                       <td><span className="badge-status" style={{ background: "rgba(74,144,217,0.1)", color: "#4A90D9" }}>{u.perfil}</span></td>
                       <td>{u.filial}</td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <button className="btn-action" onClick={() => { setFormUsuario(u); setModalUsuario(true); }}>Editar Acesso</button>
-                        {u.email !== session?.user?.email && <button className="btn-action" style={{ color: "#f87171" }} onClick={() => excluirUsuario(u.id, u.email)}>Remover</button>}
+                        {u.email !== session?.user?.email && <button className="btn-action" style={{ color: "#f87171", margin: 0 }} onClick={() => excluirUsuario(u.id, u.email)}>Remover</button>}
                       </td>
                     </tr>
                   ))}
@@ -1640,8 +1669,8 @@ export default function AdminPage() {
       {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) ───────────────────────── */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={() => setClienteDetalhe(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, display: "flex", gap: 24 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, display: "flex", flexWrap: "wrap", gap: 24 }}>
+            <div style={{ flex: "1 1 300px", minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
                 <div>
                   <h2 style={{ fontSize: 20 }}>{clienteDetalhe.nome}</h2>
@@ -1708,7 +1737,7 @@ export default function AdminPage() {
                 </button>
               </div>
             </div>
-            <div style={{ flex: 1.3, background: "var(--bg-main)", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <div style={{ flex: "1 1 300px", background: "var(--bg-main)", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", minWidth: 0 }}>
               <h4 style={{ marginBottom: 16, fontSize: 14 }}>📒 Diário de Bordo</h4>
               <div style={{ flex: 1, overflowY: "auto", marginBottom: 16, paddingRight: 8, maxHeight: 380 }}>
                 {clienteDetalhe.interacoes.length === 0 ? (
@@ -1750,25 +1779,51 @@ export default function AdminPage() {
       {modalUsuario && (
         <div className="modal-overlay" onClick={() => setModalUsuario(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Pré-registar Novo Membro"}</h2>
+            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Registar Novo Membro"}</h2>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
               {formUsuario.id 
                 ? "Altere o nível de acesso e a filial deste membro da equipa."
-                : "Digite o e-mail da conta Google que o seu novo membro usará para entrar. Quando ele fizer login, já terá as permissões certas!"}
+                : "Crie uma conta para o seu novo membro. Ele usará este E-mail e Senha para entrar no CRM."}
             </p>
             <form onSubmit={salvarUsuario} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail (Conta Google)</label>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nome do Colaborador</label>
                 <input 
                   required 
+                  className="input-modal" 
+                  value={formUsuario.nome || ''} 
+                  onChange={e => setFormUsuario({ ...formUsuario, nome: e.target.value })}
+                  placeholder="Ex: Gabriel" 
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail de Acesso</label>
+                <input 
+                  required 
+                  type="email"
                   className="input-modal" 
                   value={formUsuario.email} 
                   onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })}
                   disabled={!!formUsuario.id} 
                   style={{ opacity: formUsuario.id ? 0.6 : 1 }} 
-                  placeholder="exemplo@gmail.com" 
+                  placeholder="exemplo@simplessolucao.com.br" 
                 />
               </div>
+              
+              {!formUsuario.id && (
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Senha Temporária * (Mín. 6 caracteres)</label>
+                  <input 
+                    required 
+                    type="password"
+                    className="input-modal" 
+                    value={formUsuario.senha || ''} 
+                    onChange={e => setFormUsuario({ ...formUsuario, senha: e.target.value })}
+                    placeholder="******" 
+                  />
+                </div>
+              )}
+
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nível de Acesso (Perfil)</label>
                 <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
@@ -1875,13 +1930,13 @@ export default function AdminPage() {
               </div>
               <input required className="input-modal" style={{ marginBottom: 0 }} value={formCliente.nome} onChange={e => setFormCliente({ ...formCliente, nome: e.target.value })} placeholder="Nome da Empresa *" />
               <input className="input-modal" style={{ marginBottom: 0 }} value={formCliente.email} onChange={e => setFormCliente({ ...formCliente, email: e.target.value })} placeholder="E-mail principal..." type="email" />
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.telefone} onChange={e => setFormCliente({ ...formCliente, telefone: e.target.value })} placeholder="Telefone Fixo..." />
-                <input className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.whatsapp} onChange={e => setFormCliente({ ...formCliente, whatsapp: e.target.value })} placeholder="WhatsApp (com DDD)..." />
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.telefone} onChange={e => setFormCliente({ ...formCliente, telefone: e.target.value })} placeholder="Telefone Fixo..." />
+                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.whatsapp} onChange={e => setFormCliente({ ...formCliente, whatsapp: e.target.value })} placeholder="WhatsApp (com DDD)..." />
               </div>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.documento} onChange={e => setFormCliente({ ...formCliente, documento: e.target.value })} placeholder="CNPJ / CPF..." />
-                {isAdmin && <input className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.filial} onChange={e => setFormCliente({ ...formCliente, filial: e.target.value })} placeholder="Filial (Ex: Matriz)..." />}
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.documento} onChange={e => setFormCliente({ ...formCliente, documento: e.target.value })} placeholder="CNPJ / CPF..." />
+                {isAdmin && <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.filial} onChange={e => setFormCliente({ ...formCliente, filial: e.target.value })} placeholder="Filial (Ex: Matriz)..." />}
               </div>
               <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
                 <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
