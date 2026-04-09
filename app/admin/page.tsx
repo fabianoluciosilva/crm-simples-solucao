@@ -227,14 +227,19 @@ export default function AdminPage() {
       setSession(session);
       const emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
+      
       let pFinal: PerfilUsuario = { email: emailUser, perfil: 'Comercial', filial: 'Matriz' };
+      
       if (perfilData) {
+        // Agora carregamos o ID corretamente
         pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, nome: perfilData.nome };
       } else {
         const isDono = emailUser === 'fabiano@simplessolucao.com.br';
-        pFinal = { email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz' };
-        await supabase.from('perfis').insert([{ id: session.user.id, email: emailUser, perfil: pFinal.perfil, filial: 'Matriz' }]);
+        // Amarramos o ID da sessão autenticada ao perfil gerado
+        pFinal = { id: session.user.id, email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz' };
+        await supabase.from('perfis').upsert([{ id: session.user.id, email: emailUser, perfil: pFinal.perfil, filial: 'Matriz' }]);
       }
+      
       setPerfilAtivo(pFinal);
       setFormTarefa(prev => ({ ...prev, usuario_email: emailUser }));
       if (pFinal.perfil === 'Admin' || pFinal.perfil === 'Comercial') setAba('dashboard');
@@ -290,7 +295,7 @@ export default function AdminPage() {
         setUsuarios(listaPerfis);
       }
     } catch (err) {
-      showToast("Erro ao carregar dados. Verifique a conexão.", "erro");
+      showToast("Erro ao carregar dados.", "erro");
     } finally {
       setCarregando(false);
     }
@@ -387,7 +392,6 @@ export default function AdminPage() {
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
 
-    // 1. Base Oficial (Chave = ID Oficial)
     clientesBase.forEach(c => {
       mapa.set(`ID_${c.id}`, {
         ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: []
@@ -404,21 +408,18 @@ export default function AdminPage() {
       return `UNKNOWN`;
     };
 
-    // 2. Interações
     interacoes.forEach(i => {
       const key = getChaveCliente(i.cliente_id, i.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).interacoes.push(i);
     });
 
-    // 3. Propostas
     propostas.forEach(p => {
       const key = getChaveCliente(p.cliente_id, p.cliente);
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
 
-    // 4. Contratos
     contratos.forEach(c => {
       const key = getChaveCliente(c.cliente_id, c.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
@@ -426,13 +427,11 @@ export default function AdminPage() {
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
 
-    // 5. Leads do Site
     leads.forEach(l => {
       const key = `NAME_${l.empresa.trim().toUpperCase()}`; 
       if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
 
-    // 6. Tarefas
     tarefas.forEach(t => {
       if (t.nome_referencia || t.cliente_id) {
         const key = getChaveCliente(t.cliente_id, t.nome_referencia);
@@ -479,7 +478,6 @@ export default function AdminPage() {
   };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
-    const keyToFind = prop.cliente_id ? `ID_${prop.cliente_id}` : `NAME_${prop.cliente.trim().toUpperCase()}`;
     const cliente = clientesAgrupados.find(c => {
        if (prop.cliente_id) return c.id === prop.cliente_id;
        return c.nome.toUpperCase() === prop.cliente.trim().toUpperCase();
@@ -1544,7 +1542,7 @@ export default function AdminPage() {
         {aba === 'usuarios' && isAdmin && (
           <>
             <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-              <button onClick={() => { setFormUsuario({ id: undefined, email: '', nome: '', senha: '', perfil: 'Comercial', filial: perfilAtivo.filial }); setModalUsuario(true); }} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Registar Membro</button>
+              <button onClick={() => { setFormUsuario({ id: undefined, email: '', nome: '', senha: '', perfil: 'Comercial', filial: perfilAtivo.filial }); setModalUsuario(true); }} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Pré-registar Membro</button>
             </div>
             <div className="table-wrapper">
               <table>
@@ -1731,7 +1729,7 @@ export default function AdminPage() {
       {modalUsuario && (
         <div className="modal-overlay" onClick={() => setModalUsuario(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Registar Novo Membro"}</h2>
+            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Pré-registar Novo Membro"}</h2>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
               {formUsuario.id 
                 ? "Altere o nível de acesso e a filial deste membro da equipa."
@@ -1762,7 +1760,6 @@ export default function AdminPage() {
                 />
               </div>
               
-              {/* O campo de senha SÓ aparece ao CRIAR um usuário, nunca ao EDITAR */}
               {!formUsuario.id && (
                 <div>
                   <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Senha Temporária * (Mín. 6 caracteres)</label>
