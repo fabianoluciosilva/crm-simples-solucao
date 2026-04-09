@@ -41,7 +41,7 @@ interface InteracaoDB {
   cliente_id?: string;
 }
 interface PerfilUsuario {
-  id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string;
+  id?: string; email: string; perfil: 'Admin' | 'Comercial' | 'Suporte'; filial: string; nome?: string;
 }
 
 type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios" | "relatorios";
@@ -185,8 +185,8 @@ export default function AdminPage() {
   });
 
   const [modalUsuario, setModalUsuario] = useState(false);
-  const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario>>({ email: '', perfil: 'Comercial', filial: 'Matriz' });
-  const [modalInfoNovoUser, setModalInfoNovoUser] = useState(false);
+  const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario & { senha?: string }>>({ email: '', nome: '', senha: '', perfil: 'Comercial', filial: 'Matriz' });
+  
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
@@ -223,13 +223,13 @@ export default function AdminPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { window.location.href = "/"; return; }
+      if (!session) { router.push("/"); return; }
       setSession(session);
       const emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
       let pFinal: PerfilUsuario = { email: emailUser, perfil: 'Comercial', filial: 'Matriz' };
       if (perfilData) {
-        pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial };
+        pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, nome: perfilData.nome };
       } else {
         const isDono = emailUser === 'fabiano@simplessolucao.com.br';
         pFinal = { email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz' };
@@ -241,9 +241,9 @@ export default function AdminPage() {
       else setAba('tarefas');
       setCarregandoAuth(false);
     });
-  }, []);
+  }, [router]);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = "/"; };
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -387,7 +387,6 @@ export default function AdminPage() {
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
 
-    // 1. Base Oficial (Chave = ID Oficial)
     clientesBase.forEach(c => {
       mapa.set(`ID_${c.id}`, {
         ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: []
@@ -404,21 +403,18 @@ export default function AdminPage() {
       return `UNKNOWN`;
     };
 
-    // 2. Interações
     interacoes.forEach(i => {
       const key = getChaveCliente(i.cliente_id, i.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).interacoes.push(i);
     });
 
-    // 3. Propostas
     propostas.forEach(p => {
       const key = getChaveCliente(p.cliente_id, p.cliente);
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
 
-    // 4. Contratos
     contratos.forEach(c => {
       const key = getChaveCliente(c.cliente_id, c.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
@@ -426,13 +422,11 @@ export default function AdminPage() {
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
 
-    // 5. Leads do Site
     leads.forEach(l => {
       const key = `NAME_${l.empresa.trim().toUpperCase()}`; 
       if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
 
-    // 6. Tarefas
     tarefas.forEach(t => {
       if (t.nome_referencia || t.cliente_id) {
         const key = getChaveCliente(t.cliente_id, t.nome_referencia);
@@ -479,7 +473,6 @@ export default function AdminPage() {
   };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
-    const keyToFind = prop.cliente_id ? `ID_${prop.cliente_id}` : `NAME_${prop.cliente.trim().toUpperCase()}`;
     const cliente = clientesAgrupados.find(c => {
        if (prop.cliente_id) return c.id === prop.cliente_id;
        return c.nome.toUpperCase() === prop.cliente.trim().toUpperCase();
@@ -807,35 +800,40 @@ export default function AdminPage() {
     }
   };
 
-  // ─── CRUD USUÁRIOS (PRÉ-REGISTO) ──────────────────────────────────────────
+  // ─── CRUD USUÁRIOS (PRÉ-REGISTO COM SENHA VIA API) ────────────────────────
   const salvarUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     const emailTratado = formUsuario.email?.toLowerCase().trim() || '';
 
     if (formUsuario.id) {
-      await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial }).eq('id', formUsuario.id);
+      await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial, nome: formUsuario.nome }).eq('id', formUsuario.id);
       showToast("Permissões atualizadas!", "sucesso");
+      setModalUsuario(false);
+      carregarTudo();
     } else {
-      const { data: usuarioExistente } = await supabase.from('perfis').select('id, email').eq('email', emailTratado).single();
+      if (!formUsuario.senha || formUsuario.senha.length < 6) return showToast("A senha deve ter pelo menos 6 caracteres.", "erro");
 
-      if (usuarioExistente) {
-        await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial }).eq('id', usuarioExistente.id);
-        showToast(`O e-mail ${emailTratado} já existia. Acessos atualizados!`, "sucesso");
-      } else {
-        const { error } = await supabase.from('perfis').insert([{
-          id: crypto.randomUUID(), 
+      showToast("A criar utilizador...", "info");
+      const res = await fetch('/api/criar-usuario', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           email: emailTratado,
+          senha: formUsuario.senha,
           perfil: formUsuario.perfil,
-          filial: formUsuario.filial
-        }]);
-        if (error) {
-          return showToast("Erro ao cadastrar. O e-mail já existe?", "erro");
-        }
-        showToast("Utilizador cadastrado com sucesso!", "sucesso");
+          filial: formUsuario.filial,
+          nome: formUsuario.nome
+        })
+      });
+
+      if (!res.ok) {
+          const errData = await res.json();
+          return showToast(`Erro: ${errData.error}`, "erro");
       }
+      showToast("Utilizador cadastrado com sucesso!", "sucesso");
+      setModalUsuario(false);
+      carregarTudo();
     }
-    setModalUsuario(false);
-    carregarTudo();
   };
 
   const excluirUsuario = async (id?: string, email?: string) => {
@@ -1154,7 +1152,6 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* NOVO: Evolução mensal */}
               <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
                 <ResponsiveContainer width="100%" height="85%">
