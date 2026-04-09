@@ -209,7 +209,7 @@ export default function AdminPage() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // ─── AUTENTICAÇÃO E TEMA ─────────────────────────────────────────────────
+  // ─── AUTENTICAÇÃO E TEMA (COM AUTO-HEALING DE PERFIL) ────────────────────
   useEffect(() => {
     const t = localStorage.getItem("tema_ssti");
     if (t === "light" || t === "dark") setTema(t);
@@ -228,16 +228,21 @@ export default function AdminPage() {
       const emailUser = session.user.email || "";
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
       
-      let pFinal: PerfilUsuario = { email: emailUser, perfil: 'Comercial', filial: 'Matriz' };
+      let pFinal: PerfilUsuario;
       
       if (perfilData) {
-        // Agora carregamos o ID corretamente
         pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, nome: perfilData.nome };
       } else {
+        // Se o perfil sumiu ou nunca foi gravado (Auto-Healing), recriamos com UPSERT!
         const isDono = emailUser === 'fabiano@simplessolucao.com.br';
-        // Amarramos o ID da sessão autenticada ao perfil gerado
-        pFinal = { id: session.user.id, email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz' };
-        await supabase.from('perfis').upsert([{ id: session.user.id, email: emailUser, perfil: pFinal.perfil, filial: 'Matriz' }]);
+        pFinal = { id: session.user.id, email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz', nome: isDono ? 'Fabiano' : '' };
+        await supabase.from('perfis').upsert([{ 
+          id: pFinal.id, 
+          email: pFinal.email, 
+          perfil: pFinal.perfil, 
+          filial: pFinal.filial,
+          nome: pFinal.nome
+        }]);
       }
       
       setPerfilAtivo(pFinal);
@@ -291,11 +296,12 @@ export default function AdminPage() {
 
       if (perfis.data) {
         let listaPerfis = [...(perfis.data as PerfilUsuario[])];
+        // Garante que o próprio utilizador logado aparece sempre na lista
         if (!listaPerfis.find(u => u.email === perfilAtivo.email)) listaPerfis.push(perfilAtivo);
         setUsuarios(listaPerfis);
       }
     } catch (err) {
-      showToast("Erro ao carregar dados.", "erro");
+      showToast("Erro ao carregar dados. Verifique a conexão.", "erro");
     } finally {
       setCarregando(false);
     }
@@ -392,6 +398,7 @@ export default function AdminPage() {
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
 
+    // 1. Base Oficial (Chave = ID Oficial)
     clientesBase.forEach(c => {
       mapa.set(`ID_${c.id}`, {
         ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: []
@@ -408,18 +415,21 @@ export default function AdminPage() {
       return `UNKNOWN`;
     };
 
+    // 2. Interações
     interacoes.forEach(i => {
       const key = getChaveCliente(i.cliente_id, i.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).interacoes.push(i);
     });
 
+    // 3. Propostas
     propostas.forEach(p => {
       const key = getChaveCliente(p.cliente_id, p.cliente);
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
 
+    // 4. Contratos
     contratos.forEach(c => {
       const key = getChaveCliente(c.cliente_id, c.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
@@ -427,11 +437,13 @@ export default function AdminPage() {
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
 
+    // 5. Leads do Site
     leads.forEach(l => {
       const key = `NAME_${l.empresa.trim().toUpperCase()}`; 
       if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
 
+    // 6. Tarefas
     tarefas.forEach(t => {
       if (t.nome_referencia || t.cliente_id) {
         const key = getChaveCliente(t.cliente_id, t.nome_referencia);
@@ -478,6 +490,7 @@ export default function AdminPage() {
   };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
+    const keyToFind = prop.cliente_id ? `ID_${prop.cliente_id}` : `NAME_${prop.cliente.trim().toUpperCase()}`;
     const cliente = clientesAgrupados.find(c => {
        if (prop.cliente_id) return c.id === prop.cliente_id;
        return c.nome.toUpperCase() === prop.cliente.trim().toUpperCase();
@@ -811,7 +824,15 @@ export default function AdminPage() {
     const emailTratado = formUsuario.email?.toLowerCase().trim() || '';
 
     if (formUsuario.id) {
-      await supabase.from('perfis').update({ perfil: formUsuario.perfil, filial: formUsuario.filial, nome: formUsuario.nome }).eq('id', formUsuario.id);
+      // Uso de UPSERT para garantir o Auto-Healing
+      const { error } = await supabase.from('perfis').upsert([{ 
+        id: formUsuario.id, 
+        email: emailTratado,
+        perfil: formUsuario.perfil, 
+        filial: formUsuario.filial, 
+        nome: formUsuario.nome 
+      }]);
+      if (error) return showToast("Erro ao atualizar: " + error.message, "erro");
       showToast("Permissões atualizadas!", "sucesso");
       setModalUsuario(false);
       carregarTudo();
@@ -1056,7 +1077,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.7</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.8</div>
         </div>
       </aside>
 
@@ -1733,47 +1754,21 @@ export default function AdminPage() {
             <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
               {formUsuario.id 
                 ? "Altere o nível de acesso e a filial deste membro da equipa."
-                : "Crie uma conta para o seu novo membro. Ele usará este E-mail e Senha para entrar no CRM."}
+                : "Digite o e-mail da conta Google que o seu novo membro usará para entrar. Quando ele fizer login, já terá as permissões certas!"}
             </p>
             <form onSubmit={salvarUsuario} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nome do Colaborador</label>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail (Conta Google)</label>
                 <input 
                   required 
-                  className="input-modal" 
-                  value={formUsuario.nome || ''} 
-                  onChange={e => setFormUsuario({ ...formUsuario, nome: e.target.value })}
-                  placeholder="Ex: Gabriel" 
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail de Acesso</label>
-                <input 
-                  required 
-                  type="email"
                   className="input-modal" 
                   value={formUsuario.email} 
                   onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })}
                   disabled={!!formUsuario.id} 
                   style={{ opacity: formUsuario.id ? 0.6 : 1 }} 
-                  placeholder="exemplo@simplessolucao.com.br" 
+                  placeholder="exemplo@gmail.com" 
                 />
               </div>
-              
-              {!formUsuario.id && (
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Senha Temporária * (Mín. 6 caracteres)</label>
-                  <input 
-                    required 
-                    type="password"
-                    className="input-modal" 
-                    value={formUsuario.senha || ''} 
-                    onChange={e => setFormUsuario({ ...formUsuario, senha: e.target.value })}
-                    placeholder="******" 
-                  />
-                </div>
-              )}
-
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nível de Acesso (Perfil)</label>
                 <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
