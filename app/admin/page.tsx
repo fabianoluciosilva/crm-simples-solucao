@@ -66,7 +66,7 @@ const calcDiasAtraso = (dataVenc: string): number => {
   return diff;
 };
 
-// ─── NOVA FUNÇÃO: ANÁLISE DE SENTIMENTO ─────────────────────────────────────
+// ─── FUNÇÃO 1: ANÁLISE DE SENTIMENTO ────────────────────────────────────────
 const analisarSentimento = (texto: string): { 
   sentimento: 'positivo' | 'neutro' | 'negativo'; 
   deltaScore: number; 
@@ -86,7 +86,7 @@ const analisarSentimento = (texto: string): {
   return { sentimento: 'neutro', deltaScore: 2, emoji: '😐', label: 'Neutro' };
 };
 
-// ─── NOVA FUNÇÃO: CHURN RISK PREDICTIVO ─────────────────────────────────────
+// ─── FUNÇÃO 2: CHURN RISK PREDICTIVO ────────────────────────────────────────
 const calcularChurnRisk = (cliente: any): { 
   score: number; 
   nivel: 'Baixo' | 'Médio' | 'Alto'; 
@@ -96,6 +96,7 @@ const calcularChurnRisk = (cliente: any): {
 } => {
   const scoreAtual = cliente.score || 50;
   
+  // Extrai corretamente os dias sem contato baseando-se no histórico de interações
   const ints = cliente.interacoes || [];
   let diasSemContato = 30;
   if (ints.length > 0) {
@@ -111,38 +112,61 @@ const calcularChurnRisk = (cliente: any): {
   const quedaComponent = diasSemContato > 10 ? 60 : 20;
 
   let churnScore = Math.round(
-    (scoreComponent * 0.40) +
-    (diasComponent * 0.25) +
-    (chamadosComponent * 0.15) +
-    (quedaComponent * 0.10) +
-    10
+    (scoreComponent * 0.40) + (diasComponent * 0.25) + 
+    (chamadosComponent * 0.15) + (quedaComponent * 0.10) + 10
   );
-
   churnScore = Math.max(0, Math.min(100, churnScore));
 
-  let nivel: 'Baixo' | 'Médio' | 'Alto';
-  let cor: string;
-  let emoji: string;
-  let recomendacao: string;
-
   if (churnScore < 35) {
-    nivel = 'Baixo';
-    cor = '#22c55e';
-    emoji = '✅';
-    recomendacao = 'Cliente saudável. Manter engajamento normal.';
+    return { score: churnScore, nivel: 'Baixo', cor: '#22c55e', emoji: '✅', 
+             recomendacao: 'Cliente saudável. Manter engajamento normal.' };
   } else if (churnScore < 65) {
-    nivel = 'Médio';
-    cor = '#f59e0b';
-    emoji = '⚠️';
-    recomendacao = 'Monitorar. Agendar contato nos próximos 7 dias.';
+    return { score: churnScore, nivel: 'Médio', cor: '#f59e0b', emoji: '⚠️', 
+             recomendacao: 'Monitorar. Agendar contato nos próximos 7 dias.' };
   } else {
-    nivel = 'Alto';
-    cor = '#f87171';
-    emoji = '🔴';
-    recomendacao = 'Risco alto! Ligar hoje + oferecer ação de retenção.';
+    return { score: churnScore, nivel: 'Alto', cor: '#f87171', emoji: '🔴', 
+             recomendacao: 'Risco alto! Ligar hoje + oferecer ação de retenção.' };
+  }
+};
+
+// ─── FUNÇÃO 3: COPILOTO COMERCIAL ───────────────────────────────────────────
+const gerarSugestaoIA = (cliente: any): { 
+  titulo: string; 
+  acao: string; 
+  motivo: string; 
+  prioridade: 'Alta' | 'Média' | 'Baixa';
+  emoji: string;
+} => {
+  const risk = calcularChurnRisk(cliente);
+  
+  // Extração segura dos dias sem contato para o copiloto
+  const ints = cliente.interacoes || [];
+  let diasSemContato = 999;
+  if (ints.length > 0) {
+    const dataRef = new Date(ints[0].created_at).getTime();
+    diasSemContato = Math.floor((Date.now() - dataRef) / (1000 * 60 * 60 * 24));
   }
 
-  return { score: churnScore, nivel, cor, emoji, recomendacao };
+  const chamadosAbertos = cliente.tarefas?.filter((t: any) => t.status !== 'Concluído').length || 0;
+
+  if (risk.nivel === 'Alto') {
+    return { titulo: "Ação Urgente de Retenção", acao: "Ligar hoje + oferecer check-up ou desconto", 
+             motivo: "Risco alto de churn detectado", prioridade: "Alta", emoji: "🔴" };
+  }
+  if (diasSemContato > 14 && diasSemContato !== 999) {
+    return { titulo: "Reengajamento Necessário", acao: "Enviar mensagem personalizada ou ligar para retomar contato", 
+             motivo: `${diasSemContato} dias sem interação`, prioridade: "Alta", emoji: "⚠️" };
+  }
+  if (chamadosAbertos >= 2) {
+    return { titulo: "Acompanhamento de Suporte", acao: "Verificar chamados abertos e propor solução ou upgrade", 
+             motivo: `${chamadosAbertos} chamados em aberto`, prioridade: "Média", emoji: "🛠️" };
+  }
+  if (risk.nivel === 'Médio') {
+    return { titulo: "Manter Engajamento", acao: "Agendar contato nos próximos 7 dias ou enviar conteúdo relevante", 
+             motivo: "Risco médio - prevenção", prioridade: "Média", emoji: "🟡" };
+  }
+  return { titulo: "Oportunidade de Expansão", acao: "Verificar se há potencial de upsell (firewall, backup, etc.)", 
+           motivo: "Cliente saudável - momento ideal para expansão", prioridade: "Baixa", emoji: "✅" };
 };
 
 // ─── COMPONENTES REUTILIZÁVEIS ──────────────────────────────────────────────
@@ -1138,7 +1162,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.5 Preditivo Final</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.0 Copiloto IA</div>
         </div>
       </aside>
 
@@ -1886,7 +1910,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) — COM CHURN RISK ──────── */}
+      {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) — COM CHURN RISK E COPILOTO ─── */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={() => setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, display: "flex", flexWrap: "wrap", gap: 24 }}>
@@ -1904,9 +1928,11 @@ export default function AdminPage() {
                 <span>💬 {clienteDetalhe.whatsapp || '—'}</span><br />
                 <span>📧 {clienteDetalhe.email || '—'}</span>
                 {clienteDetalhe.documento && <><br /><span>📋 {clienteDetalhe.documento}</span></>}
+                <br />
+                <span style={{ color: "#f87171", fontWeight: "bold" }}>🔥 Score: {clienteDetalhe.score || 0} pts</span>
               </div>
 
-              {/* BADGE DE CHURN RISK E SCORE */}
+              {/* BADGE DE CHURN RISK */}
               {(() => {
                 const risk = calcularChurnRisk(clienteDetalhe);
                 return (
@@ -1925,6 +1951,52 @@ export default function AdminPage() {
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                       {risk.recomendacao}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* COPILOTO COMERCIAL IA */}
+              {(() => {
+                const sugestao = gerarSugestaoIA(clienteDetalhe);
+                return (
+                  <div style={{ 
+                    marginTop: 16,
+                    padding: '14px 16px', 
+                    borderRadius: 12, 
+                    background: 'rgba(74,144,217,0.08)',
+                    border: '1px solid rgba(74,144,217,0.2)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 18 }}>{sugestao.emoji}</span>
+                      <span style={{ fontWeight: 700, color: '#4A90D9', fontSize: 14 }}>
+                        Sugestão da IA
+                      </span>
+                      <span style={{ 
+                        marginLeft: 'auto', 
+                        fontSize: 11, 
+                        padding: '2px 8px', 
+                        borderRadius: 9999,
+                        background: sugestao.prioridade === 'Alta' ? '#f8717122' : 
+                                   sugestao.prioridade === 'Média' ? '#f59e0b22' : '#22c55e22',
+                        color: sugestao.prioridade === 'Alta' ? '#f87171' : 
+                               sugestao.prioridade === 'Média' ? '#f59e0b' : '#22c55e',
+                        fontWeight: 600
+                      }}>
+                        {sugestao.prioridade}
+                      </span>
+                    </div>
+                    
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+                      {sugestao.titulo}
+                    </div>
+                    
+                    <div style={{ fontSize: 13, color: "var(--text-primary)", marginBottom: 6 }}>
+                      {sugestao.acao}
+                    </div>
+                    
+                    <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                      {sugestao.motivo}
                     </div>
                   </div>
                 );
