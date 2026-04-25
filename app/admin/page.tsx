@@ -66,6 +66,85 @@ const calcDiasAtraso = (dataVenc: string): number => {
   return diff;
 };
 
+// ─── NOVA FUNÇÃO: ANÁLISE DE SENTIMENTO ─────────────────────────────────────
+const analisarSentimento = (texto: string): { 
+  sentimento: 'positivo' | 'neutro' | 'negativo'; 
+  deltaScore: number; 
+  emoji: string;
+  label: string;
+} => {
+  const t = texto.toLowerCase().trim();
+  const positivo = ['ótimo', 'excelente', 'gostei', 'perfeito', 'obrigado', 'parabéns', 'satisfeito', 'bom', 'ótima', 'maravilhoso', 'recomendo', 'ajudou', 'rápido'];
+  const negativo = ['ruim', 'problema', 'insatisfeito', 'cancelar', 'caro', 'lento', 'não gostei', 'reclamação', 'atraso', 'pior', 'decepcionado', 'demora', 'caiu'];
+
+  let score = 0;
+  positivo.forEach(p => { if (t.includes(p)) score += 2; });
+  negativo.forEach(n => { if (t.includes(n)) score -= 3; });
+
+  if (score > 1) return { sentimento: 'positivo', deltaScore: 7, emoji: '😊', label: 'Positivo' };
+  if (score < -1) return { sentimento: 'negativo', deltaScore: -9, emoji: '😟', label: 'Negativo' };
+  return { sentimento: 'neutro', deltaScore: 2, emoji: '😐', label: 'Neutro' };
+};
+
+// ─── NOVA FUNÇÃO: CHURN RISK PREDICTIVO ─────────────────────────────────────
+const calcularChurnRisk = (cliente: any): { 
+  score: number; 
+  nivel: 'Baixo' | 'Médio' | 'Alto'; 
+  cor: string; 
+  emoji: string;
+  recomendacao: string;
+} => {
+  const scoreAtual = cliente.score || 50;
+  
+  const ints = cliente.interacoes || [];
+  let diasSemContato = 30;
+  if (ints.length > 0) {
+    const dataRef = new Date(ints[0].created_at).getTime();
+    diasSemContato = Math.floor((Date.now() - dataRef) / (1000 * 60 * 60 * 24));
+  }
+
+  const chamadosAbertos = cliente.tarefas?.filter((t: any) => t.status !== 'Concluído').length || 0;
+  
+  const scoreComponent = 100 - scoreAtual;
+  const diasComponent = Math.min((diasSemContato / 30) * 100, 100);
+  const chamadosComponent = Math.min(chamadosAbertos * 12, 100);
+  const quedaComponent = diasSemContato > 10 ? 60 : 20;
+
+  let churnScore = Math.round(
+    (scoreComponent * 0.40) +
+    (diasComponent * 0.25) +
+    (chamadosComponent * 0.15) +
+    (quedaComponent * 0.10) +
+    10
+  );
+
+  churnScore = Math.max(0, Math.min(100, churnScore));
+
+  let nivel: 'Baixo' | 'Médio' | 'Alto';
+  let cor: string;
+  let emoji: string;
+  let recomendacao: string;
+
+  if (churnScore < 35) {
+    nivel = 'Baixo';
+    cor = '#22c55e';
+    emoji = '✅';
+    recomendacao = 'Cliente saudável. Manter engajamento normal.';
+  } else if (churnScore < 65) {
+    nivel = 'Médio';
+    cor = '#f59e0b';
+    emoji = '⚠️';
+    recomendacao = 'Monitorar. Agendar contato nos próximos 7 dias.';
+  } else {
+    nivel = 'Alto';
+    cor = '#f87171';
+    emoji = '🔴';
+    recomendacao = 'Risco alto! Ligar hoje + oferecer ação de retenção.';
+  }
+
+  return { score: churnScore, nivel, cor, emoji, recomendacao };
+};
+
 // ─── COMPONENTES REUTILIZÁVEIS ──────────────────────────────────────────────
 const MetricCard = ({ label, value, color, borderColor, icon, sub }: {
   label: string; value: string | number; color?: string; borderColor?: string; icon?: string; sub?: string;
@@ -111,27 +190,8 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// ─── NOVA FUNÇÃO: ANÁLISE DE SENTIMENTO AUTOMÁTICA ──────────────────────────
-const analisarSentimento = (texto: string): { 
-  sentimento: 'positivo' | 'neutro' | 'negativo'; 
-  deltaScore: number; 
-  emoji: string;
-  label: string;
-} => {
-  const t = texto.toLowerCase().trim();
-  
-  const positivo = ['ótimo', 'excelente', 'gostei', 'perfeito', 'obrigado', 'parabéns', 'satisfeito', 'bom', 'ótima', 'maravilhoso', 'recomendo', 'ótimo trabalho', 'muito bom', 'agradeço'];
-  const negativo = ['ruim', 'problema', 'insatisfeito', 'cancelar', 'caro', 'lento', 'não gostei', 'reclamação', 'atraso', 'pior', 'decepcionado', 'não funciona', 'urgente', 'reclamei', 'péssimo'];
-
-  let score = 0;
-  positivo.forEach(p => { if (t.includes(p)) score += 2; });
-  negativo.forEach(n => { if (t.includes(n)) score -= 3; });
-
-  if (score > 1) return { sentimento: 'positivo', deltaScore: 7, emoji: '😊', label: 'Positivo' };
-  if (score < -1) return { sentimento: 'negativo', deltaScore: -9, emoji: '😟', label: 'Negativo' };
-  return { sentimento: 'neutro', deltaScore: 2, emoji: '😐', label: 'Neutro' };
-};
-
+// ═══════════════════════════════════════════════════════════════════════════
+// COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AdminPage() {
   const router = useRouter();
@@ -672,7 +732,7 @@ export default function AdminPage() {
     }
   };
 
-  // ─── FUNÇÃO ATUALIZADA: SALVAR INTERACAO COM SENTIMENTO ───────────────────
+  // ─── FUNÇÃO ATUALIZADA: SALVAR INTERACAO COM SENTIMENTO E CHURN RISK ──────
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteDetalhe || !formInteracao.descricao?.trim()) return;
@@ -1031,7 +1091,6 @@ export default function AdminPage() {
       <aside className={`sidebar ${menuMobileAberto ? 'open' : ''}`}>
         <button className="close-menu-btn" onClick={() => setMenuMobileAberto(false)}>✕</button>
         <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
-          {/* LOGOS CORRIGIDOS PARA O TEMA */}
           <img 
             src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} 
             style={{ maxHeight: "36px", borderRadius: "8px" }} 
@@ -1079,7 +1138,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.3 IA Analytics</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.5 Preditivo Final</div>
         </div>
       </aside>
 
@@ -1380,7 +1439,7 @@ export default function AdminPage() {
                       </td>
                       <td><BadgeStatus status={c.tipo} /></td>
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <span style={{ fontWeight: 'bold', color: (c.score || 0) >= 20 ? '#f87171' : (c.score || 0) > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>
+                        <span style={{ fontWeight: 'bold', color: (c.score || 0) >= 75 ? '#22c55e' : (c.score || 0) >= 45 ? '#f59e0b' : '#f87171' }}>
                           {c.score || 0} pts
                         </span>
                       </td>
@@ -1696,20 +1755,20 @@ export default function AdminPage() {
             <form onSubmit={salvarTarefa} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
               <div>
                 <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Título da Tarefa</label>
-                <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({ ...formTarefa, titulo: e.target.value })} placeholder="Ex: Ligar para cliente..." />
+                <input required className="input-modal" value={formTarefa.titulo || ''} onChange={e => setFormTarefa({ ...formTarefa, titulo: e.target.value })} placeholder="Ex: Ligar para cliente..." />
               </div>
               <div>
                 <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Descrição</label>
-                <textarea className="input-modal" rows={3} value={formTarefa.descricao} onChange={e => setFormTarefa({ ...formTarefa, descricao: e.target.value })} placeholder="Detalhes da tarefa..." />
+                <textarea className="input-modal" rows={3} value={formTarefa.descricao || ''} onChange={e => setFormTarefa({ ...formTarefa, descricao: e.target.value })} placeholder="Detalhes da tarefa..." />
               </div>
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <div style={{ flex: 1 }}>
                   <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Data de Vencimento</label>
-                  <input required type="datetime-local" className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({ ...formTarefa, data_vencimento: e.target.value })} />
+                  <input required type="datetime-local" className="input-modal" value={formTarefa.data_vencimento || ''} onChange={e => setFormTarefa({ ...formTarefa, data_vencimento: e.target.value })} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Prioridade</label>
-                  <select className="input-modal" value={formTarefa.prioridade} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value as any })}>
+                  <select className="input-modal" value={formTarefa.prioridade || 'Normal'} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value as any })}>
                     <option value="Baixa">Baixa</option>
                     <option value="Normal">Normal</option>
                     <option value="Alta">Alta ⚠️</option>
@@ -1719,7 +1778,7 @@ export default function AdminPage() {
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <div style={{ flex: 1 }}>
                   <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Status</label>
-                  <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({ ...formTarefa, status: e.target.value })}>
+                  <select className="input-modal" value={formTarefa.status || 'Pendente'} onChange={e => setFormTarefa({ ...formTarefa, status: e.target.value })}>
                     <option value="Pendente">Pendente</option>
                     <option value="Em Andamento">Em Andamento</option>
                     <option value="Concluído">Concluído</option>
@@ -1747,25 +1806,25 @@ export default function AdminPage() {
             <form onSubmit={salvarContrato} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
               <div>
                 <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Nome do Cliente</label>
-                <input required className="input-modal" value={formContrato.cliente_nome} onChange={e => setFormContrato({ ...formContrato, cliente_nome: e.target.value })} placeholder="Empresa..." />
+                <input required className="input-modal" value={formContrato.cliente_nome || ''} onChange={e => setFormContrato({ ...formContrato, cliente_nome: e.target.value })} placeholder="Empresa..." />
               </div>
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <div style={{ flex: 1 }}>
                   <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Valor Mensal (MRR)</label>
-                  <input required type="number" step="0.01" className="input-modal" value={formContrato.valor_mensal} onChange={e => setFormContrato({ ...formContrato, valor_mensal: parseFloat(e.target.value) })} placeholder="Ex: 1500.00" />
+                  <input required type="number" step="0.01" className="input-modal" value={formContrato.valor_mensal || ''} onChange={e => setFormContrato({ ...formContrato, valor_mensal: parseFloat(e.target.value) })} placeholder="Ex: 1500.00" />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Data de Início</label>
-                  <input required type="date" className="input-modal" value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} />
+                  <input required type="date" className="input-modal" value={formContrato.data_inicio || ''} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} />
                 </div>
               </div>
               <div>
                 <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Serviços Inclusos</label>
-                <textarea className="input-modal" rows={2} value={formContrato.servicos_inclusos} onChange={e => setFormContrato({ ...formContrato, servicos_inclusos: e.target.value })} placeholder="Descrição dos serviços..." />
+                <textarea className="input-modal" rows={2} value={formContrato.servicos_inclusos || ''} onChange={e => setFormContrato({ ...formContrato, servicos_inclusos: e.target.value })} placeholder="Descrição dos serviços..." />
               </div>
               <div>
                 <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Status do Contrato</label>
-                <select className="input-modal" value={formContrato.status} onChange={e => setFormContrato({ ...formContrato, status: e.target.value })}>
+                <select className="input-modal" value={formContrato.status || 'Ativo'} onChange={e => setFormContrato({ ...formContrato, status: e.target.value })}>
                   <option value="Ativo">Ativo</option>
                   <option value="Pendente">Pendente</option>
                   <option value="Cancelado">Cancelado (Churn)</option>
@@ -1795,11 +1854,11 @@ export default function AdminPage() {
               <div style={{ display: "flex", gap: "10px" }}>
                 <div style={{ flex: 2 }}>
                   <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Nome do Template</label>
-                  <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({ ...formTemplate, nome: e.target.value })} placeholder="Ex: Proposta Inicial..." />
+                  <input required className="input-modal" value={formTemplate.nome || ''} onChange={e => setFormTemplate({ ...formTemplate, nome: e.target.value })} placeholder="Ex: Proposta Inicial..." />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Canal</label>
-                  <select className="input-modal" value={formTemplate.tipo} onChange={e => setFormTemplate({ ...formTemplate, tipo: e.target.value })}>
+                  <select className="input-modal" value={formTemplate.tipo || 'WhatsApp'} onChange={e => setFormTemplate({ ...formTemplate, tipo: e.target.value })}>
                     <option value="WhatsApp">WhatsApp</option>
                     <option value="Email">E-mail</option>
                   </select>
@@ -1816,7 +1875,7 @@ export default function AdminPage() {
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
                   Variáveis disponíveis: <code style={{color: '#4A90D9'}}>{`{{nome}}`}</code>, <code style={{color: '#4A90D9'}}>{`{{empresa}}`}</code>, <code style={{color: '#4A90D9'}}>{`{{valor}}`}</code>
                 </div>
-                <textarea required className="input-modal" rows={8} value={formTemplate.conteudo} onChange={e => setFormTemplate({ ...formTemplate, conteudo: e.target.value })} placeholder="Olá {{nome}}, a sua proposta para a {{empresa}} está pronta..." />
+                <textarea required className="input-modal" rows={8} value={formTemplate.conteudo || ''} onChange={e => setFormTemplate({ ...formTemplate, conteudo: e.target.value })} placeholder="Olá {{nome}}, a sua proposta para a {{empresa}} está pronta..." />
               </div>
               <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
                 <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
@@ -1827,7 +1886,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) — ATUALIZADO ───────────── */}
+      {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) — COM CHURN RISK ──────── */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={() => setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, display: "flex", flexWrap: "wrap", gap: 24 }}>
@@ -1847,25 +1906,29 @@ export default function AdminPage() {
                 {clienteDetalhe.documento && <><br /><span>📋 {clienteDetalhe.documento}</span></>}
               </div>
 
-              {/* NOVO: INDICADOR DE RISCO DE CHURN E SCORE */}
-              <div style={{ 
-                marginBottom: 16,
-                padding: '8px 14px', 
-                borderRadius: 9999, 
-                fontSize: 13, 
-                fontWeight: 700,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                background: (clienteDetalhe.score || 0) >= 75 ? '#22c55e22' : 
-                           (clienteDetalhe.score || 0) >= 45 ? '#f59e0b22' : '#f8717122',
-                color: (clienteDetalhe.score || 0) >= 75 ? '#22c55e' : 
-                       (clienteDetalhe.score || 0) >= 45 ? '#f59e0b' : '#f87171'
-              }}>
-                {(clienteDetalhe.score || 0) >= 75 ? '✅ Cliente Saudável' : 
-                 (clienteDetalhe.score || 0) >= 45 ? '⚠️ Monitorar de perto' : '🔴 Risco Alto de Churn'}
-                <span style={{ fontSize: 11, opacity: 0.8 }}>({clienteDetalhe.score || 0}/100)</span>
-              </div>
+              {/* BADGE DE CHURN RISK E SCORE */}
+              {(() => {
+                const risk = calcularChurnRisk(clienteDetalhe);
+                return (
+                  <div style={{ 
+                    marginBottom: 16,
+                    padding: '10px 14px', 
+                    borderRadius: 12, 
+                    background: `${risk.cor}15`,
+                    border: `1px solid ${risk.cor}40`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 18 }}>{risk.emoji}</span>
+                      <span style={{ fontWeight: 700, color: risk.cor, fontSize: 14 }}>
+                        Risco de Churn: {risk.nivel} ({risk.score}/100)
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      {risk.recomendacao}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <hr style={{ margin: "12px 0", opacity: 0.1 }} />
               
@@ -1977,7 +2040,7 @@ export default function AdminPage() {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail de Acesso</label>
-                <input required type="email" className="input-modal" value={formUsuario.email} onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })} disabled={!!formUsuario.id} style={{ opacity: formUsuario.id ? 0.6 : 1 }} placeholder="exemplo@simplessolucao.com.br" />
+                <input required type="email" className="input-modal" value={formUsuario.email || ''} onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })} disabled={!!formUsuario.id} style={{ opacity: formUsuario.id ? 0.6 : 1 }} placeholder="exemplo@simplessolucao.com.br" />
               </div>
               {!formUsuario.id && (
                 <div>
@@ -1987,7 +2050,7 @@ export default function AdminPage() {
               )}
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nível de Acesso (Perfil)</label>
-                <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
+                <select className="input-modal" value={formUsuario.perfil || 'Comercial'} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
                   <option value="Admin">Admin — Acesso Total e Financeiro</option>
                   <option value="Comercial">Comercial — Propostas e Clientes</option>
                   <option value="Suporte">Suporte — Apenas Tarefas</option>
@@ -1995,7 +2058,7 @@ export default function AdminPage() {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Filial</label>
-                <input required className="input-modal" value={formUsuario.filial} onChange={e => setFormUsuario({ ...formUsuario, filial: e.target.value })} placeholder="Ex: Matriz, São Paulo..." />
+                <input required className="input-modal" value={formUsuario.filial || ''} onChange={e => setFormUsuario({ ...formUsuario, filial: e.target.value })} placeholder="Ex: Matriz, São Paulo..." />
               </div>
               <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
                 <button type="button" onClick={() => setModalUsuario(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
@@ -2040,14 +2103,14 @@ export default function AdminPage() {
             <form onSubmit={salvarClienteBase} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={{ display: "flex", gap: "10px" }}>
                 <input className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.codigo || ''} onChange={e => setFormCliente({ ...formCliente, codigo: e.target.value })} placeholder="Código (Opcional)..." />
-                <select className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.tipo} onChange={e => setFormCliente({ ...formCliente, tipo: e.target.value })}>
+                <select className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.tipo || 'Cliente'} onChange={e => setFormCliente({ ...formCliente, tipo: e.target.value })}>
                   <option value="Cliente">Cliente</option>
                   <option value="Lead">Lead</option>
                   <option value="Parceiro">Parceiro</option>
                 </select>
               </div>
-              <input required className="input-modal" style={{ marginBottom: 0 }} value={formCliente.nome} onChange={e => setFormCliente({ ...formCliente, nome: e.target.value })} placeholder="Nome da Empresa *" />
-              <input className="input-modal" style={{ marginBottom: 0 }} value={formCliente.email} onChange={e => setFormCliente({ ...formCliente, email: e.target.value })} placeholder="E-mail principal..." type="email" />
+              <input required className="input-modal" style={{ marginBottom: 0 }} value={formCliente.nome || ''} onChange={e => setFormCliente({ ...formCliente, nome: e.target.value })} placeholder="Nome da Empresa *" />
+              <input className="input-modal" style={{ marginBottom: 0 }} value={formCliente.email || ''} onChange={e => setFormCliente({ ...formCliente, email: e.target.value })} placeholder="E-mail principal..." type="email" />
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.telefone || ''} onChange={e => setFormCliente({ ...formCliente, telefone: e.target.value })} placeholder="Telefone Fixo..." />
                 <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.whatsapp || ''} onChange={e => setFormCliente({ ...formCliente, whatsapp: e.target.value })} placeholder="WhatsApp (com DDD)..." />
