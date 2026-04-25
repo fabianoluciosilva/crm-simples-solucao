@@ -8,15 +8,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line, Area, AreaChart
 } from 'recharts';
 
-// ─── LÓGICA IMPORTADA DA FASE 1 ───────────────────────────────────────────
-import { 
-  fmt, 
-  formatarWhatsApp, 
-  calcDiasAtraso, 
-  analisarSentimento, 
-  calcularChurnRisk, 
-  gerarSugestaoIA 
-} from "@/utils/crmLogic";
+// ─── COMPONENTES E LÓGICA IMPORTADOS ────────────────────────────────────────
+import { MetricCard } from "@/components/MetricCard";
+import { BadgeStatus } from "@/components/BadgeStatus";
 
 // ─── TIPOS ─────────────────────────────────────────────────────────────────
 interface PropostaDB {
@@ -59,42 +53,125 @@ type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" 
 const ADMIN_EMAIL_PRINCIPAL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fabiano@simplessolucao.com.br';
 const LIMIAR_ESFRIANDO = 5;
 
-// ─── COMPONENTES REUTILIZÁVEIS ──────────────────────────────────────────────
-const MetricCard = ({ label, value, color, borderColor, icon, sub }: {
-  label: string; value: string | number; color?: string; borderColor?: string; icon?: string; sub?: string;
-}) => (
-  <div className="metric-card" style={{ borderTop: borderColor ? `3px solid ${borderColor}` : undefined }}>
-    <div style={{ fontSize: "12px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-      {icon && <span>{icon}</span>}{label}
-    </div>
-    <div style={{ fontSize: "28px", fontWeight: 800, color: color || "var(--text-primary)", marginTop: 8 }}>{value}</div>
-    {sub && <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: 4 }}>{sub}</div>}
-  </div>
-);
+// ─── UTILS ─────────────────────────────────────────────────────────────────
+const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const BadgeStatus = ({ status }: { status: string }) => {
-  const cores: Record<string, { bg: string; color: string }> = {
-    fechada: { bg: '#22c55e22', color: '#22c55e' },
-    perdida: { bg: '#f8717122', color: '#f87171' },
-    aberta:  { bg: '#64748b22', color: '#94a3b8' },
-    enviada: { bg: '#4A90D922', color: '#4A90D9' },
-    negociacao: { bg: '#4A90D922', color: '#4A90D9' },
-    Ativo:    { bg: '#22c55e22', color: '#22c55e' },
-    Cancelado:{ bg: '#f8717122', color: '#f87171' },
-    Pendente: { bg: '#f59e0b22', color: '#f59e0b' },
-    'Concluído':{ bg: '#22c55e22', color: '#22c55e' },
-    Atrasado: { bg: '#f8717122', color: '#f87171' },
-    'Em Andamento': { bg: '#4A90D922', color: '#4A90D9' },
-    default:  { bg: '#f59e0b22', color: '#f59e0b' },
-  };
-  const c = cores[status] || cores.default;
-  return (
-    <span className="badge-status" style={{ background: c.bg, color: c.color }}>
-      {status === 'negociacao' ? 'Negociação' : status || 'aberta'}
-    </span>
-  );
+const formatarWhatsApp = (numStr?: string) => {
+  if (!numStr) return "";
+  let n = numStr.replace(/\D/g, "");
+  if (n.length === 10 || n.length === 11) return "55" + n;
+  return n;
 };
 
+const calcDiasAtraso = (dataVenc: string): number => {
+  const hoje = new Date();
+  const venc = new Date(dataVenc);
+  const diff = Math.floor((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24));
+  return diff;
+};
+
+// ─── FUNÇÃO: ANÁLISE DE SENTIMENTO ──────────────────────────────────────────
+const analisarSentimento = (texto: string): { 
+  sentimento: 'positivo' | 'neutro' | 'negativo'; 
+  deltaScore: number; 
+  emoji: string;
+  label: string;
+} => {
+  const t = texto.toLowerCase().trim();
+  const positivo = ['ótimo', 'excelente', 'gostei', 'perfeito', 'obrigado', 'parabéns', 'satisfeito', 'bom', 'ótima', 'maravilhoso', 'recomendo', 'ajudou', 'rápido'];
+  const negativo = ['ruim', 'problema', 'insatisfeito', 'cancelar', 'caro', 'lento', 'não gostei', 'reclamação', 'atraso', 'pior', 'decepcionado', 'demora', 'caiu'];
+
+  let score = 0;
+  positivo.forEach(p => { if (t.includes(p)) score += 2; });
+  negativo.forEach(n => { if (t.includes(n)) score -= 3; });
+
+  if (score > 1) return { sentimento: 'positivo', deltaScore: 7, emoji: '😊', label: 'Positivo' };
+  if (score < -1) return { sentimento: 'negativo', deltaScore: -9, emoji: '😟', label: 'Negativo' };
+  return { sentimento: 'neutro', deltaScore: 2, emoji: '😐', label: 'Neutro' };
+};
+
+// ─── FUNÇÃO: CHURN RISK PREDICTIVO ──────────────────────────────────────────
+const calcularChurnRisk = (cliente: any): { 
+  score: number; 
+  nivel: 'Baixo' | 'Médio' | 'Alto'; 
+  cor: string; 
+  emoji: string;
+  recomendacao: string;
+} => {
+  const scoreAtual = cliente.score || 50;
+  
+  const ints = cliente.interacoes || [];
+  let diasSemContato = 30;
+  if (ints.length > 0) {
+    const dataRef = new Date(ints[0].created_at).getTime();
+    diasSemContato = Math.floor((Date.now() - dataRef) / (1000 * 60 * 60 * 24));
+  }
+
+  const chamadosAbertos = cliente.tarefas?.filter((t: any) => t.status !== 'Concluído').length || 0;
+  
+  const scoreComponent = 100 - scoreAtual;
+  const diasComponent = Math.min((diasSemContato / 30) * 100, 100);
+  const chamadosComponent = Math.min(chamadosAbertos * 12, 100);
+  const quedaComponent = diasSemContato > 10 ? 60 : 20;
+
+  let churnScore = Math.round(
+    (scoreComponent * 0.40) + (diasComponent * 0.25) + 
+    (chamadosComponent * 0.15) + (quedaComponent * 0.10) + 10
+  );
+  churnScore = Math.max(0, Math.min(100, churnScore));
+
+  if (churnScore < 35) {
+    return { score: churnScore, nivel: 'Baixo', cor: '#22c55e', emoji: '✅', 
+             recomendacao: 'Cliente saudável. Manter engajamento normal.' };
+  } else if (churnScore < 65) {
+    return { score: churnScore, nivel: 'Médio', cor: '#f59e0b', emoji: '⚠️', 
+             recomendacao: 'Monitorar. Agendar contato nos próximos 7 dias.' };
+  } else {
+    return { score: churnScore, nivel: 'Alto', cor: '#f87171', emoji: '🔴', 
+             recomendacao: 'Risco alto! Ligar hoje + oferecer ação de retenção.' };
+  }
+};
+
+// ─── FUNÇÃO: COPILOTO COMERCIAL ─────────────────────────────────────────────
+const gerarSugestaoIA = (cliente: any): { 
+  titulo: string; 
+  acao: string; 
+  motivo: string; 
+  prioridade: 'Alta' | 'Média' | 'Baixa';
+  emoji: string;
+} => {
+  const risk = calcularChurnRisk(cliente);
+  
+  const ints = cliente.interacoes || [];
+  let diasSemContato = 999;
+  if (ints.length > 0) {
+    const dataRef = new Date(ints[0].created_at).getTime();
+    diasSemContato = Math.floor((Date.now() - dataRef) / (1000 * 60 * 60 * 24));
+  }
+
+  const chamadosAbertos = cliente.tarefas?.filter((t: any) => t.status !== 'Concluído').length || 0;
+
+  if (risk.nivel === 'Alto') {
+    return { titulo: "Ação Urgente de Retenção", acao: "Ligar hoje + oferecer check-up ou desconto", 
+             motivo: "Risco alto de churn detectado", prioridade: "Alta", emoji: "🔴" };
+  }
+  if (diasSemContato > 14 && diasSemContato !== 999) {
+    return { titulo: "Reengajamento Necessário", acao: "Enviar mensagem personalizada ou ligar para retomar contato", 
+             motivo: `${diasSemContato} dias sem interação`, prioridade: "Alta", emoji: "⚠️" };
+  }
+  if (chamadosAbertos >= 2) {
+    return { titulo: "Acompanhamento de Suporte", acao: "Verificar chamados abertos e propor solução ou upgrade", 
+             motivo: `${chamadosAbertos} chamados em aberto`, prioridade: "Média", emoji: "🛠️" };
+  }
+  if (risk.nivel === 'Médio') {
+    return { titulo: "Manter Engajamento", acao: "Agendar contato nos próximos 7 dias ou enviar conteúdo relevante", 
+             motivo: "Risco médio - prevenção", prioridade: "Média", emoji: "🟡" };
+  }
+  return { titulo: "Oportunidade de Expansão", acao: "Verificar se há potencial de upsell (firewall, backup, etc.)", 
+           motivo: "Cliente saudável - momento ideal para expansão", prioridade: "Baixa", emoji: "✅" };
+};
+
+// ─── HOOK: useDebounce ──────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
   useEffect(() => {
@@ -891,6 +968,7 @@ export default function AdminPage() {
         .resultado-busca-item:hover { background: rgba(74,144,217,0.1); }
         
         /* ─── MOBILE STYLES ─── */
+        .sidebar { transition: transform 0.3s ease; }
         .mobile-menu-btn { display: none; background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer; padding: 0 10px 0 0; }
         .close-menu-btn { display: none; background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; position: absolute; top: 15px; right: 15px; z-index: 1001; }
         .mobile-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 9; backdrop-filter: blur(3px); }
@@ -899,7 +977,7 @@ export default function AdminPage() {
         @media (max-width: 768px) {
           .sidebar { transform: translateX(-100%); z-index: 1000; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
           .sidebar.open { transform: translateX(0); }
-          .main-content { margin-left: 0; padding: 15px; width: 100%; }
+          .main-content { margin-left: 0; padding: 15px; }
           .mobile-menu-btn { display: block; }
           .close-menu-btn { display: block; }
           .mobile-overlay.open { display: block; }
@@ -2089,50 +2167,6 @@ export default function AdminPage() {
           </div>
         </div>
       )}
-
-      {/* MODAL: COMUNICADO EM MASSA */}
-      {modalComunicado && (
-        <div className="modal-overlay" onClick={() => !progressoEmail.ativo && setModalComunicado(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>📢 Comunicado em Massa</h2>
-            {progressoEmail.ativo ? (
-              <div style={{ marginTop: 24, textAlign: "center" }}>
-                <p style={{ marginBottom: 12, fontSize: 14 }}>A enviar e-mails... ({progressoEmail.enviado} de {progressoEmail.total})</p>
-                <div style={{ width: "100%", background: "var(--bg-main)", borderRadius: 10, height: 10, overflow: "hidden" }}>
-                  <div style={{ width: `${(progressoEmail.enviado / progressoEmail.total) * 100}%`, background: "#4A90D9", height: "100%", transition: "width 0.3s" }} />
-                </div>
-                <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 12 }}>{Math.round((progressoEmail.enviado / progressoEmail.total) * 100)}% concluído</p>
-              </div>
-            ) : (
-              <form style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Público alvo</label>
-                  <select className="input-modal" value={formComunicado.publico} onChange={e => setFormComunicado({ ...formComunicado, publico: e.target.value })}>
-                    <option value="Todos">Todos (Clientes, Leads e Parceiros)</option>
-                    <option value="Cliente">Apenas Clientes Ativos</option>
-                    <option value="Lead">Apenas Leads</option>
-                    <option value="Parceiro">Apenas Parceiros</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Assunto (para E-mail)</label>
-                  <input required className="input-modal" value={formComunicado.assunto} onChange={e => setFormComunicado({ ...formComunicado, assunto: e.target.value })} placeholder="Assunto do e-mail..." />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Mensagem</label>
-                  <textarea required className="input-modal" rows={6} value={formComunicado.mensagem} onChange={e => setFormComunicado({ ...formComunicado, mensagem: e.target.value })} placeholder="Escreva o comunicado aqui..." />
-                </div>
-                <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-                  <button type="button" onClick={() => setModalComunicado(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                  <button type="button" onClick={gerarFilaWhatsapp} className="btn-action" style={{ flex: 1, background: "#22c55e", color: "#fff", borderColor: "#22c55e" }}>💬 Fila WhatsApp</button>
-                  <button type="button" onClick={dispararEmailsMassa} className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>📧 Disparar E-mails</button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
