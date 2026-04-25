@@ -124,7 +124,7 @@ export default function AdminPage() {
   const [toast, setToast] = useState<{ msg: string; tipo: 'sucesso' | 'erro' | 'info' } | null>(null);
   const [buscaGlobal, setBuscaGlobal] = useState("");
   const [mostrarBuscaGlobal, setMostrarBuscaGlobal] = useState(false);
-  const [menuMobileAberto, setMenuMobileAberto] = useState(false); // ESTADO NOVO MOBILE
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false); 
 
   const isAdmin = perfilAtivo.perfil === 'Admin';
   const isComercial = perfilAtivo.perfil === 'Comercial' || isAdmin;
@@ -167,6 +167,9 @@ export default function AdminPage() {
   }>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
   const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
 
+  // NOVO ESTADO: Edição de valor pelo Kanban
+  const [modalEditarValor, setModalEditarValor] = useState<{ativo: boolean, prop: PropostaDB | null, novoValor: string}>({ativo: false, prop: null, novoValor: ''});
+
   const [modalTarefa, setModalTarefa] = useState(false);
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB & { prioridade: string }>>({
     titulo: "", descricao: "", data_vencimento: "", status: "Pendente",
@@ -187,7 +190,6 @@ export default function AdminPage() {
 
   const [modalUsuario, setModalUsuario] = useState(false);
   const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario & { senha?: string }>>({ email: '', nome: '', senha: '', perfil: 'Comercial', filial: 'Matriz' });
-  const [modalInfoNovoUser, setModalInfoNovoUser] = useState(false);
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
@@ -257,7 +259,7 @@ export default function AdminPage() {
 
   const mudarAba = (novaAba: AbaType) => {
     setAba(novaAba);
-    setMenuMobileAberto(false); // Fecha o menu ao clicar (Mobile)
+    setMenuMobileAberto(false); 
   };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
@@ -562,7 +564,6 @@ export default function AdminPage() {
 
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     let foneParaTentar = prop.telefone || "";
-    // Tenta encontrar na base via ID ou Nome
     const cb = prop.cliente_id 
       ? clientesBase.find(c => c.id === prop.cliente_id) 
       : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
@@ -673,13 +674,12 @@ export default function AdminPage() {
     }
   };
 
-  // ─── AÇÕES DE STATUS DE PROPOSTA ──────────────────────────────────────────
+  // ─── AÇÕES DE STATUS E VALORES DE PROPOSTA ───────────────────────────────
   const alterarStatusParaGanho = async (prop: PropostaDB) => {
     await supabase.from('propostas').update({ status: 'fechada' }).eq('id', prop.id);
     try {
       let finalClienteId = prop.cliente_id;
       
-      // Se a proposta não tinha cliente_id atrelado, tentamos achar ou criamos o cliente agora
       if (!finalClienteId) {
         const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
         if (cEx) {
@@ -688,7 +688,6 @@ export default function AdminPage() {
         } else {
            const { data: newCli } = await supabase.from('clientes').insert([{ nome: prop.cliente, email: prop.email, telefone: prop.telefone, tipo: 'Cliente', filial: prop.filial || perfilAtivo.filial }]).select().single();
            finalClienteId = newCli?.id;
-           // Atualizamos a proposta para não ficar orfã
            if (finalClienteId) await supabase.from('propostas').update({ cliente_id: finalClienteId }).eq('id', prop.id);
         }
       }
@@ -710,6 +709,19 @@ export default function AdminPage() {
     carregarTudo();
   };
 
+  const salvarNovoValorProposta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalEditarValor.prop) return;
+    
+    // Tratamento para transformar vírgula em ponto, caso o usuário digite assim
+    const valorNumerico = Number(modalEditarValor.novoValor.toString().replace(',', '.'));
+    
+    await supabase.from('propostas').update({ valor: valorNumerico }).eq('id', modalEditarValor.prop.id);
+    showToast("Valor atualizado com sucesso!", "sucesso");
+    setModalEditarValor({ ativo: false, prop: null, novoValor: '' });
+    carregarTudo();
+  };
+
   const abrirModalPerda = (prop: PropostaDB) => { setFormPerda({ id: prop.id, motivo: "", obs: "" }); setModalPerda(true); };
   const confirmarPerda = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -719,6 +731,7 @@ export default function AdminPage() {
     setModalPerda(false);
     carregarTudo();
   };
+  
   const excluirProposta = async (id: number, nome: string) => {
     if (confirm(`Excluir permanentemente a proposta de ${nome}?`)) {
       await supabase.from('propostas').delete().eq('id', id);
@@ -822,13 +835,12 @@ export default function AdminPage() {
     }
   };
 
-  // ─── CRUD USUÁRIOS (PRÉ-REGISTO COM SENHA VIA API) ────────────────────────
+  // ─── CRUD USUÁRIOS ────────────────────────────────────────────────────────
   const salvarUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     const emailTratado = formUsuario.email?.toLowerCase().trim() || '';
 
     if (formUsuario.id) {
-      // Uso de UPSERT para garantir o Auto-Healing
       const { error } = await supabase.from('perfis').upsert([{ 
         id: formUsuario.id, 
         email: emailTratado,
@@ -902,8 +914,12 @@ export default function AdminPage() {
           --shadow: ${tema === 'dark' ? '0 4px 20px rgba(0,0,0,0.4)' : '0 4px 20px rgba(0,0,0,0.08)'};
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; }
-        .main-content { flex: 1; margin-left: 260px; padding: 40px; transition: margin-left 0.3s ease; }
+        body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
+        
+        /* CORREÇÃO DO ESPAÇO NO MEIO DA TELA: Menu Fixo + Margem exata */
+        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
+        .main-content { flex: 1; margin-left: 260px; padding: 40px; width: calc(100% - 260px); min-height: 100vh; }
+        
         .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
         .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; width: 100%; text-align: left; font-size: 13px; transition: all 0.15s; }
         .nav-item:hover { background: rgba(74,144,217,0.07); color: var(--text-primary); }
@@ -927,6 +943,7 @@ export default function AdminPage() {
         .input-modal:focus { outline: none; border-color: #4A90D9; }
         .toast { position: fixed; bottom: 30px; right: 30px; padding: 14px 22px; border-radius: 12px; color: #fff; font-weight: 600; z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.3); animation: slideIn .3s forwards; display: flex; align-items: center; gap: 10px; font-size: 14px; }
         @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        
         .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; -webkit-overflow-scrolling: touch; }
         .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; transition: border-color 0.2s; }
         .kanban-col.drag-over { border-color: #4A90D9; background: rgba(74,144,217,0.04); }
@@ -945,7 +962,6 @@ export default function AdminPage() {
         .resultado-busca-item:hover { background: rgba(74,144,217,0.1); }
         
         /* ─── MOBILE STYLES ─── */
-        .sidebar { transition: transform 0.3s ease; }
         .mobile-menu-btn { display: none; background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer; padding: 0 10px 0 0; }
         .close-menu-btn { display: none; background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; position: absolute; top: 15px; right: 15px; z-index: 1001; }
         .mobile-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 9; backdrop-filter: blur(3px); }
@@ -954,7 +970,7 @@ export default function AdminPage() {
         @media (max-width: 768px) {
           .sidebar { transform: translateX(-100%); z-index: 1000; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
           .sidebar.open { transform: translateX(0); }
-          .main-content { margin-left: 0; padding: 15px; }
+          .main-content { margin-left: 0; padding: 15px; width: 100%; }
           .mobile-menu-btn { display: block; }
           .close-menu-btn { display: block; }
           .mobile-overlay.open { display: block; }
@@ -1060,7 +1076,13 @@ export default function AdminPage() {
       <aside className={`sidebar ${menuMobileAberto ? 'open' : ''}`}>
         <button className="close-menu-btn" onClick={() => setMenuMobileAberto(false)}>✕</button>
         <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
-          <img src={tema === 'dark' ? '/Logo-negativo.webp' : '/icon.png'} style={{ maxHeight: "36px", borderRadius: "8px" }} alt="SSTI" />
+          {/* CORREÇÃO DA LOGO: Busca Logo.webp na versão clara. Fallback visual para garantir. */}
+          <img 
+            src={tema === 'dark' ? '/Logo-negativo.webp' : '/Logo.webp'} 
+            style={{ maxHeight: "36px", borderRadius: "8px" }} 
+            alt="SSTI" 
+            onError={(e) => { e.currentTarget.style.display = 'none'; }} 
+          />
         </div>
         <nav className="nav-menu">
           {isComercial && <button className={`nav-item ${aba === 'dashboard' ? 'active' : ''}`} onClick={() => mudarAba('dashboard')}>📈 Dashboard</button>}
@@ -1102,7 +1124,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v2.9 Mobile Ready</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.0 Layout Fixo</div>
         </div>
       </aside>
 
@@ -1207,7 +1229,6 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* NOVO: Evolução mensal */}
               <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
                 <ResponsiveContainer width="100%" height="85%">
@@ -1265,7 +1286,7 @@ export default function AdminPage() {
                       key={p.id}
                       className={`kanban-card ${tarefaArrastando === p.id ? 'dragging' : ''}`}
                       style={{ borderLeft: col.status !== 'aberta' ? `3px solid ${col.cor}` : undefined, opacity: col.status === 'perdida' ? 0.7 : 1 }}
-                      draggable={true} // Destrancado para poder voltar negócios ganhos/perdidos
+                      draggable={true} 
                       onDragStart={e => handleDragStart(e, p)}
                       onDragEnd={handleDragEnd}
                     >
@@ -1274,11 +1295,19 @@ export default function AdminPage() {
                       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>{p.contato}</div>
                       <div style={{ fontWeight: 800, color: "#4A90D9", marginBottom: 10, fontSize: 16 }}>{fmt(p.valor)}</div>
                       {p.motivo_perda && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8, padding: "4px 8px", background: "rgba(248,113,113,0.08)", borderRadius: 6 }}>{p.motivo_perda}</div>}
+                      
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                         <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0 }} onClick={() => abrirModalEnvio(p, 'WhatsApp')}>💬 Wpp</button>
                         <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0 }} onClick={() => abrirModalEnvio(p, 'Email')}>📧 E-mail</button>
                         <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, background: "rgba(74,144,217,0.08)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", margin: 0 }} onClick={() => abrirNotasDaProposta(p)}>📝 Notas</button>
                       </div>
+
+                      {/* NOVOS BOTÕES: Alterar Valor e Excluir */}
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
+                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0, background: "rgba(34,197,94,0.08)", color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }} onClick={() => setModalEditarValor({ativo: true, prop: p, novoValor: p.valor.toString()})}>💰 Alterar Valor</button>
+                        {isAdmin && <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0, background: "rgba(248,113,113,0.08)", color: "#f87171", borderColor: "rgba(248,113,113,0.3)" }} onClick={() => excluirProposta(p.id, p.cliente)}>🗑️ Excluir</button>}
+                      </div>
+
                     </div>
                   ))}
                   {col.propostas.length === 0 && (
@@ -1660,6 +1689,38 @@ export default function AdminPage() {
                 <button type="submit" disabled={!formEnvioMensagem.templateId || !formEnvioMensagem.texto.trim() || enviando === modalEnvioProposta.prop.id} className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>
                   {enviando === modalEnvioProposta.prop.id ? '⏳ A enviar...' : `Enviar ${modalEnvioProposta.tipo}`}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: ALTERAR VALOR (NOVO) ─────────────────────────────────────── */}
+      {modalEditarValor.ativo && modalEditarValor.prop && (
+        <div className="modal-overlay" onClick={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>💰 Alterar Valor da Negociação</h2>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
+              Cliente: <strong>{modalEditarValor.prop.cliente}</strong>
+            </p>
+            <form onSubmit={salvarNovoValorProposta} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
+                  Novo Valor (R$)
+                </label>
+                <input 
+                  required 
+                  type="number" 
+                  step="0.01"
+                  className="input-modal" 
+                  value={modalEditarValor.novoValor} 
+                  onChange={e => setModalEditarValor({ ...modalEditarValor, novoValor: e.target.value })} 
+                  placeholder="Ex: 1500.50" 
+                />
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                <button type="button" onClick={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#22c55e", color: "#fff", borderColor: "#22c55e" }}>Salvar Valor</button>
               </div>
             </form>
           </div>
