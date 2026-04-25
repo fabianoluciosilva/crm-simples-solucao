@@ -47,7 +47,7 @@ interface PerfilUsuario {
 type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios" | "relatorios";
 
 const ADMIN_EMAIL_PRINCIPAL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fabiano@simplessolucao.com.br';
-const LIMIAR_ESFRIANDO = 5; // Dias sem interação para considerar o lead como "frio" no Kanban
+const LIMIAR_ESFRIANDO = 5;
 
 // ─── UTILS ─────────────────────────────────────────────────────────────────
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -110,6 +110,27 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay]);
   return debouncedValue;
 }
+
+// ─── NOVA FUNÇÃO: ANÁLISE DE SENTIMENTO AUTOMÁTICA ──────────────────────────
+const analisarSentimento = (texto: string): { 
+  sentimento: 'positivo' | 'neutro' | 'negativo'; 
+  deltaScore: number; 
+  emoji: string;
+  label: string;
+} => {
+  const t = texto.toLowerCase().trim();
+  
+  const positivo = ['ótimo', 'excelente', 'gostei', 'perfeito', 'obrigado', 'parabéns', 'satisfeito', 'bom', 'ótima', 'maravilhoso', 'recomendo', 'ótimo trabalho', 'muito bom', 'agradeço'];
+  const negativo = ['ruim', 'problema', 'insatisfeito', 'cancelar', 'caro', 'lento', 'não gostei', 'reclamação', 'atraso', 'pior', 'decepcionado', 'não funciona', 'urgente', 'reclamei', 'péssimo'];
+
+  let score = 0;
+  positivo.forEach(p => { if (t.includes(p)) score += 2; });
+  negativo.forEach(n => { if (t.includes(n)) score -= 3; });
+
+  if (score > 1) return { sentimento: 'positivo', deltaScore: 7, emoji: '😊', label: 'Positivo' };
+  if (score < -1) return { sentimento: 'negativo', deltaScore: -9, emoji: '😟', label: 'Negativo' };
+  return { sentimento: 'neutro', deltaScore: 2, emoji: '😐', label: 'Neutro' };
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AdminPage() {
@@ -298,6 +319,7 @@ export default function AdminPage() {
 
   // ─── LÓGICA E CÁLCULOS ────────────────────────────────────────────────────
   const clientesDesativadosNomes = useMemo(() => clientesBase.filter(c => c.ativo === false).map(c => c.nome.toUpperCase()), [clientesBase]);
+  
   const pFiltradas = useMemo(() => {
     let filtradas = propostas;
     if (filtroDias > 0) {
@@ -650,16 +672,40 @@ export default function AdminPage() {
     }
   };
 
-  // ─── INTERAÇÕES / TIMELINE ────────────────────────────────────────────────
+  // ─── FUNÇÃO ATUALIZADA: SALVAR INTERACAO COM SENTIMENTO ───────────────────
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clienteDetalhe || !formInteracao.descricao) return;
-    const novaInteracao = { cliente_id: clienteDetalhe.id, cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao };
+    if (!clienteDetalhe || !formInteracao.descricao?.trim()) return;
+
+    const analise = analisarSentimento(formInteracao.descricao);
+    
+    const novaInteracao = { 
+      cliente_id: clienteDetalhe.id, 
+      cliente_nome: clienteDetalhe.nome, 
+      usuario_email: perfilAtivo.email, 
+      tipo: formInteracao.tipo, 
+      descricao: formInteracao.descricao 
+    };
+
     const { data, error } = await supabase.from('interacoes').insert([novaInteracao]).select().single();
     if (error) return showToast("Erro ao salvar interação: " + error.message, "erro");
-    setClienteDetalhe((prev: any) => ({ ...prev, interacoes: [{ ...novaInteracao, id: data?.id, created_at: new Date().toISOString() }, ...prev.interacoes] }));
+
+    // === ATUALIZAÇÃO AUTOMÁTICA DE SCORE ===
+    const scoreAtual = clienteDetalhe.score || 50;
+    const novoScore = Math.max(0, Math.min(100, scoreAtual + analise.deltaScore));
+    
+    if (clienteDetalhe.isOficial && clienteDetalhe.id) {
+      await supabase.from('clientes').update({ score: novoScore }).eq('id', clienteDetalhe.id);
+    }
+
+    setClienteDetalhe((prev: any) => ({ 
+      ...prev, 
+      score: novoScore,
+      interacoes: [{ ...novaInteracao, id: data?.id, created_at: new Date().toISOString() }, ...prev.interacoes] 
+    }));
+    
     setFormInteracao({ tipo: "Nota", descricao: "" });
-    showToast("Nota adicionada ao histórico!", "sucesso");
+    showToast(`${analise.emoji} Interação salva! Score: ${novoScore} (${analise.label})`, "sucesso");
     carregarTudo();
   };
 
@@ -708,7 +754,6 @@ export default function AdminPage() {
     setModalTarefa(true);
   };
   const editarTarefa = (t: TarefaDB) => {
-    // Evita crash caso t.data_vencimento venha vazio ou nulo
     const dataFormatada = t.data_vencimento ? new Date(t.data_vencimento).toISOString().slice(0, 16) : "";
     setFormTarefa({ ...t, data_vencimento: dataFormatada });
     setModalTarefa(true);
@@ -798,6 +843,7 @@ export default function AdminPage() {
     }
   };
 
+  // ─── GUARD DE AUTENTICAÇÃO ────────────────────────────────────────────────
   if (carregandoAuth) return (
     <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 20, color: "#4A90D9" }}>
       <div style={{ width: 40, height: 40, border: "3px solid #4A90D9", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -1033,7 +1079,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.2 Correção Final</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.3 IA Analytics</div>
         </div>
       </aside>
 
@@ -1781,7 +1827,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) */}
+      {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) — ATUALIZADO ───────────── */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={() => setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, display: "flex", flexWrap: "wrap", gap: 24 }}>
@@ -1793,14 +1839,36 @@ export default function AdminPage() {
                 </div>
                 <button onClick={() => setClienteDetalhe(null)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 20, padding: 4 }}>✕</button>
               </div>
-              <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, display: "flex", flexDirection: "column", gap: 4 }}>
-                <span>📞 {clienteDetalhe.telefone || clienteDetalhe.contato || '—'}</span>
-                <span>💬 {clienteDetalhe.whatsapp || '—'}</span>
+
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>
+                <span>📞 {clienteDetalhe.telefone || clienteDetalhe.contato || '—'}</span><br />
+                <span>💬 {clienteDetalhe.whatsapp || '—'}</span><br />
                 <span>📧 {clienteDetalhe.email || '—'}</span>
-                {clienteDetalhe.documento && <span>📋 {clienteDetalhe.documento}</span>}
-                <span style={{ color: "#f87171", fontWeight: "bold", marginTop: 4 }}>🔥 Score: {clienteDetalhe.score || 0} pts</span>
+                {clienteDetalhe.documento && <><br /><span>📋 {clienteDetalhe.documento}</span></>}
               </div>
+
+              {/* NOVO: INDICADOR DE RISCO DE CHURN E SCORE */}
+              <div style={{ 
+                marginBottom: 16,
+                padding: '8px 14px', 
+                borderRadius: 9999, 
+                fontSize: 13, 
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                background: (clienteDetalhe.score || 0) >= 75 ? '#22c55e22' : 
+                           (clienteDetalhe.score || 0) >= 45 ? '#f59e0b22' : '#f8717122',
+                color: (clienteDetalhe.score || 0) >= 75 ? '#22c55e' : 
+                       (clienteDetalhe.score || 0) >= 45 ? '#f59e0b' : '#f87171'
+              }}>
+                {(clienteDetalhe.score || 0) >= 75 ? '✅ Cliente Saudável' : 
+                 (clienteDetalhe.score || 0) >= 45 ? '⚠️ Monitorar de perto' : '🔴 Risco Alto de Churn'}
+                <span style={{ fontSize: 11, opacity: 0.8 }}>({clienteDetalhe.score || 0}/100)</span>
+              </div>
+
               <hr style={{ margin: "12px 0", opacity: 0.1 }} />
+              
               {isComercial && (
                 <>
                   <div style={{ marginBottom: 12 }}>
@@ -1847,11 +1915,13 @@ export default function AdminPage() {
                 )}
               </div>
               <div style={{ marginTop: 16 }}>
-                <button className="btn-action" style={{ width: "100%", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", padding: 10 }} onClick={() => { abrirNovaTarefa(clienteDetalhe.nome, undefined, undefined, clienteDetalhe.id); setClienteDetalhe(null); }}>
+                <button className="btn-action" style={{ width: "100%", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", padding: 10 }} 
+                  onClick={() => { abrirNovaTarefa(clienteDetalhe.nome, undefined, undefined, clienteDetalhe.id); setClienteDetalhe(null); }}>
                   + Criar Tarefa para este Cliente
                 </button>
               </div>
             </div>
+
             <div style={{ flex: "1 1 300px", background: "var(--bg-main)", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", minWidth: 0 }}>
               <h4 style={{ marginBottom: 16, fontSize: 14 }}>📒 Diário de Bordo</h4>
               <div style={{ flex: 1, overflowY: "auto", marginBottom: 16, paddingRight: 8, maxHeight: 380 }}>
