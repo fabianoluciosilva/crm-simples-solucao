@@ -46,7 +46,6 @@ interface PerfilUsuario {
 
 type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios" | "relatorios";
 
-// E-mail do administrador principal — mover para .env.local como NEXT_PUBLIC_ADMIN_EMAIL quando possível
 const ADMIN_EMAIL_PRINCIPAL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fabiano@simplessolucao.com.br';
 
 // ─── UTILS ─────────────────────────────────────────────────────────────────
@@ -102,7 +101,6 @@ const BadgeStatus = ({ status }: { status: string }) => {
   );
 };
 
-// ─── HOOK: useDebounce ──────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
   useEffect(() => {
@@ -112,8 +110,6 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AdminPage() {
   const router = useRouter();
@@ -165,31 +161,22 @@ export default function AdminPage() {
   const [progressoEmail, setProgressoEmail] = useState({ ativo: false, total: 0, enviado: 0 });
   const [filaWpp, setFilaWpp] = useState<ClienteDB[]>([]);
 
-  const [modalEnvioProposta, setModalEnvioProposta] = useState<{
-    ativo: boolean; tipo: 'Email' | 'WhatsApp'; prop: PropostaDB | null; numeroWpp: string;
-  }>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
+  const [modalEnvioProposta, setModalEnvioProposta] = useState<{ ativo: boolean; tipo: 'Email' | 'WhatsApp'; prop: PropostaDB | null; numeroWpp: string; }>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
   const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
 
-  // NOVO ESTADO: Edição de valor pelo Kanban
   const [modalEditarValor, setModalEditarValor] = useState<{ativo: boolean, prop: PropostaDB | null, novoValor: string}>({ativo: false, prop: null, novoValor: ''});
 
   const [modalTarefa, setModalTarefa] = useState(false);
-  const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB & { prioridade: string }>>({
-    titulo: "", descricao: "", data_vencimento: "", status: "Pendente",
-    usuario_email: "", nome_referencia: "", prioridade: "Normal"
-  });
+  const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB & { prioridade: string }>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "", prioridade: "Normal" });
+  
   const [modalContrato, setModalContrato] = useState(false);
-  const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({
-    cliente_nome: "", valor_mensal: 0, status: "Ativo",
-    data_inicio: new Date().toISOString().split('T')[0],
-    servicos_inclusos: "", motivo_cancelamento: ""
-  });
+  const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
+  
   const [modalTemplate, setModalTemplate] = useState(false);
   const [formTemplate, setFormTemplate] = useState<Partial<TemplateDB>>({ nome: "", tipo: "WhatsApp", conteudo: "", assunto: "" });
+  
   const [modalClienteForm, setModalClienteForm] = useState(false);
-  const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({
-    nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "", filial: "Matriz"
-  });
+  const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "", filial: "Matriz" });
 
   const [modalUsuario, setModalUsuario] = useState(false);
   const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario & { senha?: string }>>({ email: '', nome: '', senha: '', perfil: 'Comercial', filial: 'Matriz' });
@@ -215,7 +202,7 @@ export default function AdminPage() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // ─── AUTENTICAÇÃO E TEMA (COM AUTO-HEALING DE PERFIL) ────────────────────
+  // ─── AUTENTICAÇÃO E TEMA ──────────────────────────────────────────────────
   useEffect(() => {
     const t = localStorage.getItem("tema_ssti");
     if (t === "light" || t === "dark") setTema(t);
@@ -235,18 +222,13 @@ export default function AdminPage() {
       const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
       
       let pFinal: PerfilUsuario;
-      
       if (perfilData) {
         pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, nome: perfilData.nome };
       } else {
         const isDono = emailUser === ADMIN_EMAIL_PRINCIPAL;
         pFinal = { id: session.user.id, email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz', nome: isDono ? 'Fabiano' : '' };
         await supabase.from('perfis').upsert([{ 
-          id: pFinal.id, 
-          email: pFinal.email, 
-          perfil: pFinal.perfil, 
-          filial: pFinal.filial,
-          nome: pFinal.nome
+          id: pFinal.id, email: pFinal.email, perfil: pFinal.perfil, filial: pFinal.filial, nome: pFinal.nome
         }]);
       }
       
@@ -259,11 +241,7 @@ export default function AdminPage() {
   }, [router]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
-
-  const mudarAba = (novaAba: AbaType) => {
-    setAba(novaAba);
-    setMenuMobileAberto(false); 
-  };
+  const mudarAba = (novaAba: AbaType) => { setAba(novaAba); setMenuMobileAberto(false); };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -303,7 +281,6 @@ export default function AdminPage() {
       if (cliBase.data) setClientesBase(cliBase.data);
       if (t.data) setTarefas(t.data);
       if (ints.data) setInteracoes(ints.data);
-
       if (perfis.data) {
         let listaPerfis = [...(perfis.data as PerfilUsuario[])];
         if (!listaPerfis.find(u => u.email === perfilAtivo.email)) listaPerfis.push(perfilAtivo);
@@ -319,11 +296,7 @@ export default function AdminPage() {
   useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo.email, perfilAtivo.filial, perfilAtivo.perfil]);
 
   // ─── LÓGICA E CÁLCULOS ────────────────────────────────────────────────────
-  const clientesDesativadosNomes = useMemo(
-    () => clientesBase.filter(c => c.ativo === false).map(c => c.nome.toUpperCase()),
-    [clientesBase]
-  );
-
+  const clientesDesativadosNomes = useMemo(() => clientesBase.filter(c => c.ativo === false).map(c => c.nome.toUpperCase()), [clientesBase]);
   const pFiltradas = useMemo(() => {
     let filtradas = propostas;
     if (filtroDias > 0) {
@@ -340,16 +313,8 @@ export default function AdminPage() {
   const propostasEnviadas = useMemo(() => pFiltradas.filter(p => p.status === 'enviada' || p.status === 'negociacao'), [pFiltradas]);
 
   const taxaConversao = pFiltradas.length > 0 ? (propostasFechadas.length / pFiltradas.length) * 100 : 0;
-  const mrrAtivo = useMemo(() =>
-    contratos
-      .filter(c => c.status === 'Ativo' && !clientesDesativadosNomes.includes(c.cliente_nome.toUpperCase()))
-      .reduce((acc, c) => acc + Number(c.valor_mensal), 0),
-    [contratos, clientesDesativadosNomes]
-  );
-
-  const ticketMedio = propostasFechadas.length > 0
-    ? propostasFechadas.reduce((a, b) => a + b.valor, 0) / propostasFechadas.length
-    : 0;
+  const mrrAtivo = useMemo(() => contratos.filter(c => c.status === 'Ativo' && !clientesDesativadosNomes.includes(c.cliente_nome.toUpperCase())).reduce((acc, c) => acc + Number(c.valor_mensal), 0), [contratos, clientesDesativadosNomes]);
+  const ticketMedio = propostasFechadas.length > 0 ? propostasFechadas.reduce((a, b) => a + b.valor, 0) / propostasFechadas.length : 0;
 
   const dadosMotivosPerda = useMemo(() => {
     const contagem: Record<string, number> = {};
@@ -377,59 +342,33 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
-  // ─── PROPOSTA ESFRIANDO ───────────────────────────────────────────────────
-  // Retorna o número de dias sem qualquer interação para uma proposta ativa.
-  // Usa a última interação do cliente ou, como fallback, a data de criação da proposta.
   const diasSemInteracao = useCallback((prop: PropostaDB): number => {
     if (prop.status === 'fechada' || prop.status === 'perdida') return 0;
-    const intsCliente = interacoes.filter(i =>
-      prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase()
-    );
-    const dataRef = intsCliente.length > 0
-      ? new Date(intsCliente[0].created_at)   // interacoes já vêm ordenadas por created_at desc
-      : new Date(prop.created_at);
+    const intsCliente = interacoes.filter(i => prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    const dataRef = intsCliente.length > 0 ? new Date(intsCliente[0].created_at) : new Date(prop.created_at);
     return Math.floor((Date.now() - dataRef.getTime()) / (1000 * 60 * 60 * 24));
   }, [interacoes]);
 
-  const LIMIAR_ESFRIANDO = 7; // dias sem atividade para exibir o badge
-
-  const tarefasComAtraso = useMemo(() =>
-    tarefas.map(t => {
-      if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) {
-        return { ...t, status: 'Atrasado' as string };
-      }
+  const tarefasComAtraso = useMemo(() => tarefas.map(t => {
+      if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) return { ...t, status: 'Atrasado' as string };
       return t;
-    }),
-    [tarefas]
-  );
+    }), [tarefas]);
 
   const tarefasFiltradas = useMemo(() => {
     if (filtroStatusTarefa === "Todos") return tarefasComAtraso;
     return tarefasComAtraso.filter(t => t.status === filtroStatusTarefa);
   }, [tarefasComAtraso, filtroStatusTarefa]);
 
-  const tarefasUrgentes = useMemo(() =>
-    tarefasComAtraso.filter(t => {
+  const tarefasUrgentes = useMemo(() => tarefasComAtraso.filter(t => {
       if (t.status === 'Concluído') return false;
-      const dias = calcDiasAtraso(t.data_vencimento);
-      return dias >= -2;
-    }),
-    [tarefasComAtraso]
-  );
+      return calcDiasAtraso(t.data_vencimento) >= -2;
+    }), [tarefasComAtraso]);
 
   const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
 
-  // ─── BASE DE CLIENTES AGRUPADA COM NOVO RELACIONAMENTO (ID) ───────────────
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
-
-    // 1. Base Oficial (Chave = ID Oficial)
-    clientesBase.forEach(c => {
-      mapa.set(`ID_${c.id}`, {
-        ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: []
-      });
-    });
-
+    clientesBase.forEach(c => mapa.set(`ID_${c.id}`, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: [] }));
     const getChaveCliente = (id?: string | number, nomeRef?: string) => {
       if (id) return `ID_${id}`;
       if (nomeRef) {
@@ -439,36 +378,26 @@ export default function AdminPage() {
       }
       return `UNKNOWN`;
     };
-
-    // 2. Interações
     interacoes.forEach(i => {
       const key = getChaveCliente(i.cliente_id, i.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).interacoes.push(i);
     });
-
-    // 3. Propostas
     propostas.forEach(p => {
       const key = getChaveCliente(p.cliente_id, p.cliente);
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
-
-    // 4. Contratos
     contratos.forEach(c => {
       const key = getChaveCliente(c.cliente_id, c.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).contratos.push(c);
       if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
     });
-
-    // 5. Leads do Site
     leads.forEach(l => {
       const key = `NAME_${l.empresa.trim().toUpperCase()}`; 
       if (!mapa.has(key)) mapa.set(key, { id_lead: l.id, nome: l.empresa, email: l.email, contato: l.nome, telefone: l.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
     });
-
-    // 6. Tarefas
     tarefas.forEach(t => {
       if (t.nome_referencia || t.cliente_id) {
         const key = getChaveCliente(t.cliente_id, t.nome_referencia);
@@ -481,10 +410,7 @@ export default function AdminPage() {
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
     if (debouncedBusca) {
       const b = debouncedBusca.toLowerCase();
-      lista = lista.filter(c =>
-        c.nome?.toLowerCase().includes(b) || c.email?.toLowerCase().includes(b) ||
-        c.contato?.toLowerCase().includes(b) || c.codigo?.toLowerCase().includes(b)
-      );
+      lista = lista.filter(c => c.nome?.toLowerCase().includes(b) || c.email?.toLowerCase().includes(b) || c.contato?.toLowerCase().includes(b) || c.codigo?.toLowerCase().includes(b));
     }
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, debouncedBusca, interacoes, mostrarDesativados]);
@@ -502,27 +428,26 @@ export default function AdminPage() {
   // ─── AÇÕES DE CLIENTES ────────────────────────────────────────────────────
   const alternarStatusCliente = async (cliente: any) => {
     const novoStatus = cliente.ativo === false ? true : false;
-    if (cliente.isOficial) {
-      const { error } = await supabase.from('clientes').update({ ativo: novoStatus }).eq('id', cliente.id);
-      if (error) return showToast("Erro ao actualizar estado: " + error.message, "erro");
-    } else {
-      const { error } = await supabase.from('clientes').insert([{
-        nome: cliente.nome, email: cliente.email, telefone: cliente.telefone,
-        whatsapp: cliente.whatsapp, tipo: cliente.tipo, filial: perfilAtivo.filial, ativo: novoStatus
-      }]);
-      if (error) return showToast("Erro ao criar registo: " + error.message, "erro");
+    try {
+      if (cliente.isOficial) {
+        const { error } = await supabase.from('clientes').update({ ativo: novoStatus }).eq('id', cliente.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('clientes').insert([{
+          nome: cliente.nome, email: cliente.email, telefone: cliente.telefone,
+          whatsapp: cliente.whatsapp, tipo: cliente.tipo, filial: perfilAtivo.filial, ativo: novoStatus
+        }]);
+        if (error) throw error;
+      }
+      showToast(`Registo ${novoStatus ? 'ativado' : 'desativado'} com sucesso!`, "sucesso");
+      carregarTudo();
+    } catch (e: any) {
+      showToast("Erro ao alterar status: " + e.message, "erro");
     }
-    showToast(`Registo ${novoStatus ? 'ativado' : 'desativado'} com sucesso!`, "info");
-    carregarTudo();
   };
 
   const abrirNotasDaProposta = (prop: PropostaDB) => {
-    const keyToFind = prop.cliente_id ? `ID_${prop.cliente_id}` : `NAME_${prop.cliente.trim().toUpperCase()}`;
-    const cliente = clientesAgrupados.find(c => {
-       if (prop.cliente_id) return c.id === prop.cliente_id;
-       return c.nome.toUpperCase() === prop.cliente.trim().toUpperCase();
-    });
-    
+    const cliente = clientesAgrupados.find(c => prop.cliente_id ? c.id === prop.cliente_id : c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
     if (cliente) setClienteDetalhe(cliente);
     else showToast("Erro ao abrir a ficha do cliente.", "erro");
   };
@@ -531,7 +456,7 @@ export default function AdminPage() {
   const dispararEmailsMassa = async () => {
     let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
     alvos = alvos.filter(c => c.email && c.email.includes("@") && c.ativo !== false);
-    if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado para este público.", "erro");
+    if (alvos.length === 0) return showToast("Nenhum e-mail válido/ativo encontrado.", "erro");
     if (!confirm(`Deseja disparar este e-mail para ${alvos.length} contactos?`)) return;
 
     setProgressoEmail({ ativo: true, total: alvos.length, enviado: 0 });
@@ -571,10 +496,7 @@ export default function AdminPage() {
   // ─── GERADOR DE PROPOSTA ──────────────────────────────────────────────────
   const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
     if (!conteudo) return "";
-    return conteudo
-      .replace(/\{\{nome\}\}/g, nome || "Cliente")
-      .replace(/\{\{empresa\}\}/g, empresa || "Empresa")
-      .replace(/\{\{valor\}\}/g, fmt(valor));
+    return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor));
   };
 
   const gerarHtmlProposta = (prop: PropostaDB) => {
@@ -585,14 +507,8 @@ export default function AdminPage() {
 
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     let foneParaTentar = prop.telefone || "";
-    const cb = prop.cliente_id 
-      ? clientesBase.find(c => c.id === prop.cliente_id) 
-      : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    
-    if (cb) {
-      foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
-    }
-    
+    const cb = prop.cliente_id ? clientesBase.find(c => c.id === prop.cliente_id) : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    if (cb) foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(foneParaTentar) });
     setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
   };
@@ -626,28 +542,17 @@ export default function AdminPage() {
         let pdfBase64 = "";
         try {
           if (!(window as any).html2pdf) {
-            await new Promise((resolve) => {
-              const s = document.createElement('script');
-              s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-              s.onload = resolve;
-              document.body.appendChild(s);
-            });
+            await new Promise((resolve) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = resolve; document.body.appendChild(s); });
           }
-          const el = document.createElement('div');
-          el.innerHTML = gerarHtmlProposta(prop);
+          const el = document.createElement('div'); el.innerHTML = gerarHtmlProposta(prop);
           const uri = await (window as any).html2pdf().set({ margin: 10, filename: `Proposta.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(el).outputPdf('datauristring');
           pdfBase64 = uri.split(',')[1];
         } catch {}
-        
         let trackingPixel = '';
-        if (prop.cliente_id) {
-           trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${prop.cliente_id}" width="1" height="1" style="display:none;" />`;
-        }
-
+        if (prop.cliente_id) trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${prop.cliente_id}" width="1" height="1" style="display:none;" />`;
         let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
         const assuntoEmail = formEnvioMensagem.assunto || `Proposta Comercial SSTI - ${prop.cliente}`;
         const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: assuntoEmail, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
-        
         if (res.ok) {
           await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
           await supabase.from('interacoes').insert([{ cliente_id: prop.cliente_id, cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Assunto: ${assuntoEmail}\n\n${textoFinal}` }]);
@@ -674,15 +579,11 @@ export default function AdminPage() {
   };
 
   // ─── KANBAN DRAG & DROP ────────────────────────────────────────────────────
-  const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => {
-    e.dataTransfer.setData("propId", prop.id.toString());
-    setTarefaArrastando(prop.id);
-  };
+  const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => { e.dataTransfer.setData("propId", prop.id.toString()); setTarefaArrastando(prop.id); };
   const handleDragEnd = () => setTarefaArrastando(null);
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
   const handleDropStatus = async (e: React.DragEvent, novoStatus: string) => {
-    e.preventDefault();
-    setTarefaArrastando(null);
+    e.preventDefault(); setTarefaArrastando(null);
     const propId = Number(e.dataTransfer.getData("propId"));
     const prop = propostas.find(p => p.id === propId);
     if (!prop || prop.status === novoStatus) return;
@@ -695,12 +596,11 @@ export default function AdminPage() {
     }
   };
 
-  // ─── AÇÕES DE STATUS E VALORES DE PROPOSTA ───────────────────────────────
+  // ─── AÇÕES DE STATUS DE PROPOSTA ──────────────────────────────────────────
   const alterarStatusParaGanho = async (prop: PropostaDB) => {
     await supabase.from('propostas').update({ status: 'fechada' }).eq('id', prop.id);
     try {
       let finalClienteId = prop.cliente_id;
-      
       if (!finalClienteId) {
         const cEx = clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
         if (cEx) {
@@ -712,19 +612,8 @@ export default function AdminPage() {
            if (finalClienteId) await supabase.from('propostas').update({ cliente_id: finalClienteId }).eq('id', prop.id);
         }
       }
-
-      await supabase.from('contratos').insert([{
-        proposta_id: prop.id, cliente_id: finalClienteId, cliente_nome: prop.cliente, valor_mensal: prop.valor,
-        status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0],
-        servicos_inclusos: 'Gerado automaticamente', filial: prop.filial || perfilAtivo.filial
-      }]);
-      await supabase.from('tarefas').insert([{
-        titulo: `🚀 Onboarding: ${prop.cliente}`,
-        descricao: `Novo cliente fechado! Realizar ativação e configuração inicial.`,
-        data_vencimento: new Date().toISOString(), status: 'Pendente',
-        usuario_email: session?.user?.email, cliente_id: finalClienteId, nome_referencia: prop.cliente, proposta_id: prop.id
-      }]);
-      
+      await supabase.from('contratos').insert([{ proposta_id: prop.id, cliente_id: finalClienteId, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: 'Ativo', data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: 'Gerado automaticamente', filial: prop.filial || perfilAtivo.filial }]);
+      await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding: ${prop.cliente}`, descricao: `Novo cliente fechado! Realizar ativação e configuração inicial.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, cliente_id: finalClienteId, nome_referencia: prop.cliente, proposta_id: prop.id }]);
       showToast("🎉 Negócio Fechado! Contrato e Onboarding ativados.", "sucesso");
     } catch {}
     carregarTudo();
@@ -751,7 +640,6 @@ export default function AdminPage() {
     setModalPerda(false);
     carregarTudo();
   };
-  
   const excluirProposta = async (id: number, nome: string) => {
     if (confirm(`Excluir permanentemente a proposta de ${nome}?`)) {
       const { error } = await supabase.from('propostas').delete().eq('id', id);
@@ -765,23 +653,12 @@ export default function AdminPage() {
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteDetalhe || !formInteracao.descricao) return;
-    const novaInteracao = {
-      cliente_id: clienteDetalhe.id,
-      cliente_nome: clienteDetalhe.nome,
-      usuario_email: perfilAtivo.email,
-      tipo: formInteracao.tipo,
-      descricao: formInteracao.descricao,
-    };
+    const novaInteracao = { cliente_id: clienteDetalhe.id, cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao };
     const { data, error } = await supabase.from('interacoes').insert([novaInteracao]).select().single();
     if (error) return showToast("Erro ao salvar interação: " + error.message, "erro");
-    // Atualiza a ficha localmente sem fechar o modal — o usuário permanece na timeline
-    setClienteDetalhe((prev: any) => ({
-      ...prev,
-      interacoes: [{ ...novaInteracao, id: data?.id, created_at: new Date().toISOString() }, ...prev.interacoes],
-    }));
+    setClienteDetalhe((prev: any) => ({ ...prev, interacoes: [{ ...novaInteracao, id: data?.id, created_at: new Date().toISOString() }, ...prev.interacoes] }));
     setFormInteracao({ tipo: "Nota", descricao: "" });
     showToast("Nota adicionada ao histórico!", "sucesso");
-    // Recarrega em background para sincronizar o estado global sem fechar a ficha
     carregarTudo();
   };
 
@@ -830,7 +707,8 @@ export default function AdminPage() {
     setModalTarefa(true);
   };
   const editarTarefa = (t: TarefaDB) => {
-    const dataFormatada = new Date(t.data_vencimento).toISOString().slice(0, 16);
+    // Evita crash caso t.data_vencimento venha vazio ou nulo
+    const dataFormatada = t.data_vencimento ? new Date(t.data_vencimento).toISOString().slice(0, 16) : "";
     setFormTarefa({ ...t, data_vencimento: dataFormatada });
     setModalTarefa(true);
   };
@@ -892,37 +770,16 @@ export default function AdminPage() {
     const emailTratado = formUsuario.email?.toLowerCase().trim() || '';
 
     if (formUsuario.id) {
-      const { error } = await supabase.from('perfis').upsert([{ 
-        id: formUsuario.id, 
-        email: emailTratado,
-        perfil: formUsuario.perfil, 
-        filial: formUsuario.filial, 
-        nome: formUsuario.nome 
-      }]);
+      const { error } = await supabase.from('perfis').upsert([{ id: formUsuario.id, email: emailTratado, perfil: formUsuario.perfil, filial: formUsuario.filial, nome: formUsuario.nome }]);
       if (error) return showToast("Erro ao atualizar: " + error.message, "erro");
       showToast("Permissões atualizadas!", "sucesso");
       setModalUsuario(false);
       carregarTudo();
     } else {
       if (!formUsuario.senha || formUsuario.senha.length < 6) return showToast("A senha deve ter pelo menos 6 caracteres.", "erro");
-
       showToast("A criar utilizador...", "info");
-      const res = await fetch('/api/criar-usuario', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: emailTratado,
-          senha: formUsuario.senha,
-          perfil: formUsuario.perfil,
-          filial: formUsuario.filial,
-          nome: formUsuario.nome
-        })
-      });
-
-      if (!res.ok) {
-          const errData = await res.json();
-          return showToast(`Erro: ${errData.error}`, "erro");
-      }
+      const res = await fetch('/api/criar-usuario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: emailTratado, senha: formUsuario.senha, perfil: formUsuario.perfil, filial: formUsuario.filial, nome: formUsuario.nome }) });
+      if (!res.ok) { const errData = await res.json(); return showToast(`Erro: ${errData.error}`, "erro"); }
       showToast("Utilizador cadastrado com sucesso!", "sucesso");
       setModalUsuario(false);
       carregarTudo();
@@ -940,7 +797,6 @@ export default function AdminPage() {
     }
   };
 
-  // ─── GUARD DE AUTENTICAÇÃO ────────────────────────────────────────────────
   if (carregandoAuth) return (
     <div style={{ minHeight: "100vh", background: "#080f1e", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 20, color: "#4A90D9" }}>
       <div style={{ width: 40, height: 40, border: "3px solid #4A90D9", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -949,9 +805,6 @@ export default function AdminPage() {
     </div>
   );
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════════════════
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <style>{`
@@ -968,7 +821,10 @@ export default function AdminPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
         
-        /* CORREÇÃO DO ESPAÇO NO MEIO DA TELA: Menu Fixo + Margem exata */
+        /* CORREÇÃO DA ROLAGEM NO MENU: Esconde a barra visual mas mantém a funcionalidade */
+        .sidebar::-webkit-scrollbar, .nav-menu::-webkit-scrollbar { display: none; }
+        .sidebar, .nav-menu { -ms-overflow-style: none; scrollbar-width: none; }
+
         .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; width: calc(100% - 260px); min-height: 100vh; }
         
@@ -1128,9 +984,9 @@ export default function AdminPage() {
       <aside className={`sidebar ${menuMobileAberto ? 'open' : ''}`}>
         <button className="close-menu-btn" onClick={() => setMenuMobileAberto(false)}>✕</button>
         <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
-          {/* CORREÇÃO DA LOGO: Busca Logo.webp na versão clara. Fallback visual para garantir. */}
+          {/* LOGOS CORRIGIDOS PARA O TEMA */}
           <img 
-            src={tema === 'dark' ? '/Logo-negativo.webp' : '/Logo.webp'} 
+            src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} 
             style={{ maxHeight: "36px", borderRadius: "8px" }} 
             alt="SSTI" 
             onError={(e) => { e.currentTarget.style.display = 'none'; }} 
@@ -1176,7 +1032,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.0 Layout Fixo</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.1 Tudo Corrigido</div>
         </div>
       </aside>
 
@@ -1365,7 +1221,6 @@ export default function AdminPage() {
                         <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, background: "rgba(74,144,217,0.08)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", margin: 0 }} onClick={() => abrirNotasDaProposta(p)}>📝 Notas</button>
                       </div>
 
-                      {/* NOVOS BOTÕES: Alterar Valor e Excluir */}
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
                         <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0, background: "rgba(34,197,94,0.08)", color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }} onClick={() => setModalEditarValor({ativo: true, prop: p, novoValor: p.valor.toString()})}>💰 Alterar Valor</button>
                         {isAdmin && <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0, background: "rgba(248,113,113,0.08)", color: "#f87171", borderColor: "rgba(248,113,113,0.3)" }} onClick={() => excluirProposta(p.id, p.cliente)}>🗑️ Excluir</button>}
@@ -1714,7 +1569,9 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* ─── MODAL: ENVIO INTELIGENTE ────────────────────────────────────────── */}
+      {/* ─── MODAIS DA APLICAÇÃO ─────────────────────────────────────────────── */}
+      
+      {/* MODAL: ENVIO INTELIGENTE */}
       {modalEnvioProposta.ativo && modalEnvioProposta.prop && (
         <div className="modal-overlay" onClick={() => setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' })}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -1760,7 +1617,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: ALTERAR VALOR (NOVO) ─────────────────────────────────────── */}
+      {/* MODAL: ALTERAR VALOR DA PROPOSTA */}
       {modalEditarValor.ativo && modalEditarValor.prop && (
         <div className="modal-overlay" onClick={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -1773,15 +1630,7 @@ export default function AdminPage() {
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
                   Novo Valor (R$)
                 </label>
-                <input 
-                  required 
-                  type="number" 
-                  step="0.01"
-                  className="input-modal" 
-                  value={modalEditarValor.novoValor} 
-                  onChange={e => setModalEditarValor({ ...modalEditarValor, novoValor: e.target.value })} 
-                  placeholder="Ex: 1500.50" 
-                />
+                <input required type="number" step="0.01" className="input-modal" value={modalEditarValor.novoValor} onChange={e => setModalEditarValor({ ...modalEditarValor, novoValor: e.target.value })} placeholder="Ex: 1500.50" />
               </div>
               <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
                 <button type="button" onClick={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
@@ -1792,7 +1641,146 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) ───────────────────────── */}
+      {/* MODAL: TAREFA (NOVA / EDITAR) */}
+      {modalTarefa && (
+        <div className="modal-overlay" onClick={() => setModalTarefa(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formTarefa.id ? "✏️ Editar Tarefa" : "➕ Nova Tarefa"}</h2>
+            <form onSubmit={salvarTarefa} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Título da Tarefa</label>
+                <input required className="input-modal" value={formTarefa.titulo} onChange={e => setFormTarefa({ ...formTarefa, titulo: e.target.value })} placeholder="Ex: Ligar para cliente..." />
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Descrição</label>
+                <textarea className="input-modal" rows={3} value={formTarefa.descricao} onChange={e => setFormTarefa({ ...formTarefa, descricao: e.target.value })} placeholder="Detalhes da tarefa..." />
+              </div>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Data de Vencimento</label>
+                  <input required type="datetime-local" className="input-modal" value={formTarefa.data_vencimento} onChange={e => setFormTarefa({ ...formTarefa, data_vencimento: e.target.value })} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Prioridade</label>
+                  <select className="input-modal" value={formTarefa.prioridade} onChange={e => setFormTarefa({ ...formTarefa, prioridade: e.target.value as any })}>
+                    <option value="Baixa">Baixa</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Alta">Alta ⚠️</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Status</label>
+                  <select className="input-modal" value={formTarefa.status} onChange={e => setFormTarefa({ ...formTarefa, status: e.target.value })}>
+                    <option value="Pendente">Pendente</option>
+                    <option value="Em Andamento">Em Andamento</option>
+                    <option value="Concluído">Concluído</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Referência (Cliente/Empresa)</label>
+                  <input className="input-modal" value={formTarefa.nome_referencia || ''} onChange={e => setFormTarefa({ ...formTarefa, nome_referencia: e.target.value })} placeholder="Ex: Cartola Filmes..." />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button type="button" onClick={() => setModalTarefa(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Tarefa</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONTRATO (NOVO / EDITAR) */}
+      {modalContrato && (
+        <div className="modal-overlay" onClick={() => setModalContrato(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formContrato.id ? "📄 Editar Contrato" : "➕ Novo Contrato"}</h2>
+            <form onSubmit={salvarContrato} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Nome do Cliente</label>
+                <input required className="input-modal" value={formContrato.cliente_nome} onChange={e => setFormContrato({ ...formContrato, cliente_nome: e.target.value })} placeholder="Empresa..." />
+              </div>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Valor Mensal (MRR)</label>
+                  <input required type="number" step="0.01" className="input-modal" value={formContrato.valor_mensal} onChange={e => setFormContrato({ ...formContrato, valor_mensal: parseFloat(e.target.value) })} placeholder="Ex: 1500.00" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Data de Início</label>
+                  <input required type="date" className="input-modal" value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Serviços Inclusos</label>
+                <textarea className="input-modal" rows={2} value={formContrato.servicos_inclusos} onChange={e => setFormContrato({ ...formContrato, servicos_inclusos: e.target.value })} placeholder="Descrição dos serviços..." />
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Status do Contrato</label>
+                <select className="input-modal" value={formContrato.status} onChange={e => setFormContrato({ ...formContrato, status: e.target.value })}>
+                  <option value="Ativo">Ativo</option>
+                  <option value="Pendente">Pendente</option>
+                  <option value="Cancelado">Cancelado (Churn)</option>
+                </select>
+              </div>
+              {formContrato.status === 'Cancelado' && (
+                <div>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Motivo do Cancelamento</label>
+                  <input required className="input-modal" value={formContrato.motivo_cancelamento || ''} onChange={e => setFormContrato({ ...formContrato, motivo_cancelamento: e.target.value })} placeholder="Por que cancelou?..." />
+                </div>
+              )}
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button type="button" onClick={() => setModalContrato(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Contrato</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TEMPLATES (NOVO / EDITAR) */}
+      {modalTemplate && (
+        <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formTemplate.id ? "📝 Editar Template" : "➕ Novo Template"}</h2>
+            <form onSubmit={salvarTemplate} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: 2 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Nome do Template</label>
+                  <input required className="input-modal" value={formTemplate.nome} onChange={e => setFormTemplate({ ...formTemplate, nome: e.target.value })} placeholder="Ex: Proposta Inicial..." />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Canal</label>
+                  <select className="input-modal" value={formTemplate.tipo} onChange={e => setFormTemplate({ ...formTemplate, tipo: e.target.value })}>
+                    <option value="WhatsApp">WhatsApp</option>
+                    <option value="Email">E-mail</option>
+                  </select>
+                </div>
+              </div>
+              {formTemplate.tipo === 'Email' && (
+                <div>
+                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Assunto do E-mail</label>
+                  <input required className="input-modal" value={formTemplate.assunto || ''} onChange={e => setFormTemplate({ ...formTemplate, assunto: e.target.value })} placeholder="Assunto (Pode usar {{nome}}, {{empresa}})..." />
+                </div>
+              )}
+              <div>
+                <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Mensagem</label>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
+                  Variáveis disponíveis: <code style={{color: '#4A90D9'}}>{`{{nome}}`}</code>, <code style={{color: '#4A90D9'}}>{`{{empresa}}`}</code>, <code style={{color: '#4A90D9'}}>{`{{valor}}`}</code>
+                </div>
+                <textarea required className="input-modal" rows={8} value={formTemplate.conteudo} onChange={e => setFormTemplate({ ...formTemplate, conteudo: e.target.value })} placeholder="Olá {{nome}}, a sua proposta para a {{empresa}} está pronta..." />
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Template</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) */}
       {clienteDetalhe && (
         <div className="modal-overlay" onClick={() => setClienteDetalhe(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, display: "flex", flexWrap: "wrap", gap: 24 }}>
@@ -1846,7 +1834,7 @@ export default function AdminPage() {
                 </>
               )}
               <div>
-                <h4 style={{ color: "#4A90D9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Tarefas Pendentes</h4>
+                <h4 style={{ color: "#4A90D9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Tarerafos Pendentes</h4>
                 {clienteDetalhe.tarefas.filter((t: any) => t.status !== 'Concluído').length === 0 ? (
                   <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Nenhuma pendência</div>
                 ) : (
@@ -1901,7 +1889,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: EDITAR USUÁRIO / PRÉ-REGISTO ──────────────────────────────── */}
+      {/* MODAL: EDITAR USUÁRIO / PRÉ-REGISTO */}
       {modalUsuario && (
         <div className="modal-overlay" onClick={() => setModalUsuario(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -1914,42 +1902,18 @@ export default function AdminPage() {
             <form onSubmit={salvarUsuario} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nome do Colaborador</label>
-                <input 
-                  required 
-                  className="input-modal" 
-                  value={formUsuario.nome || ''} 
-                  onChange={e => setFormUsuario({ ...formUsuario, nome: e.target.value })}
-                  placeholder="Ex: Gabriel" 
-                />
+                <input required className="input-modal" value={formUsuario.nome || ''} onChange={e => setFormUsuario({ ...formUsuario, nome: e.target.value })} placeholder="Ex: Gabriel" />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail de Acesso</label>
-                <input 
-                  required 
-                  type="email"
-                  className="input-modal" 
-                  value={formUsuario.email} 
-                  onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })}
-                  disabled={!!formUsuario.id} 
-                  style={{ opacity: formUsuario.id ? 0.6 : 1 }} 
-                  placeholder="exemplo@simplessolucao.com.br" 
-                />
+                <input required type="email" className="input-modal" value={formUsuario.email} onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })} disabled={!!formUsuario.id} style={{ opacity: formUsuario.id ? 0.6 : 1 }} placeholder="exemplo@simplessolucao.com.br" />
               </div>
-              
               {!formUsuario.id && (
                 <div>
                   <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Senha Temporária * (Mín. 6 caracteres)</label>
-                  <input 
-                    required 
-                    type="password"
-                    className="input-modal" 
-                    value={formUsuario.senha || ''} 
-                    onChange={e => setFormUsuario({ ...formUsuario, senha: e.target.value })}
-                    placeholder="******" 
-                  />
+                  <input required type="password" className="input-modal" value={formUsuario.senha || ''} onChange={e => setFormUsuario({ ...formUsuario, senha: e.target.value })} placeholder="******" />
                 </div>
               )}
-
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nível de Acesso (Perfil)</label>
                 <select className="input-modal" value={formUsuario.perfil} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
@@ -1971,7 +1935,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: MOTIVO DE PERDA ───────────────────────────────────────────── */}
+      {/* MODAL: MOTIVO DE PERDA */}
       {modalPerda && (
         <div className="modal-overlay" onClick={() => setModalPerda(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -1997,7 +1961,40 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: COMUNICADO EM MASSA ───────────────────────────────────────── */}
+      {/* MODAL: CLIENTE (NOVO/EDITAR) */}
+      {modalClienteForm && (
+        <div className="modal-overlay" onClick={() => setModalClienteForm(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{formCliente.id ? "✏️ Editar Registo" : "➕ Novo Registo"}</h2>
+            <form onSubmit={salvarClienteBase} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <input className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.codigo || ''} onChange={e => setFormCliente({ ...formCliente, codigo: e.target.value })} placeholder="Código (Opcional)..." />
+                <select className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.tipo} onChange={e => setFormCliente({ ...formCliente, tipo: e.target.value })}>
+                  <option value="Cliente">Cliente</option>
+                  <option value="Lead">Lead</option>
+                  <option value="Parceiro">Parceiro</option>
+                </select>
+              </div>
+              <input required className="input-modal" style={{ marginBottom: 0 }} value={formCliente.nome} onChange={e => setFormCliente({ ...formCliente, nome: e.target.value })} placeholder="Nome da Empresa *" />
+              <input className="input-modal" style={{ marginBottom: 0 }} value={formCliente.email} onChange={e => setFormCliente({ ...formCliente, email: e.target.value })} placeholder="E-mail principal..." type="email" />
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.telefone || ''} onChange={e => setFormCliente({ ...formCliente, telefone: e.target.value })} placeholder="Telefone Fixo..." />
+                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.whatsapp || ''} onChange={e => setFormCliente({ ...formCliente, whatsapp: e.target.value })} placeholder="WhatsApp (com DDD)..." />
+              </div>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.documento || ''} onChange={e => setFormCliente({ ...formCliente, documento: e.target.value })} placeholder="CNPJ / CPF..." />
+                {isAdmin && <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.filial || ''} onChange={e => setFormCliente({ ...formCliente, filial: e.target.value })} placeholder="Filial (Ex: Matriz)..." />}
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
+                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Registo</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: COMUNICADO EM MASSA */}
       {modalComunicado && (
         <div className="modal-overlay" onClick={() => !progressoEmail.ativo && setModalComunicado(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -2040,38 +2037,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL: CLIENTE (NOVO/EDITAR) ────────────────────────────────────── */}
-      {modalClienteForm && (
-        <div className="modal-overlay" onClick={() => setModalClienteForm(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formCliente.id ? "✏️ Editar Registo" : "➕ Novo Registo"}</h2>
-            <form onSubmit={salvarClienteBase} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.codigo} onChange={e => setFormCliente({ ...formCliente, codigo: e.target.value })} placeholder="Código (Opcional)..." />
-                <select className="input-modal" style={{ flex: 1, marginBottom: 0 }} value={formCliente.tipo} onChange={e => setFormCliente({ ...formCliente, tipo: e.target.value })}>
-                  <option value="Cliente">Cliente</option>
-                  <option value="Lead">Lead</option>
-                  <option value="Parceiro">Parceiro</option>
-                </select>
-              </div>
-              <input required className="input-modal" style={{ marginBottom: 0 }} value={formCliente.nome} onChange={e => setFormCliente({ ...formCliente, nome: e.target.value })} placeholder="Nome da Empresa *" />
-              <input className="input-modal" style={{ marginBottom: 0 }} value={formCliente.email} onChange={e => setFormCliente({ ...formCliente, email: e.target.value })} placeholder="E-mail principal..." type="email" />
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.telefone} onChange={e => setFormCliente({ ...formCliente, telefone: e.target.value })} placeholder="Telefone Fixo..." />
-                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.whatsapp} onChange={e => setFormCliente({ ...formCliente, whatsapp: e.target.value })} placeholder="WhatsApp (com DDD)..." />
-              </div>
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.documento} onChange={e => setFormCliente({ ...formCliente, documento: e.target.value })} placeholder="CNPJ / CPF..." />
-                {isAdmin && <input className="input-modal" style={{ flex: "1 1 120px", marginBottom: 0 }} value={formCliente.filial} onChange={e => setFormCliente({ ...formCliente, filial: e.target.value })} placeholder="Filial (Ex: Matriz)..." />}
-              </div>
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalClienteForm(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Registo</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
