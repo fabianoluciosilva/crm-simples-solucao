@@ -47,6 +47,7 @@ interface PerfilUsuario {
 type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios" | "relatorios";
 
 const ADMIN_EMAIL_PRINCIPAL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fabiano@simplessolucao.com.br';
+const LIMIAR_ESFRIANDO = 5; // Dias sem interação para considerar o lead como "frio" no Kanban
 
 // ─── UTILS ─────────────────────────────────────────────────────────────────
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -825,7 +826,7 @@ export default function AdminPage() {
         .sidebar::-webkit-scrollbar, .nav-menu::-webkit-scrollbar { display: none; }
         .sidebar, .nav-menu { -ms-overflow-style: none; scrollbar-width: none; }
 
-        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
+        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; width: calc(100% - 260px); min-height: 100vh; }
         
         .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -1032,7 +1033,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.1 Tudo Corrigido</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v3.2 Correção Final</div>
         </div>
       </aside>
 
@@ -1834,7 +1835,7 @@ export default function AdminPage() {
                 </>
               )}
               <div>
-                <h4 style={{ color: "#4A90D9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Tarerafos Pendentes</h4>
+                <h4 style={{ color: "#4A90D9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Tarefas Pendentes</h4>
                 {clienteDetalhe.tarefas.filter((t: any) => t.status !== 'Concluído').length === 0 ? (
                   <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Nenhuma pendência</div>
                 ) : (
