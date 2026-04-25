@@ -167,7 +167,6 @@ export default function AdminPage() {
   }>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
   const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
 
-  // NOVO ESTADO: Edição de valor pelo Kanban
   const [modalEditarValor, setModalEditarValor] = useState<{ativo: boolean, prop: PropostaDB | null, novoValor: string}>({ativo: false, prop: null, novoValor: ''});
 
   const [modalTarefa, setModalTarefa] = useState(false);
@@ -916,8 +915,11 @@ export default function AdminPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
         
-        /* CORREÇÃO DO ESPAÇO NO MEIO DA TELA: Menu Fixo + Margem exata */
-        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
+        /* CORREÇÃO DA ROLAGEM NO MENU: Esconde a barra visual mas mantém a funcionalidade */
+        .sidebar::-webkit-scrollbar, .nav-menu::-webkit-scrollbar { display: none; }
+        .sidebar, .nav-menu { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; width: calc(100% - 260px); min-height: 100vh; }
         
         .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -1076,9 +1078,9 @@ export default function AdminPage() {
       <aside className={`sidebar ${menuMobileAberto ? 'open' : ''}`}>
         <button className="close-menu-btn" onClick={() => setMenuMobileAberto(false)}>✕</button>
         <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
-          {/* CORREÇÃO DA LOGO: Busca Logo.webp na versão clara. Fallback visual para garantir. */}
+          {/* CORREÇÃO DA LOGO: Busca logo-ssti.webp na versão clara e Logo-negativo.webp na versão escura. */}
           <img 
-            src={tema === 'dark' ? '/Logo-negativo.webp' : '/Logo.webp'} 
+            src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} 
             style={{ maxHeight: "36px", borderRadius: "8px" }} 
             alt="SSTI" 
             onError={(e) => { e.currentTarget.style.display = 'none'; }} 
