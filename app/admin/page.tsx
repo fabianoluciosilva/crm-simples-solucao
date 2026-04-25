@@ -13,7 +13,7 @@ interface PropostaDB {
   id: number; created_at: string; numero: string; cliente: string; contato: string;
   telefone?: string; email: string; valor: number; status: string; status_envio: string;
   filial?: string; dados: any; motivo_perda?: string; obs_perda?: string;
-  cliente_id?: string;
+  cliente_id?: string; origem?: string;
 }
 interface TarefaDB {
   id: number; titulo: string; descricao: string; data_vencimento: string; status: string;
@@ -45,6 +45,9 @@ interface PerfilUsuario {
 }
 
 type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios" | "relatorios";
+
+// E-mail do administrador principal — mover para .env.local como NEXT_PUBLIC_ADMIN_EMAIL quando possível
+const ADMIN_EMAIL_PRINCIPAL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fabiano@simplessolucao.com.br';
 
 // ─── UTILS ─────────────────────────────────────────────────────────────────
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -167,6 +170,7 @@ export default function AdminPage() {
   }>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
   const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
 
+  // NOVO ESTADO: Edição de valor pelo Kanban
   const [modalEditarValor, setModalEditarValor] = useState<{ativo: boolean, prop: PropostaDB | null, novoValor: string}>({ativo: false, prop: null, novoValor: ''});
 
   const [modalTarefa, setModalTarefa] = useState(false);
@@ -235,7 +239,7 @@ export default function AdminPage() {
       if (perfilData) {
         pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, nome: perfilData.nome };
       } else {
-        const isDono = emailUser === 'fabiano@simplessolucao.com.br';
+        const isDono = emailUser === ADMIN_EMAIL_PRINCIPAL;
         pFinal = { id: session.user.id, email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz', nome: isDono ? 'Fabiano' : '' };
         await supabase.from('perfis').upsert([{ 
           id: pFinal.id, 
@@ -312,7 +316,7 @@ export default function AdminPage() {
     }
   }, [session, carregandoAuth, perfilAtivo, isAdmin, isComercial, showToast]);
 
-  useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo]);
+  useEffect(() => { carregarTudo(); }, [session, carregandoAuth, filtroDias, perfilAtivo.email, perfilAtivo.filial, perfilAtivo.perfil]);
 
   // ─── LÓGICA E CÁLCULOS ────────────────────────────────────────────────────
   const clientesDesativadosNomes = useMemo(
@@ -372,6 +376,22 @@ export default function AdminPage() {
     });
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
+
+  // ─── PROPOSTA ESFRIANDO ───────────────────────────────────────────────────
+  // Retorna o número de dias sem qualquer interação para uma proposta ativa.
+  // Usa a última interação do cliente ou, como fallback, a data de criação da proposta.
+  const diasSemInteracao = useCallback((prop: PropostaDB): number => {
+    if (prop.status === 'fechada' || prop.status === 'perdida') return 0;
+    const intsCliente = interacoes.filter(i =>
+      prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase()
+    );
+    const dataRef = intsCliente.length > 0
+      ? new Date(intsCliente[0].created_at)   // interacoes já vêm ordenadas por created_at desc
+      : new Date(prop.created_at);
+    return Math.floor((Date.now() - dataRef.getTime()) / (1000 * 60 * 60 * 24));
+  }, [interacoes]);
+
+  const LIMIAR_ESFRIANDO = 7; // dias sem atividade para exibir o badge
 
   const tarefasComAtraso = useMemo(() =>
     tarefas.map(t => {
@@ -483,12 +503,14 @@ export default function AdminPage() {
   const alternarStatusCliente = async (cliente: any) => {
     const novoStatus = cliente.ativo === false ? true : false;
     if (cliente.isOficial) {
-      await supabase.from('clientes').update({ ativo: novoStatus }).eq('id', cliente.id);
+      const { error } = await supabase.from('clientes').update({ ativo: novoStatus }).eq('id', cliente.id);
+      if (error) return showToast("Erro ao actualizar estado: " + error.message, "erro");
     } else {
-      await supabase.from('clientes').insert([{
+      const { error } = await supabase.from('clientes').insert([{
         nome: cliente.nome, email: cliente.email, telefone: cliente.telefone,
         whatsapp: cliente.whatsapp, tipo: cliente.tipo, filial: perfilAtivo.filial, ativo: novoStatus
       }]);
+      if (error) return showToast("Erro ao criar registo: " + error.message, "erro");
     }
     showToast(`Registo ${novoStatus ? 'ativado' : 'desativado'} com sucesso!`, "info");
     carregarTudo();
@@ -711,11 +733,10 @@ export default function AdminPage() {
   const salvarNovoValorProposta = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalEditarValor.prop) return;
-    
-    // Tratamento para transformar vírgula em ponto, caso o usuário digite assim
     const valorNumerico = Number(modalEditarValor.novoValor.toString().replace(',', '.'));
-    
-    await supabase.from('propostas').update({ valor: valorNumerico }).eq('id', modalEditarValor.prop.id);
+    if (isNaN(valorNumerico) || valorNumerico <= 0) return showToast("Valor inválido.", "erro");
+    const { error } = await supabase.from('propostas').update({ valor: valorNumerico }).eq('id', modalEditarValor.prop.id);
+    if (error) return showToast("Erro ao actualizar valor: " + error.message, "erro");
     showToast("Valor atualizado com sucesso!", "sucesso");
     setModalEditarValor({ ativo: false, prop: null, novoValor: '' });
     carregarTudo();
@@ -733,7 +754,8 @@ export default function AdminPage() {
   
   const excluirProposta = async (id: number, nome: string) => {
     if (confirm(`Excluir permanentemente a proposta de ${nome}?`)) {
-      await supabase.from('propostas').delete().eq('id', id);
+      const { error } = await supabase.from('propostas').delete().eq('id', id);
+      if (error) return showToast("Erro ao excluir proposta: " + error.message, "erro");
       showToast("Proposta excluída.", "info");
       carregarTudo();
     }
@@ -743,10 +765,23 @@ export default function AdminPage() {
   const salvarInteracao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteDetalhe || !formInteracao.descricao) return;
-    await supabase.from('interacoes').insert([{ cliente_id: clienteDetalhe.id, cliente_nome: clienteDetalhe.nome, usuario_email: perfilAtivo.email, tipo: formInteracao.tipo, descricao: formInteracao.descricao }]);
+    const novaInteracao = {
+      cliente_id: clienteDetalhe.id,
+      cliente_nome: clienteDetalhe.nome,
+      usuario_email: perfilAtivo.email,
+      tipo: formInteracao.tipo,
+      descricao: formInteracao.descricao,
+    };
+    const { data, error } = await supabase.from('interacoes').insert([novaInteracao]).select().single();
+    if (error) return showToast("Erro ao salvar interação: " + error.message, "erro");
+    // Atualiza a ficha localmente sem fechar o modal — o usuário permanece na timeline
+    setClienteDetalhe((prev: any) => ({
+      ...prev,
+      interacoes: [{ ...novaInteracao, id: data?.id, created_at: new Date().toISOString() }, ...prev.interacoes],
+    }));
     setFormInteracao({ tipo: "Nota", descricao: "" });
     showToast("Nota adicionada ao histórico!", "sucesso");
-    setClienteDetalhe(null);
+    // Recarrega em background para sincronizar o estado global sem fechar a ficha
     carregarTudo();
   };
 
@@ -754,9 +789,11 @@ export default function AdminPage() {
   const salvarClienteBase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formCliente.id) {
-      await supabase.from('clientes').update({ nome: formCliente.nome, email: formCliente.email, telefone: formCliente.telefone, whatsapp: formCliente.whatsapp, documento: formCliente.documento, tipo: formCliente.tipo, codigo: formCliente.codigo, filial: formCliente.filial }).eq('id', formCliente.id);
+      const { error } = await supabase.from('clientes').update({ nome: formCliente.nome, email: formCliente.email, telefone: formCliente.telefone, whatsapp: formCliente.whatsapp, documento: formCliente.documento, tipo: formCliente.tipo, codigo: formCliente.codigo, filial: formCliente.filial }).eq('id', formCliente.id);
+      if (error) return showToast("Erro ao actualizar registo: " + error.message, "erro");
     } else {
-      await supabase.from('clientes').insert([{ nome: formCliente.nome, email: formCliente.email, telefone: formCliente.telefone, whatsapp: formCliente.whatsapp, documento: formCliente.documento, tipo: formCliente.tipo, codigo: formCliente.codigo, filial: formCliente.filial || perfilAtivo.filial }]);
+      const { error } = await supabase.from('clientes').insert([{ nome: formCliente.nome, email: formCliente.email, telefone: formCliente.telefone, whatsapp: formCliente.whatsapp, documento: formCliente.documento, tipo: formCliente.tipo, codigo: formCliente.codigo, filial: formCliente.filial || perfilAtivo.filial }]);
+      if (error) return showToast("Erro ao criar registo: " + error.message, "erro");
     }
     showToast("Registo guardado.", "sucesso");
     setModalClienteForm(false);
@@ -775,10 +812,12 @@ export default function AdminPage() {
     if (formContrato.status === 'Cancelado' && !formContrato.motivo_cancelamento) return showToast("Motivo do cancelamento é obrigatório.", "erro");
     const payload = { ...formContrato, filial: formContrato.filial || perfilAtivo.filial, updated_at: new Date().toISOString() };
     if (formContrato.id) {
-      await supabase.from('contratos').update(payload).eq('id', formContrato.id);
+      const { error } = await supabase.from('contratos').update(payload).eq('id', formContrato.id);
+      if (error) return showToast("Erro ao actualizar contrato: " + error.message, "erro");
       showToast("Contrato atualizado.", "sucesso");
     } else {
-      await supabase.from('contratos').insert([payload]);
+      const { error } = await supabase.from('contratos').insert([payload]);
+      if (error) return showToast("Erro ao criar contrato: " + error.message, "erro");
       showToast("Novo contrato ativado.", "sucesso");
     }
     setModalContrato(false);
@@ -798,21 +837,28 @@ export default function AdminPage() {
   const salvarTarefa = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = { ...formTarefa, updated_at: new Date().toISOString() };
-    if (formTarefa.id) await supabase.from('tarefas').update(payload).eq('id', formTarefa.id);
-    else await supabase.from('tarefas').insert([payload]);
+    if (formTarefa.id) {
+      const { error } = await supabase.from('tarefas').update(payload).eq('id', formTarefa.id);
+      if (error) return showToast("Erro ao actualizar tarefa: " + error.message, "erro");
+    } else {
+      const { error } = await supabase.from('tarefas').insert([payload]);
+      if (error) return showToast("Erro ao criar tarefa: " + error.message, "erro");
+    }
     showToast("Tarefa gravada.", "sucesso");
     setModalTarefa(false);
     carregarTudo();
   };
   const excluirTarefa = async (id: number) => {
     if (confirm("Excluir esta tarefa?")) {
-      await supabase.from('tarefas').delete().eq('id', id);
+      const { error } = await supabase.from('tarefas').delete().eq('id', id);
+      if (error) return showToast("Erro ao excluir tarefa: " + error.message, "erro");
       showToast("Tarefa apagada.", "info");
       carregarTudo();
     }
   };
   const alterarStatusTarefaRapido = async (id: number, novoStatus: string) => {
-    await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await supabase.from('tarefas').update({ status: novoStatus, data_conclusao: novoStatus === 'Concluído' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) return showToast("Erro ao actualizar status: " + error.message, "erro");
     showToast(`Tarefa marcada como ${novoStatus}.`, "sucesso");
     carregarTudo();
   };
@@ -820,15 +866,21 @@ export default function AdminPage() {
   // ─── CRUD TEMPLATES ───────────────────────────────────────────────────────
   const salvarTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formTemplate.id) await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id);
-    else await supabase.from('templates').insert([formTemplate]);
+    if (formTemplate.id) {
+      const { error } = await supabase.from('templates').update(formTemplate).eq('id', formTemplate.id);
+      if (error) return showToast("Erro ao actualizar template: " + error.message, "erro");
+    } else {
+      const { error } = await supabase.from('templates').insert([formTemplate]);
+      if (error) return showToast("Erro ao criar template: " + error.message, "erro");
+    }
     showToast("Template salvo.", "sucesso");
     setModalTemplate(false);
     carregarTudo();
   };
   const excluirTemplate = async (id: number) => {
     if (confirm("Excluir este template?")) {
-      await supabase.from('templates').delete().eq('id', id);
+      const { error } = await supabase.from('templates').delete().eq('id', id);
+      if (error) return showToast("Erro ao excluir template: " + error.message, "erro");
       showToast("Template excluído.", "info");
       carregarTudo();
     }
@@ -881,7 +933,8 @@ export default function AdminPage() {
     if (!id) return;
     if (email === session?.user?.email) return showToast("Não pode excluir o seu próprio utilizador.", "erro");
     if (confirm(`Remover acesso de ${email}?`)) {
-      await supabase.from('perfis').delete().eq('id', id);
+      const { error } = await supabase.from('perfis').delete().eq('id', id);
+      if (error) return showToast("Erro ao remover acesso: " + error.message, "erro");
       showToast("Acesso removido.", "info");
       carregarTudo();
     }
@@ -915,11 +968,8 @@ export default function AdminPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
         
-        /* CORREÇÃO DA ROLAGEM NO MENU: Esconde a barra visual mas mantém a funcionalidade */
-        .sidebar::-webkit-scrollbar, .nav-menu::-webkit-scrollbar { display: none; }
-        .sidebar, .nav-menu { -ms-overflow-style: none; scrollbar-width: none; }
-
-        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
+        /* CORREÇÃO DO ESPAÇO NO MEIO DA TELA: Menu Fixo + Margem exata */
+        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; width: calc(100% - 260px); min-height: 100vh; }
         
         .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -1078,9 +1128,9 @@ export default function AdminPage() {
       <aside className={`sidebar ${menuMobileAberto ? 'open' : ''}`}>
         <button className="close-menu-btn" onClick={() => setMenuMobileAberto(false)}>✕</button>
         <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
-          {/* CORREÇÃO DA LOGO: Busca logo-ssti.webp na versão clara e Logo-negativo.webp na versão escura. */}
+          {/* CORREÇÃO DA LOGO: Busca Logo.webp na versão clara. Fallback visual para garantir. */}
           <img 
-            src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} 
+            src={tema === 'dark' ? '/Logo-negativo.webp' : '/Logo.webp'} 
             style={{ maxHeight: "36px", borderRadius: "8px" }} 
             alt="SSTI" 
             onError={(e) => { e.currentTarget.style.display = 'none'; }} 
@@ -1283,7 +1333,10 @@ export default function AdminPage() {
                   <span style={{ background: `${col.cor}22`, color: col.cor, padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>{col.propostas.length}</span>
                 </div>
                 <div className="kanban-body">
-                  {col.propostas.map(p => (
+                  {col.propostas.map(p => {
+                    const diasFrio = diasSemInteracao(p);
+                    const esfriando = diasFrio >= LIMIAR_ESFRIANDO;
+                    return (
                     <div
                       key={p.id}
                       className={`kanban-card ${tarefaArrastando === p.id ? 'dragging' : ''}`}
@@ -1292,9 +1345,17 @@ export default function AdminPage() {
                       onDragStart={e => handleDragStart(e, p)}
                       onDragEnd={handleDragEnd}
                     >
-                      <div style={{ fontSize: 10, color: "var(--text-secondary)", marginBottom: 4 }}>{new Date(p.created_at).toLocaleDateString('pt-BR')} · {p.filial || 'Matriz'}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>{new Date(p.created_at).toLocaleDateString('pt-BR')} · {p.filial || 'Matriz'}</div>
+                        {esfriando && col.status !== 'fechada' && col.status !== 'perdida' && (
+                          <span title={`${diasFrio} dias sem interação`} style={{ fontSize: 10, background: "rgba(245,158,11,0.15)", color: "#f59e0b", padding: "1px 6px", borderRadius: 10, fontWeight: 700, whiteSpace: "nowrap" }}>
+                            ❄️ {diasFrio}d frio
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 14, marginBottom: 2 }}>{p.cliente}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>{p.contato}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 2 }}>{p.contato}</div>
+                      {p.origem && <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginBottom: 6 }}>🎯 {p.origem}</div>}
                       <div style={{ fontWeight: 800, color: "#4A90D9", marginBottom: 10, fontSize: 16 }}>{fmt(p.valor)}</div>
                       {p.motivo_perda && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8, padding: "4px 8px", background: "rgba(248,113,113,0.08)", borderRadius: 6 }}>{p.motivo_perda}</div>}
                       
@@ -1311,7 +1372,8 @@ export default function AdminPage() {
                       </div>
 
                     </div>
-                  ))}
+                    );
+                  })}
                   {col.propostas.length === 0 && (
                     <div style={{ textAlign: "center", color: "var(--text-tertiary)", fontSize: 12, padding: 20 }}>Arraste propostas aqui</div>
                   )}
@@ -1326,7 +1388,7 @@ export default function AdminPage() {
           <div className="table-wrapper">
             <table>
               <thead>
-                <tr><th>Data</th><th>Cliente / Contato</th><th>Filial</th><th>Valor</th><th>Status</th><th style={{ textAlign: "right" }}>Ações</th></tr>
+                <tr><th>Data</th><th>Cliente / Contato</th><th>Filial</th><th>Valor</th><th>Origem</th><th>Status</th><th style={{ textAlign: "right" }}>Ações</th></tr>
               </thead>
               <tbody>
                 {pFiltradas.map(p => (
@@ -1335,6 +1397,7 @@ export default function AdminPage() {
                     <td><strong>{p.cliente}</strong><br /><small style={{ color: "var(--text-secondary)" }}>{p.contato}</small></td>
                     <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.filial || 'Matriz'}</td>
                     <td style={{ fontWeight: 700 }}>{fmt(p.valor)}</td>
+                    <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.origem || '—'}</td>
                     <td title={p.motivo_perda ? `Motivo: ${p.motivo_perda}` : ""}>
                       <BadgeStatus status={p.status || 'aberta'} />
                       {p.motivo_perda && <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 3 }}>{p.motivo_perda}</div>}
