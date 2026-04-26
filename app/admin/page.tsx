@@ -204,7 +204,9 @@ export default function AdminPage() {
   }, [router]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
-  const mudarAba = (novaAba: AbaType) => { setAba(novaAba); setMenuMobileAberto(false); };
+  
+  // CORREÇÃO: Aceitar string genérica e converter (Cast) para AbaType
+  const mudarAba = (novaAba: string) => { setAba(novaAba as AbaType); setMenuMobileAberto(false); };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -489,7 +491,6 @@ export default function AdminPage() {
   };
 
   const visualizarProposta = (prop: PropostaDB) => {
-    // Gerar visualização HTML simplificada ou abrir visualizador.
     window.open("", "_blank");
   };
 
