@@ -344,7 +344,30 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, debouncedBusca, interacoes, mostrarDesativados]);
 
-  // ─── FUNÇÕES DE AÇÃO ───────────────────────────────────────────────────────
+  // ─── FUNÇÕES DE AÇÃO (RECUPERADAS) ─────────────────────────────────────────
+  
+  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number, clienteId?: string) => {
+    setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", cliente_id: clienteId, nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId, prioridade: "Normal" });
+    setModalTarefa(true);
+  };
+
+  const abrirNovoContrato = (prop?: PropostaDB) => {
+    if (prop) setFormContrato({ proposta_id: prop.id, cliente_id: prop.cliente_id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" });
+    else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
+    setModalContrato(true);
+  };
+
+  const confirmarEnvioMensagem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    showToast(`Simulando envio de ${modalEnvioProposta.tipo}...`);
+    setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
+  };
+
+  const dispararEmailsMassa = async () => {
+    showToast("A processar disparos...");
+    setModalComunicado(false);
+  };
+
   const alternarStatusCliente = async (cliente: any) => {
     const novoStatus = cliente.ativo === false ? true : false;
     try {
@@ -358,17 +381,11 @@ export default function AdminPage() {
     } catch { showToast("Erro ao alterar status.", "erro"); }
   };
 
-  const dispararEmailsMassa = async () => {
-    showToast("A simular disparo de e-mails...");
-    setModalComunicado(false);
-  };
-
   const gerarFilaWhatsapp = () => {
     let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
     alvos = alvos.filter(c => (c.whatsapp || c.telefone) && c.ativo !== false);
     setFilaWpp(alvos);
     setModalComunicado(false);
-    showToast(`Fila de ${alvos.length} contatos gerada.`);
   };
 
   const enviarWhatsAppDaFila = (cli: ClienteDB) => {
@@ -378,23 +395,11 @@ export default function AdminPage() {
     setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
-  // FUNÇÕES RECUPERADAS (Críticas para os Modais)
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(prop.telefone || "") });
   };
 
-  const confirmarEnvioMensagem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    showToast(`Enviando ${modalEnvioProposta.tipo}...`);
-    setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
-  };
-
   const visualizarProposta = (prop: PropostaDB) => { window.open("", "_blank"); };
-
-  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number, clienteId?: string) => {
-    setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", cliente_id: clienteId, nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId, prioridade: "Normal" });
-    setModalTarefa(true);
-  };
 
   const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => { e.dataTransfer.setData("propId", prop.id.toString()); setTarefaArrastando(prop.id); };
   const handleDragEnd = () => setTarefaArrastando(null);
