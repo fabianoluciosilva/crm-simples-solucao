@@ -344,7 +344,7 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, debouncedBusca, interacoes, mostrarDesativados]);
 
-  // ─── FUNÇÕES DE AÇÃO (RECUPERADAS) ─────────────────────────────────────────
+  // ─── FUNÇÕES DE AÇÃO ───────────────────────────────────────────────────────
   
   const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number, clienteId?: string) => {
     setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", cliente_id: clienteId, nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId, prioridade: "Normal" });
@@ -355,6 +355,12 @@ export default function AdminPage() {
     if (prop) setFormContrato({ proposta_id: prop.id, cliente_id: prop.cliente_id, cliente_nome: prop.cliente, valor_mensal: prop.valor, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: `Proposta ${prop.numero}`, motivo_cancelamento: "" });
     else setFormContrato({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
     setModalContrato(true);
+  };
+
+  const abrirNotasDaProposta = (prop: PropostaDB) => {
+    const cliente = clientesAgrupados.find(c => prop.cliente_id ? c.id === prop.cliente_id : c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    if (cliente) setClienteDetalhe(cliente);
+    else showToast("Cliente não encontrado na base.", "erro");
   };
 
   const confirmarEnvioMensagem = async (e: React.FormEvent) => {
