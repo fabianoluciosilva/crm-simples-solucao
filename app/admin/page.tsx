@@ -756,7 +756,6 @@ export default function AdminPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
         
-        /* CORREÇÃO DA ROLAGEM NO MENU: Esconde a barra visual mas mantém a funcionalidade */
         .sidebar::-webkit-scrollbar, .nav-menu::-webkit-scrollbar { display: none; }
         .sidebar, .nav-menu { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -793,6 +792,12 @@ export default function AdminPage() {
           .grid-metrics { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
           table th, table td { font-size: 12px; padding: 10px; }
           .modal-content { padding: 20px; margin: 10px; }
+          .sidebar { transform: translateX(-100%); z-index: 1000; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
+          .sidebar.open { transform: translateX(0); }
+          .mobile-menu-btn { display: block; }
+          .close-menu-btn { display: block; }
+          header { flex-direction: column; align-items: flex-start !important; gap: 15px; }
+          .header-controls { width: 100%; flex-wrap: wrap; }
         }
       `}</style>
 
