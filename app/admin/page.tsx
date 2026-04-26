@@ -311,13 +311,6 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
-  const diasSemInteracao = useCallback((prop: PropostaDB): number => {
-    if (prop.status === 'fechada' || prop.status === 'perdida') return 0;
-    const intsCliente = interacoes.filter(i => prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    const dataRef = intsCliente.length > 0 ? new Date(intsCliente[0].created_at) : new Date(prop.created_at);
-    return Math.floor((Date.now() - dataRef.getTime()) / (1000 * 60 * 60 * 24));
-  }, [interacoes]);
-
   const tarefasComAtraso = useMemo(() => tarefas.map(t => {
       if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) return { ...t, status: 'Atrasado' as string };
       return t;
@@ -471,6 +464,29 @@ export default function AdminPage() {
     const obs = prop.dados?.obs || "";
     return `<div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;"><div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;"><div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">Simples Solução TI</h2></div><div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div></div><h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SERVIÇOS TÉCNICOS</h1><p>Rio de Janeiro, ${dataFormatada}</p><p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p><p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p><p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>.</p><div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div><h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2><table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;"><tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr><tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção de TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr></table>${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações Adicionais</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}</div>`;
   };
+
+  const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
+    let foneParaTentar = prop.telefone || "";
+    const cb = prop.cliente_id ? clientesBase.find(c => c.id === prop.cliente_id) : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    if (cb) foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
+    setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(foneParaTentar) });
+    setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
+  };
+
+  useEffect(() => {
+    if (modalEnvioProposta.prop && formEnvioMensagem.templateId) {
+      if (formEnvioMensagem.templateId === 'custom') {
+        setFormEnvioMensagem(prev => ({ ...prev, texto: '', assunto: '' }));
+      } else {
+        const tpl = templates.find(t => t.id.toString() === formEnvioMensagem.templateId);
+        if (tpl) {
+          const txt = processarTemplate(tpl.conteudo, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor);
+          const ass = tpl.assunto ? processarTemplate(tpl.assunto, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor) : '';
+          setFormEnvioMensagem(prev => ({ ...prev, texto: txt, assunto: ass }));
+        }
+      }
+    }
+  }, [formEnvioMensagem.templateId, modalEnvioProposta.prop, templates]);
 
   const confirmarEnvioMensagem = async (e: React.FormEvent) => {
     e.preventDefault();
