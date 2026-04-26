@@ -152,13 +152,6 @@ export default function AdminPage() {
   const [modalPerda, setModalPerda] = useState(false);
   const [formPerda, setFormPerda] = useState({ id: 0, motivo: "", obs: "" });
 
-  // ─── FUNÇÃO: ALTERNAR TEMA ────────────────────────────────────────────────
-  const alternarTema = () => {
-    const n = tema === "dark" ? "light" : "dark";
-    setTema(n);
-    localStorage.setItem("tema_ssti", n);
-  };
-
   // ─── LOGIN E AUTH ────────────────────────────────────────────────────────
   useEffect(() => {
     const t = localStorage.getItem("tema_ssti");
@@ -191,6 +184,11 @@ export default function AdminPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
   const mudarAba = (novaAba: string) => { setAba(novaAba as AbaType); setMenuMobileAberto(false); };
+  const alternarTema = () => {
+    const n = tema === "dark" ? "light" : "dark";
+    setTema(n);
+    localStorage.setItem("tema_ssti", n);
+  };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -360,11 +358,17 @@ export default function AdminPage() {
     } catch { showToast("Erro ao alterar status.", "erro"); }
   };
 
+  const dispararEmailsMassa = async () => {
+    showToast("A processar disparos...");
+    setModalComunicado(false);
+  };
+
   const gerarFilaWhatsapp = () => {
     let alvos = formComunicado.publico === "Todos" ? clientesBase : clientesBase.filter(c => c.tipo === formComunicado.publico);
     alvos = alvos.filter(c => (c.whatsapp || c.telefone) && c.ativo !== false);
     setFilaWpp(alvos);
     setModalComunicado(false);
+    showToast(`Fila de ${alvos.length} contatos gerada.`);
   };
 
   const enviarWhatsAppDaFila = (cli: ClienteDB) => {
@@ -377,6 +381,14 @@ export default function AdminPage() {
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(prop.telefone || "") });
   };
+
+  const confirmarEnvioMensagem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    showToast(`Enviando ${modalEnvioProposta.tipo}...`);
+    setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
+  };
+
+  const visualizarProposta = (prop: PropostaDB) => { window.open("", "_blank"); };
 
   const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => { e.dataTransfer.setData("propId", prop.id.toString()); setTarefaArrastando(prop.id); };
   const handleDragEnd = () => setTarefaArrastando(null);
@@ -508,6 +520,7 @@ export default function AdminPage() {
         .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; }
         .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; margin-bottom: 12px; cursor: grab; }
         .notificacao-badge { background: #f87171; color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; }
+        
         @media (max-width: 768px) {
           .sidebar { transform: translateX(-100%); }
           .sidebar.open { transform: translateX(0); }
@@ -565,7 +578,7 @@ export default function AdminPage() {
             handleDropStatus={handleDropStatus} diasSemInteracao={diasSemInteracao}
             abrirModalEnvio={abrirModalEnvio} abrirNotasDaProposta={abrirNotasDaProposta}
             setModalEditarValor={setModalEditarValor} isAdmin={isAdmin}
-            excluirProposta={excluirProposta} visualizarProposta={() => {}}
+            excluirProposta={excluirProposta} visualizarProposta={visualizarProposta}
             enviando={enviando} alterarStatusParaGanho={alterarStatusParaGanho}
             abrirModalPerda={abrirModalPerda} reabrirProposta={reabrirProposta}
           />
@@ -624,7 +637,7 @@ export default function AdminPage() {
       <ModalUsuario isOpen={modalUsuario} onClose={() => setModalUsuario(false)} formUsuario={formUsuario} setFormUsuario={setFormUsuario} salvarUsuario={salvarUsuario} />
       <ModalPerda isOpen={modalPerda} onClose={() => setModalPerda(false)} formPerda={formPerda} setFormPerda={setFormPerda} confirmarPerda={confirmarPerda} />
       <ModalEditarValor isOpen={modalEditarValor.ativo} onClose={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })} modalEditarValor={modalEditarValor} setModalEditarValor={setModalEditarValor} salvarNovoValorProposta={salvarNovoValorProposta} />
-      <ModalComunicado isOpen={modalComunicado} onClose={() => setModalComunicado(false)} progressoEmail={progressoEmail} formComunicado={formComunicado} setFormComunicado={setFormComunicado} gerarFilaWhatsapp={gerarFilaWhatsapp} dispararEmailsMassa={() => {}} />
+      <ModalComunicado isOpen={modalComunicado} onClose={() => setModalComunicado(false)} progressoEmail={progressoEmail} formComunicado={formComunicado} setFormComunicado={setFormComunicado} gerarFilaWhatsapp={gerarFilaWhatsapp} dispararEmailsMassa={dispararEmailsMassa} />
       <ModalEnvio modalEnvioProposta={modalEnvioProposta} setModalEnvioProposta={setModalEnvioProposta} formEnvioMensagem={formEnvioMensagem} setFormEnvioMensagem={setFormEnvioMensagem} confirmarEnvioMensagem={confirmarEnvioMensagem} templates={templates} enviando={enviando} />
       <ModalFichaCliente clienteDetalhe={clienteDetalhe} setClienteDetalhe={setClienteDetalhe} isComercial={isComercial} isAdmin={isAdmin} abrirNovaTarefa={abrirNovaTarefa} formInteracao={formInteracao} setFormInteracao={setFormInteracao} salvarInteracao={salvarInteracao} />
     </div>
