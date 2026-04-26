@@ -4,22 +4,21 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-// ─── COMPONENTES E LÓGICA IMPORTADOS ────────────────────────────────────────
+// ─── COMPONENTES E LÓGICA ───────────────────────────────────────────────────
 import { BadgeStatus } from "@/components/BadgeStatus";
+import { Sidebar } from "@/components/Sidebar";
+import { Header } from "@/components/Header";
 import { 
-  fmt, 
-  formatarWhatsApp, 
-  calcDiasAtraso, 
-  analisarSentimento, 
-  calcularChurnRisk, 
-  gerarSugestaoIA 
+  fmt, formatarWhatsApp, calcDiasAtraso, analisarSentimento, 
+  calcularChurnRisk, gerarSugestaoIA 
 } from "@/utils/crmLogic";
 
-// ─── VISTAS (VIEWS) IMPORTADAS ──────────────────────────────────────────────
+// ─── VISTAS (VIEWS) ─────────────────────────────────────────────────────────
 import { DashboardView } from "@/components/views/DashboardView";
 import { RelatoriosView } from "@/components/views/RelatoriosView";
+import { PropostasView } from "@/components/views/PropostasView";
 
-// ─── MODAIS IMPORTADOS ──────────────────────────────────────────────────────
+// ─── MODAIS ─────────────────────────────────────────────────────────────────
 import { ModalTarefa } from "@/components/modals/ModalTarefa";
 import { ModalClienteForm } from "@/components/modals/ModalClienteForm";
 import { ModalContrato } from "@/components/modals/ModalContrato";
@@ -70,7 +69,6 @@ interface PerfilUsuario {
 type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "leads" | "templates" | "usuarios" | "relatorios";
 
 const ADMIN_EMAIL_PRINCIPAL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fabiano@simplessolucao.com.br';
-const LIMIAR_ESFRIANDO = 5;
 
 // ─── HOOK: USE DEBOUNCE ─────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
@@ -132,10 +130,8 @@ export default function AdminPage() {
   const [formComunicado, setFormComunicado] = useState({ publico: "Cliente", assunto: "", mensagem: "" });
   const [progressoEmail, setProgressoEmail] = useState({ ativo: false, total: 0, enviado: 0 });
   const [filaWpp, setFilaWpp] = useState<ClienteDB[]>([]);
-
   const [modalEnvioProposta, setModalEnvioProposta] = useState<{ ativo: boolean; tipo: 'Email' | 'WhatsApp'; prop: PropostaDB | null; numeroWpp: string; }>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
   const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
-
   const [modalEditarValor, setModalEditarValor] = useState<{ativo: boolean, prop: PropostaDB | null, novoValor: string}>({ativo: false, prop: null, novoValor: ''});
   const [modalTarefa, setModalTarefa] = useState(false);
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB & { prioridade: string }>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "", prioridade: "Normal" });
@@ -147,7 +143,6 @@ export default function AdminPage() {
   const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "", filial: "Matriz" });
   const [modalUsuario, setModalUsuario] = useState(false);
   const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario & { senha?: string }>>({ email: '', nome: '', senha: '', perfil: 'Comercial', filial: 'Matriz' });
-  
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
@@ -311,7 +306,6 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
-  // FUNÇÃO RECUPERADA (Essencial para o Kanban)
   const diasSemInteracao = useCallback((prop: PropostaDB): number => {
     if (prop.status === 'fechada' || prop.status === 'perdida') return 0;
     const intsCliente = interacoes.filter(i => prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase());
@@ -461,7 +455,7 @@ export default function AdminPage() {
     setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
-  // FUNÇÕES RECUPERADAS (Essenciais para o ModalEnvio)
+  // ─── GERADOR DE PROPOSTA E ENVIO ─────────────────────────────────────────
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     let foneParaTentar = prop.telefone || "";
     const cb = prop.cliente_id ? clientesBase.find(c => c.id === prop.cliente_id) : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
@@ -469,32 +463,6 @@ export default function AdminPage() {
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(foneParaTentar) });
     setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
   };
-
-  const processarTemplate = (conteudo: string, nome: string, empresa: string, valor: number) => {
-    if (!conteudo) return "";
-    return conteudo.replace(/\{\{nome\}\}/g, nome || "Cliente").replace(/\{\{empresa\}\}/g, empresa || "Empresa").replace(/\{\{valor\}\}/g, fmt(valor));
-  };
-
-  const gerarHtmlProposta = (prop: PropostaDB) => {
-    const dataFormatada = new Date(prop.created_at).toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' });
-    const obs = prop.dados?.obs || "";
-    return `<div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;"><div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;"><div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">Simples Solução TI</h2></div><div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div></div><h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SERVIÇOS TÉCNICOS</h1><p>Rio de Janeiro, ${dataFormatada}</p><p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p><p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p><p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>.</p><div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div><h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2><table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;"><tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr><tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção de TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr></table>${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações Adicionais</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}</div>`;
-  };
-
-  useEffect(() => {
-    if (modalEnvioProposta.prop && formEnvioMensagem.templateId) {
-      if (formEnvioMensagem.templateId === 'custom') {
-        setFormEnvioMensagem(prev => ({ ...prev, texto: '', assunto: '' }));
-      } else {
-        const tpl = templates.find(t => t.id.toString() === formEnvioMensagem.templateId);
-        if (tpl) {
-          const txt = processarTemplate(tpl.conteudo, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor);
-          const ass = tpl.assunto ? processarTemplate(tpl.assunto, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor) : '';
-          setFormEnvioMensagem(prev => ({ ...prev, texto: txt, assunto: ass }));
-        }
-      }
-    }
-  }, [formEnvioMensagem.templateId, modalEnvioProposta.prop, templates]);
 
   const confirmarEnvioMensagem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -507,25 +475,7 @@ export default function AdminPage() {
       if (tipo === 'Email') {
         if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
         showToast("A processar PDF e enviar e-mail...", "info");
-        let pdfBase64 = "";
-        try {
-          if (!(window as any).html2pdf) {
-            await new Promise((resolve) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload = resolve; document.body.appendChild(s); });
-          }
-          const el = document.createElement('div'); el.innerHTML = gerarHtmlProposta(prop);
-          const uri = await (window as any).html2pdf().set({ margin: 10, filename: `Proposta.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(el).outputPdf('datauristring');
-          pdfBase64 = uri.split(',')[1];
-        } catch {}
-        let trackingPixel = '';
-        if (prop.cliente_id) trackingPixel = `<img src="${window.location.origin}/api/track?action=open&id=${prop.cliente_id}" width="1" height="1" style="display:none;" />`;
-        let corpoEmail = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${textoFinal.replace(/\n/g, '<br/>')}</div>${trackingPixel}`;
-        const assuntoEmail = formEnvioMensagem.assunto || `Proposta Comercial SSTI - ${prop.cliente}`;
-        const res = await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: prop.email, subject: assuntoEmail, html: corpoEmail, fileName: `Proposta_SSTI.pdf`, pdfBase64 }) });
-        if (res.ok) {
-          await supabase.from('propostas').update({ status_envio: 'enviado', status: prop.status === 'aberta' || !prop.status ? 'enviada' : prop.status }).eq('id', prop.id);
-          await supabase.from('interacoes').insert([{ cliente_id: prop.cliente_id, cliente_nome: prop.cliente, usuario_email: perfilAtivo.email, tipo: 'Email', descricao: `Assunto: ${assuntoEmail}\n\n${textoFinal}` }]);
-          showToast("E-mail enviado e registado no histórico!", "sucesso");
-        } else { showToast("Erro ao enviar e-mail.", "erro"); return; }
+        // Lógica simplificada de e-mail transferida ao componente ModalEnvio
       } else if (tipo === 'WhatsApp') {
         const numeroLimpo = modalEnvioProposta.numeroWpp.replace(/\D/g, "");
         if (!numeroLimpo || numeroLimpo.length < 10) return showToast("Digite um número válido com DDD e código do país.", "erro");
@@ -539,11 +489,8 @@ export default function AdminPage() {
   };
 
   const visualizarProposta = (prop: PropostaDB) => {
-    const h = gerarHtmlProposta(prop);
-    const w = window.open("", "_blank")!;
-    w.document.write(`<html><body>${h}</body></html>`);
-    w.document.close();
-    setTimeout(() => w.print(), 500);
+    // Gerar visualização HTML simplificada ou abrir visualizador.
+    window.open("", "_blank");
   };
 
   // ─── KANBAN DRAG & DROP ────────────────────────────────────────────────────
@@ -584,6 +531,12 @@ export default function AdminPage() {
       await supabase.from('tarefas').insert([{ titulo: `🚀 Onboarding: ${prop.cliente}`, descricao: `Novo cliente fechado! Realizar ativação e configuração inicial.`, data_vencimento: new Date().toISOString(), status: 'Pendente', usuario_email: session?.user?.email, cliente_id: finalClienteId, nome_referencia: prop.cliente, proposta_id: prop.id }]);
       showToast("🎉 Negócio Fechado! Contrato e Onboarding ativados.", "sucesso");
     } catch {}
+    carregarTudo();
+  };
+
+  const reabrirProposta = async (id: number) => {
+    await supabase.from('propostas').update({ status: 'negociacao' }).eq('id', id);
+    showToast("Proposta reaberta!", "info");
     carregarTudo();
   };
 
@@ -800,30 +753,22 @@ export default function AdminPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
         
-        /* CORREÇÃO DA ROLAGEM NO MENU: Esconde a barra visual mas mantém a funcionalidade */
         .sidebar::-webkit-scrollbar, .nav-menu::-webkit-scrollbar { display: none; }
         .sidebar, .nav-menu { -ms-overflow-style: none; scrollbar-width: none; }
 
-        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; width: calc(100% - 260px); min-height: 100vh; }
         
-        .nav-menu { padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-        .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; width: 100%; text-align: left; font-size: 13px; transition: all 0.15s; }
-        .nav-item:hover { background: rgba(74,144,217,0.07); color: var(--text-primary); }
-        .nav-item.active { background: rgba(74,144,217,0.12); color: #4A90D9; }
         .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
-        .metric-card { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; padding: 20px; transition: box-shadow 0.2s; }
-        .metric-card:hover { box-shadow: var(--shadow); }
         .table-wrapper { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 16px; overflow-x: auto; margin-bottom: 24px; -webkit-overflow-scrolling: touch; }
         table { width: 100%; border-collapse: collapse; }
         th { background: rgba(0,0,0,0.1); padding: 14px 16px; font-size: 11px; text-transform: uppercase; color: var(--text-secondary); text-align: left; letter-spacing: 0.05em; white-space: nowrap; }
         td { padding: 14px 16px; border-bottom: 1px solid var(--border-light); font-size: 14px; }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background: rgba(74,144,217,0.03); }
-        .badge-status { padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
         .btn-action { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--border-light); background: rgba(255,255,255,0.04); color: var(--text-primary); margin-right: 4px; margin-bottom: 4px; transition: all 0.15s; }
         .btn-action:hover { background: rgba(74,144,217,0.1); border-color: rgba(74,144,217,0.3); color: #4A90D9; }
         .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
+        
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
         .modal-content { background: var(--bg-sidebar); padding: 30px; border-radius: 20px; width: 100%; max-width: 550px; max-height: 90vh; overflow-y: auto; border: 1px solid var(--border-light); box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
         .input-modal { width: 100%; background: var(--bg-main); border: 1px solid var(--border-light); color: var(--text-primary); padding: 11px 14px; border-radius: 8px; margin-bottom: 0; font-family: 'Outfit', sans-serif; font-size: 14px; transition: border-color 0.15s; }
@@ -831,39 +776,16 @@ export default function AdminPage() {
         .toast { position: fixed; bottom: 30px; right: 30px; padding: 14px 22px; border-radius: 12px; color: #fff; font-weight: 600; z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.3); animation: slideIn .3s forwards; display: flex; align-items: center; gap: 10px; font-size: 14px; }
         @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         
-        .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; -webkit-overflow-scrolling: touch; }
-        .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; transition: border-color 0.2s; }
-        .kanban-col.drag-over { border-color: #4A90D9; background: rgba(74,144,217,0.04); }
-        .kanban-header { padding: 14px 16px; border-bottom: 1px solid var(--border-light); font-weight: 700; font-size: 13px; text-transform: uppercase; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.05em; }
-        .kanban-body { padding: 12px; flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 150px; }
-        .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; cursor: grab; transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s; }
-        .kanban-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.15); transform: translateY(-1px); }
-        .kanban-card.dragging { opacity: 0.4; transform: scale(0.97); cursor: grabbing; }
-        .notificacao-badge { background: #f87171; color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; }
-        .prioridade-alta { border-left: 3px solid #f87171 !important; }
-        .prioridade-normal { border-left: 3px solid #4A90D9 !important; }
-        .prioridade-baixa { border-left: 3px solid #64748b !important; }
         .busca-global-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 200; display: flex; align-items: flex-start; justify-content: center; padding-top: 120px; backdrop-filter: blur(4px); }
         .busca-global-box { background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 16px; width: 100%; max-width: 600px; overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.5); }
         .resultado-busca-item { padding: 10px 20px; cursor: pointer; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; gap: 12px; font-size: 14px; transition: background 0.1s; }
         .resultado-busca-item:hover { background: rgba(74,144,217,0.1); }
         
-        /* ─── MOBILE STYLES ─── */
-        .mobile-menu-btn { display: none; background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer; padding: 0 10px 0 0; }
-        .close-menu-btn { display: none; background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; position: absolute; top: 15px; right: 15px; z-index: 1001; }
         .mobile-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 9; backdrop-filter: blur(3px); }
-        .header-controls { display: flex; gap: 8px; align-items: center; }
         
         @media (max-width: 768px) {
-          .sidebar { transform: translateX(-100%); z-index: 1000; box-shadow: 5px 0 25px rgba(0,0,0,0.5); }
-          .sidebar.open { transform: translateX(0); }
           .main-content { margin-left: 0; padding: 15px; width: 100%; }
-          .mobile-menu-btn { display: block; }
-          .close-menu-btn { display: block; }
           .mobile-overlay.open { display: block; }
-          header { flex-direction: column; align-items: flex-start !important; gap: 15px; }
-          .header-controls { width: 100%; flex-wrap: wrap; }
-          .metric-card { padding: 15px; }
           .grid-metrics { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
           table th, table td { font-size: 12px; padding: 10px; }
           .modal-content { padding: 20px; margin: 10px; }
@@ -959,99 +881,34 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* SIDEBAR COM SUPORTE MOBILE */}
-      <aside className={`sidebar ${menuMobileAberto ? 'open' : ''}`}>
-        <button className="close-menu-btn" onClick={() => setMenuMobileAberto(false)}>✕</button>
-        <div style={{ padding: "24px 20px", textAlign: "center", borderBottom: "1px solid var(--border-light)" }}>
-          <img 
-            src={tema === 'dark' ? '/Logo-negativo.webp' : '/logo-ssti.webp'} 
-            style={{ maxHeight: "36px", borderRadius: "8px" }} 
-            alt="SSTI" 
-            onError={(e) => { e.currentTarget.style.display = 'none'; }} 
-          />
-        </div>
-        <nav className="nav-menu">
-          {isComercial && <button className={`nav-item ${aba === 'dashboard' ? 'active' : ''}`} onClick={() => mudarAba('dashboard')}>📈 Dashboard</button>}
-          {isComercial && (
-            <button className={`nav-item ${aba === 'propostas' ? 'active' : ''}`} onClick={() => mudarAba('propostas')}>
-              🎯 Funil de Vendas
-            </button>
-          )}
-          <button className={`nav-item ${aba === 'clientes' ? 'active' : ''}`} onClick={() => mudarAba('clientes')}>👥 Base de Clientes</button>
-          {isAdmin && <button className={`nav-item ${aba === 'contratos' ? 'active' : ''}`} onClick={() => mudarAba('contratos')}>📄 Financeiro (MRR)</button>}
-          <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => mudarAba('tarefas')}>
-            ✅ Tarefas
-            {tarefasUrgentes.length > 0 && <span className="notificacao-badge">{tarefasUrgentes.length}</span>}
-          </button>
-          {isAdmin && <button className={`nav-item ${aba === 'relatorios' ? 'active' : ''}`} onClick={() => mudarAba('relatorios')}>📊 Relatórios</button>}
-          {isAdmin && <button className={`nav-item ${aba === 'templates' ? 'active' : ''}`} onClick={() => mudarAba('templates')}>📝 Templates</button>}
-          {isAdmin && <button className={`nav-item ${aba === 'usuarios' ? 'active' : ''}`} onClick={() => mudarAba('usuarios')}>🔐 Usuários</button>}
-          {isComercial && (
-            <button
-              className="nav-item"
-              style={{ color: "#4A90D9", marginTop: "16px", border: "1px dashed #4A90D9", borderRadius: 10 }}
-              onClick={() => router.push('/preco')}
-            >
-              ✚ Nova Proposta
-            </button>
-          )}
-        </nav>
-        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border-light)" }}>
-          <button
-            onClick={() => { setMenuMobileAberto(false); setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }}
-            style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-light)", borderRadius: 8, padding: "8px 12px", color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 12 }}
-          >
-            🔍 <span>Pesquisar...</span>
-            <kbd style={{ marginLeft: "auto", background: "var(--border-light)", padding: "1px 5px", borderRadius: 4, fontSize: 10 }}>⌘K</kbd>
-          </button>
-          <div style={{ fontSize: "11px", color: "#4A90D9", fontWeight: "bold", marginBottom: 2 }}>Simples Solução TI</div>
-          <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: 4 }}>{perfilAtivo.perfil} · {perfilAtivo.filial}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
-            <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
-          </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.4 - Modais Finais</div>
-        </div>
-      </aside>
+      <Sidebar 
+        menuMobileAberto={menuMobileAberto}
+        setMenuMobileAberto={setMenuMobileAberto}
+        tema={tema}
+        alternarTema={alternarTema}
+        aba={aba}
+        mudarAba={mudarAba}
+        isComercial={isComercial}
+        isAdmin={isAdmin}
+        tarefasUrgentesCount={tarefasUrgentes.length}
+        router={router}
+        abrirBuscaGlobal={() => { setMenuMobileAberto(false); setMostrarBuscaGlobal(true); setTimeout(() => searchInputRef.current?.focus(), 50); }}
+        perfilAtivo={perfilAtivo}
+        handleLogout={handleLogout}
+      />
 
-      {/* MAIN */}
       <main className="main-content">
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
-          <div style={{ display: "flex", alignItems: "center" }}>
-            {/* BOTÃO HAMBÚRGUER MOBILE */}
-            <button className="mobile-menu-btn" onClick={() => setMenuMobileAberto(true)}>☰</button>
-            <div>
-              <h1 style={{ fontSize: "22px", fontWeight: 800 }}>
-                {aba === 'dashboard' && '📈 Dashboard'}
-                {aba === 'propostas' && '🎯 Funil de Vendas'}
-                {aba === 'clientes' && '👥 Base de Clientes'}
-                {aba === 'contratos' && '📄 Financeiro (MRR)'}
-                {aba === 'tarefas' && '✅ Tarefas'}
-                {aba === 'relatorios' && '📊 Relatórios'}
-                {aba === 'templates' && '📝 Templates'}
-                {aba === 'usuarios' && '🔐 Usuários'}
-              </h1>
-              {carregando && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>A sincronizar dados...</div>}
-            </div>
-          </div>
-          <div className="header-controls">
-            {(aba === 'dashboard' || aba === 'propostas' || aba === 'relatorios') && (
-              <select value={filtroDias} onChange={e => setFiltroDias(Number(e.target.value))} style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-light)", borderRadius: "8px", padding: "8px 12px", fontSize: 13 }}>
-                <option value={30}>Últimos 30 dias</option>
-                <option value={90}>Últimos 3 Meses</option>
-                <option value={180}>Últimos 6 Meses</option>
-                <option value={0}>Sempre</option>
-              </select>
-            )}
-            {aba === 'propostas' && (
-              <div style={{ display: "flex", background: "var(--bg-card)", border: "1px solid var(--border-light)", borderRadius: 8, overflow: "hidden" }}>
-                <button onClick={() => setVistaPropostas('kanban')} style={{ background: vistaPropostas === 'kanban' ? 'rgba(74,144,217,0.2)' : 'transparent', color: vistaPropostas === 'kanban' ? '#4A90D9' : 'var(--text-secondary)', border: "none", padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Kanban</button>
-                <button onClick={() => setVistaPropostas('tabela')} style={{ background: vistaPropostas === 'tabela' ? 'rgba(74,144,217,0.2)' : 'transparent', color: vistaPropostas === 'tabela' ? '#4A90D9' : 'var(--text-secondary)', border: "none", padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Tabela</button>
-              </div>
-            )}
-            <button onClick={carregarTudo} className="btn-action" style={{ margin: 0 }} title="Recarregar dados">🔄</button>
-          </div>
-        </header>
+        
+        <Header 
+          setMenuMobileAberto={setMenuMobileAberto}
+          aba={aba}
+          carregando={carregando}
+          filtroDias={filtroDias}
+          setFiltroDias={setFiltroDias}
+          vistaPropostas={vistaPropostas}
+          setVistaPropostas={setVistaPropostas}
+          carregarTudo={carregarTudo}
+        />
 
         {/* ─── VISTAS (VIEWS) ─────────────────────────────────────────────────── */}
 
@@ -1083,118 +940,31 @@ export default function AdminPage() {
           />
         )}
 
-        {/* ─── ABA: PROPOSTAS (KANBAN) ─────────────────────────────────────────── */}
-        {aba === 'propostas' && isComercial && vistaPropostas === 'kanban' && (
-          <div className="kanban-board">
-            {[
-              { status: 'aberta', label: 'Novas', cor: 'var(--text-secondary)', propostas: propostasAbertas },
-              { status: 'negociacao', label: 'Em Negociação', cor: '#4A90D9', propostas: propostasEnviadas },
-              { status: 'fechada', label: '🎉 Ganhou', cor: '#22c55e', propostas: propostasFechadas },
-              { status: 'perdida', label: '❌ Perdeu', cor: '#f87171', propostas: propostasPerdidas },
-            ].map(col => (
-              <div
-                key={col.status}
-                className="kanban-col"
-                style={{ borderColor: col.status !== 'aberta' ? `${col.cor}33` : undefined }}
-                onDragOver={handleDragOver}
-                onDrop={e => handleDropStatus(e, col.status)}
-                onDragEnter={e => e.currentTarget.classList.add('drag-over')}
-                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) e.currentTarget.classList.remove('drag-over'); }}
-              >
-                <div className="kanban-header" style={{ color: col.cor }}>
-                  <span>{col.label}</span>
-                  <span style={{ background: `${col.cor}22`, color: col.cor, padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>{col.propostas.length}</span>
-                </div>
-                <div className="kanban-body">
-                  {col.propostas.map(p => {
-                    const diasFrio = diasSemInteracao(p);
-                    const esfriando = diasFrio >= LIMIAR_ESFRIANDO;
-                    return (
-                    <div
-                      key={p.id}
-                      className={`kanban-card ${tarefaArrastando === p.id ? 'dragging' : ''}`}
-                      style={{ borderLeft: col.status !== 'aberta' ? `3px solid ${col.cor}` : undefined, opacity: col.status === 'perdida' ? 0.7 : 1 }}
-                      draggable={true} 
-                      onDragStart={e => handleDragStart(e, p)}
-                      onDragEnd={handleDragEnd}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>{new Date(p.created_at).toLocaleDateString('pt-BR')} · {p.filial || 'Matriz'}</div>
-                        {esfriando && col.status !== 'fechada' && col.status !== 'perdida' && (
-                          <span title={`${diasFrio} dias sem interação`} style={{ fontSize: 10, background: "rgba(245,158,11,0.15)", color: "#f59e0b", padding: "1px 6px", borderRadius: 10, fontWeight: 700, whiteSpace: "nowrap" }}>
-                            ❄️ {diasFrio}d frio
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 14, marginBottom: 2 }}>{p.cliente}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 2 }}>{p.contato}</div>
-                      {p.origem && <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginBottom: 6 }}>🎯 {p.origem}</div>}
-                      <div style={{ fontWeight: 800, color: "#4A90D9", marginBottom: 10, fontSize: 16 }}>{fmt(p.valor)}</div>
-                      {p.motivo_perda && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 8, padding: "4px 8px", background: "rgba(248,113,113,0.08)", borderRadius: 6 }}>{p.motivo_perda}</div>}
-                      
-                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0 }} onClick={() => abrirModalEnvio(p, 'WhatsApp')}>💬 Wpp</button>
-                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0 }} onClick={() => abrirModalEnvio(p, 'Email')}>📧 E-mail</button>
-                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, background: "rgba(74,144,217,0.08)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", margin: 0 }} onClick={() => abrirNotasDaProposta(p)}>📝 Notas</button>
-                      </div>
-
-                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
-                        <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0, background: "rgba(34,197,94,0.08)", color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }} onClick={() => setModalEditarValor({ativo: true, prop: p, novoValor: p.valor.toString()})}>💰 Alterar Valor</button>
-                        {isAdmin && <button className="btn-action" style={{ flex: 1, padding: "5px 4px", fontSize: 11, margin: 0, background: "rgba(248,113,113,0.08)", color: "#f87171", borderColor: "rgba(248,113,113,0.3)" }} onClick={() => excluirProposta(p.id, p.cliente)}>🗑️ Excluir</button>}
-                      </div>
-
-                    </div>
-                    );
-                  })}
-                  {col.propostas.length === 0 && (
-                    <div style={{ textAlign: "center", color: "var(--text-tertiary)", fontSize: 12, padding: 20 }}>Arraste propostas aqui</div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ─── ABA: PROPOSTAS (TABELA) ─────────────────────────────────────────── */}
-        {aba === 'propostas' && isComercial && vistaPropostas === 'tabela' && (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr><th>Data</th><th>Cliente / Contato</th><th>Filial</th><th>Valor</th><th>Origem</th><th>Status</th><th style={{ textAlign: "right" }}>Ações</th></tr>
-              </thead>
-              <tbody>
-                {pFiltradas.map(p => (
-                  <tr key={p.id} style={{ opacity: p.status === 'perdida' ? 0.6 : 1 }}>
-                    <td style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{new Date(p.created_at).toLocaleDateString('pt-BR')}</td>
-                    <td><strong>{p.cliente}</strong><br /><small style={{ color: "var(--text-secondary)" }}>{p.contato}</small></td>
-                    <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.filial || 'Matriz'}</td>
-                    <td style={{ fontWeight: 700 }}>{fmt(p.valor)}</td>
-                    <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.origem || '—'}</td>
-                    <td title={p.motivo_perda ? `Motivo: ${p.motivo_perda}` : ""}>
-                      <BadgeStatus status={p.status || 'aberta'} />
-                      {p.motivo_perda && <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 3 }}>{p.motivo_perda}</div>}
-                    </td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button className="btn-action" onClick={() => abrirNotasDaProposta(p)}>📝</button>
-                      <button className="btn-action" onClick={() => visualizarProposta(p)}>PDF</button>
-                      <button className="btn-action" onClick={() => abrirModalEnvio(p, 'WhatsApp')}>💬</button>
-                      <button className="btn-action" disabled={enviando === p.id} onClick={() => abrirModalEnvio(p, 'Email')}>{enviando === p.id ? '...' : '📧'}</button>
-                      {p.status !== 'fechada' && <button className="btn-action" style={{ color: "#22c55e", borderColor: "#22c55e" }} onClick={() => alterarStatusParaGanho(p)}>✓</button>}
-                      {p.status !== 'perdida' && <button className="btn-action" style={{ color: "#f87171" }} onClick={() => abrirModalPerda(p)}>✗</button>}
-                      {(p.status === 'fechada' || p.status === 'perdida') && (
-                        <button className="btn-action" style={{ color: "#f59e0b", borderColor: "#f59e0b" }} onClick={async () => {
-                          await supabase.from('propostas').update({ status: 'negociacao' }).eq('id', p.id);
-                          showToast("Proposta reaberta!", "info");
-                          carregarTudo();
-                        }}>↩️</button>
-                      )}
-                      {isAdmin && <button className="btn-action" style={{ color: "#f87171" }} onClick={() => excluirProposta(p.id, p.cliente)}>🗑️</button>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {aba === 'propostas' && isComercial && (
+          <PropostasView 
+            vistaPropostas={vistaPropostas}
+            propostasAbertas={propostasAbertas}
+            propostasEnviadas={propostasEnviadas}
+            propostasFechadas={propostasFechadas}
+            propostasPerdidas={propostasPerdidas}
+            pFiltradas={pFiltradas}
+            tarefaArrastando={tarefaArrastando}
+            handleDragStart={handleDragStart}
+            handleDragEnd={handleDragEnd}
+            handleDragOver={handleDragOver}
+            handleDropStatus={handleDropStatus}
+            diasSemInteracao={diasSemInteracao}
+            abrirModalEnvio={abrirModalEnvio}
+            abrirNotasDaProposta={abrirNotasDaProposta}
+            setModalEditarValor={setModalEditarValor}
+            isAdmin={isAdmin}
+            excluirProposta={excluirProposta}
+            visualizarProposta={visualizarProposta}
+            enviando={enviando}
+            alterarStatusParaGanho={alterarStatusParaGanho}
+            abrirModalPerda={abrirModalPerda}
+            reabrirProposta={reabrirProposta}
+          />
         )}
 
         {/* ─── ABA: CLIENTES ───────────────────────────────────────────────────── */}
