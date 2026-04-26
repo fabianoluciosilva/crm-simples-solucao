@@ -1,9 +1,8 @@
-import React from "react";
-import {
-  Tooltip as ChartTooltip, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line
+import React, { useMemo } from "react";
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  LineChart, Line, Legend, Cell, PieChart, Pie 
 } from 'recharts';
-import { MetricCard } from "@/components/MetricCard";
 import { fmt } from "@/utils/crmLogic";
 
 interface RelatoriosViewProps {
@@ -17,46 +16,94 @@ interface RelatoriosViewProps {
 export const RelatoriosView = ({
   clientesAgrupados, contratos, mrrAtivo, ticketMedio, dadosPipelineMensal
 }: RelatoriosViewProps) => {
+
+  // Cálculo de Saúde da Base
+  const statsFinanceiras = useMemo(() => {
+    const totalContratos = contratos.filter(c => c.status === 'Ativo').length;
+    const mrrTotal = contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0);
+    const tMedio = totalContratos > 0 ? mrrTotal / totalContratos : 0;
+    
+    // Simulação de Churn (Contratos cancelados nos últimos 30 dias)
+    const contratosCancelados = contratos.filter(c => c.status === 'Cancelado').length;
+
+    return { totalContratos, mrrTotal, tMedio, contratosCancelados };
+  }, [contratos]);
+
   return (
-    <>
-      <div className="grid-metrics" style={{ marginBottom: 24 }}>
-        <MetricCard label="CLIENTES ATIVOS" value={clientesAgrupados.filter(c => c.tipo === 'Cliente' && c.ativo !== false).length} icon="👥" />
-        <MetricCard label="LEADS NA BASE" value={clientesAgrupados.filter(c => c.tipo === 'Lead').length} color="#f59e0b" icon="🎯" />
-        <MetricCard label="CONTRATOS ATIVOS" value={contratos.filter(c => c.status === 'Ativo').length} color="#22c55e" icon="📄" />
-        <MetricCard label="CHURN (CANCELADOS)" value={contratos.filter(c => c.status === 'Cancelado').length} color="#f87171" icon="📉" />
-        <MetricCard label="MRR TOTAL" value={fmt(mrrAtivo)} color="#22c55e" icon="💰" />
-        <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} icon="🎟️" />
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      
+      {/* Cards de Métricas Financeiras */}
+      <div className="grid-metrics">
+        <div className="metric-card">
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>Recorrência Mensal (MRR)</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#22c55e" }}>{fmt(statsFinanceiras.mrrTotal)}</div>
+          <div style={{ fontSize: 11, color: "#22c55e", marginTop: 4 }}>💳 Base Ativa</div>
+        </div>
+        <div className="metric-card">
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>Ticket Médio Mensal</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#4A90D9" }}>{fmt(statsFinanceiras.tMedio)}</div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>por contrato</div>
+        </div>
+        <div className="metric-card">
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>Contratos Ativos</div>
+          <div style={{ fontSize: 24, fontWeight: 800 }}>{statsFinanceiras.totalContratos}</div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>Empresas</div>
+        </div>
+        <div className="metric-card">
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>Churn (Cancelados)</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#f87171" }}>{statsFinanceiras.contratosCancelados}</div>
+          <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>Total histórico</div>
+        </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
-        <div className="metric-card" style={{ height: 360 }}>
-          <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>MRR Atual vs Meta Trimestral</div>
-          <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Valor recorrente por contratos ativos</div>
-          <ResponsiveContainer width="100%" height="80%">
-            <BarChart data={[{ name: 'MRR Atual', Receita: mrrAtivo }, { name: 'Meta (+20%)', Receita: mrrAtivo * 1.2 }]} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px" }}>
+        
+        {/* Gráfico de Evolução (Pipeline) */}
+        <div className="metric-card" style={{ minHeight: "350px" }}>
+          <h3 style={{ fontSize: 16, marginBottom: 20 }}>Evolução de Vendas (Últimos 6 Meses)</h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={dadosPipelineMensal}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-              <XAxis dataKey="name" stroke="var(--text-secondary)" tick={{ fontSize: 12 }} axisLine={false} />
-              <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={50} />
-              <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} formatter={(v: any) => fmt(v)} />
-              <Bar dataKey="Receita" fill="#22c55e" radius={[6, 6, 0, 0]} barSize={60} />
+              <XAxis dataKey="name" stroke="var(--text-tertiary)" fontSize={12} />
+              <YAxis stroke="var(--text-tertiary)" fontSize={12} />
+              <Tooltip 
+                contentStyle={{ background: "var(--bg-sidebar)", border: "1px solid var(--border-light)", borderRadius: 8 }}
+                itemStyle={{ fontSize: 12 }}
+              />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+              <Bar dataKey="ganhas" name="Ganhas" fill="#22c55e" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="perdidas" name="Perdidas" fill="#f87171" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="metric-card" style={{ height: 360 }}>
-          <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>Evolução Mensal de Propostas</div>
-          <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Ganhas vs Perdidas nos últimos 6 meses</div>
-          <ResponsiveContainer width="100%" height="80%">
-            <LineChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
-              <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} />
-              <Line type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" strokeWidth={2} dot={{ fill: '#f87171', r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
+
+        {/* Distribuição por Tipo de Cliente */}
+        <div className="metric-card" style={{ minHeight: "350px" }}>
+          <h3 style={{ fontSize: 16, marginBottom: 20 }}>Composição da Base</h3>
+          <div style={{ display: "flex", alignItems: "center", height: "250px" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'Contratos TI', value: statsFinanceiras.totalContratos },
+                    { name: 'Leads em Aberto', value: clientesAgrupados.filter(c => c.tipo === 'Lead').length }
+                  ]}
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  <Cell fill="#4A90D9" />
+                  <Cell fill="rgba(255,255,255,0.1)" />
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+
       </div>
-    </>
+    </div>
   );
 };
