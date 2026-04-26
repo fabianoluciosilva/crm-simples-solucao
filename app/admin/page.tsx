@@ -24,6 +24,11 @@ import {
 import { ModalTarefa } from "@/components/modals/ModalTarefa";
 import { ModalClienteForm } from "@/components/modals/ModalClienteForm";
 import { ModalContrato } from "@/components/modals/ModalContrato";
+import { ModalTemplate } from "@/components/modals/ModalTemplate";
+import { ModalUsuario } from "@/components/modals/ModalUsuario";
+import { ModalPerda } from "@/components/modals/ModalPerda";
+import { ModalEditarValor } from "@/components/modals/ModalEditarValor";
+import { ModalComunicado } from "@/components/modals/ModalComunicado";
 
 // ─── TIPOS ─────────────────────────────────────────────────────────────────
 interface PropostaDB {
@@ -76,8 +81,6 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AdminPage() {
   const router = useRouter();
@@ -133,21 +136,17 @@ export default function AdminPage() {
   const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
 
   const [modalEditarValor, setModalEditarValor] = useState<{ativo: boolean, prop: PropostaDB | null, novoValor: string}>({ativo: false, prop: null, novoValor: ''});
-
   const [modalTarefa, setModalTarefa] = useState(false);
   const [formTarefa, setFormTarefa] = useState<Partial<TarefaDB & { prioridade: string }>>({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: "", nome_referencia: "", prioridade: "Normal" });
-  
   const [modalContrato, setModalContrato] = useState(false);
   const [formContrato, setFormContrato] = useState<Partial<ContratoDB>>({ cliente_nome: "", valor_mensal: 0, status: "Ativo", data_inicio: new Date().toISOString().split('T')[0], servicos_inclusos: "", motivo_cancelamento: "" });
-  
   const [modalTemplate, setModalTemplate] = useState(false);
   const [formTemplate, setFormTemplate] = useState<Partial<TemplateDB>>({ nome: "", tipo: "WhatsApp", conteudo: "", assunto: "" });
-  
   const [modalClienteForm, setModalClienteForm] = useState(false);
   const [formCliente, setFormCliente] = useState<Partial<ClienteDB>>({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "", filial: "Matriz" });
-
   const [modalUsuario, setModalUsuario] = useState(false);
   const [formUsuario, setFormUsuario] = useState<Partial<PerfilUsuario & { senha?: string }>>({ email: '', nome: '', senha: '', perfil: 'Comercial', filial: 'Matriz' });
+  
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
@@ -310,13 +309,6 @@ export default function AdminPage() {
     });
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
-
-  const diasSemInteracao = useCallback((prop: PropostaDB): number => {
-    if (prop.status === 'fechada' || prop.status === 'perdida') return 0;
-    const intsCliente = interacoes.filter(i => prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    const dataRef = intsCliente.length > 0 ? new Date(intsCliente[0].created_at) : new Date(prop.created_at);
-    return Math.floor((Date.now() - dataRef.getTime()) / (1000 * 60 * 60 * 24));
-  }, [interacoes]);
 
   const tarefasComAtraso = useMemo(() => tarefas.map(t => {
       if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) return { ...t, status: 'Atrasado' as string };
@@ -1011,7 +1003,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.1 - Modular</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.2 - Módulos Totais</div>
         </div>
       </aside>
 
@@ -1576,7 +1568,49 @@ export default function AdminPage() {
         salvarContrato={salvarContrato} 
       />
 
-      {/* ─── MODAIS INLINE (Ainda por componentizar nas próximas fases) ─── */}
+      <ModalTemplate 
+        isOpen={modalTemplate} 
+        onClose={() => setModalTemplate(false)} 
+        formTemplate={formTemplate} 
+        setFormTemplate={setFormTemplate} 
+        salvarTemplate={salvarTemplate} 
+      />
+
+      <ModalUsuario 
+        isOpen={modalUsuario} 
+        onClose={() => setModalUsuario(false)} 
+        formUsuario={formUsuario} 
+        setFormUsuario={setFormUsuario} 
+        salvarUsuario={salvarUsuario} 
+      />
+
+      <ModalPerda 
+        isOpen={modalPerda} 
+        onClose={() => setModalPerda(false)} 
+        formPerda={formPerda} 
+        setFormPerda={setFormPerda} 
+        confirmarPerda={confirmarPerda} 
+      />
+
+      <ModalEditarValor 
+        isOpen={modalEditarValor.ativo} 
+        onClose={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })} 
+        modalEditarValor={modalEditarValor} 
+        setModalEditarValor={setModalEditarValor} 
+        salvarNovoValorProposta={salvarNovoValorProposta} 
+      />
+
+      <ModalComunicado 
+        isOpen={modalComunicado} 
+        onClose={() => setModalComunicado(false)} 
+        progressoEmail={progressoEmail} 
+        formComunicado={formComunicado} 
+        setFormComunicado={setFormComunicado} 
+        gerarFilaWhatsapp={gerarFilaWhatsapp} 
+        dispararEmailsMassa={dispararEmailsMassa} 
+      />
+
+      {/* ─── MODAL INLINE RESTANTE (Diário de Bordo e Envio Inteligente) ─── */}
 
       {/* MODAL: ENVIO INTELIGENTE */}
       {modalEnvioProposta.ativo && modalEnvioProposta.prop && (
@@ -1618,71 +1652,6 @@ export default function AdminPage() {
                 <button type="submit" disabled={!formEnvioMensagem.templateId || !formEnvioMensagem.texto.trim() || enviando === modalEnvioProposta.prop.id} className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>
                   {enviando === modalEnvioProposta.prop.id ? '⏳ A enviar...' : `Enviar ${modalEnvioProposta.tipo}`}
                 </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ALTERAR VALOR DA PROPOSTA */}
-      {modalEditarValor.ativo && modalEditarValor.prop && (
-        <div className="modal-overlay" onClick={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>💰 Alterar Valor da Negociação</h2>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
-              Cliente: <strong>{modalEditarValor.prop.cliente}</strong>
-            </p>
-            <form onSubmit={salvarNovoValorProposta} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-                  Novo Valor (R$)
-                </label>
-                <input required type="number" step="0.01" className="input-modal" value={modalEditarValor.novoValor} onChange={e => setModalEditarValor({ ...modalEditarValor, novoValor: e.target.value })} placeholder="Ex: 1500.50" />
-              </div>
-              <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-                <button type="button" onClick={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#22c55e", color: "#fff", borderColor: "#22c55e" }}>Salvar Valor</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: TEMPLATES (NOVO / EDITAR) */}
-      {modalTemplate && (
-        <div className="modal-overlay" onClick={() => setModalTemplate(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formTemplate.id ? "📝 Editar Template" : "➕ Novo Template"}</h2>
-            <form onSubmit={salvarTemplate} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <div style={{ flex: 2 }}>
-                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Nome do Template</label>
-                  <input required className="input-modal" value={formTemplate.nome || ''} onChange={e => setFormTemplate({ ...formTemplate, nome: e.target.value })} placeholder="Ex: Proposta Inicial..." />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Canal</label>
-                  <select className="input-modal" value={formTemplate.tipo || 'WhatsApp'} onChange={e => setFormTemplate({ ...formTemplate, tipo: e.target.value })}>
-                    <option value="WhatsApp">WhatsApp</option>
-                    <option value="Email">E-mail</option>
-                  </select>
-                </div>
-              </div>
-              {formTemplate.tipo === 'Email' && (
-                <div>
-                  <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Assunto do E-mail</label>
-                  <input required className="input-modal" value={formTemplate.assunto || ''} onChange={e => setFormTemplate({ ...formTemplate, assunto: e.target.value })} placeholder="Assunto (Pode usar {{nome}}, {{empresa}})..." />
-                </div>
-              )}
-              <div>
-                <label className="block mb-1 text-sm font-medium" style={{color: 'var(--text-secondary)'}}>Mensagem</label>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
-                  Variáveis disponíveis: <code style={{color: '#4A90D9'}}>{`{{nome}}`}</code>, <code style={{color: '#4A90D9'}}>{`{{empresa}}`}</code>, <code style={{color: '#4A90D9'}}>{`{{valor}}`}</code>
-                </div>
-                <textarea required className="input-modal" rows={8} value={formTemplate.conteudo || ''} onChange={e => setFormTemplate({ ...formTemplate, conteudo: e.target.value })} placeholder="Olá {{nome}}, a sua proposta para a {{empresa}} está pronta..." />
-              </div>
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setModalTemplate(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>Gravar Template</button>
               </div>
             </form>
           </div>
@@ -1870,121 +1839,6 @@ export default function AdminPage() {
                 <button type="submit" className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: 10 }}>Gravar Interação</button>
               </form>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: EDITAR USUÁRIO / PRÉ-REGISTO */}
-      {modalUsuario && (
-        <div className="modal-overlay" onClick={() => setModalUsuario(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{formUsuario.id ? "🔐 Editar Permissões" : "➕ Registar Novo Membro"}</h2>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>
-              {formUsuario.id 
-                ? "Altere o nível de acesso e a filial deste membro da equipa."
-                : "Crie uma conta para o seu novo membro. Ele usará este E-mail e Senha para entrar no CRM."}
-            </p>
-            <form onSubmit={salvarUsuario} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nome do Colaborador</label>
-                <input required className="input-modal" value={formUsuario.nome || ''} onChange={e => setFormUsuario({ ...formUsuario, nome: e.target.value })} placeholder="Ex: Gabriel" />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>E-mail de Acesso</label>
-                <input required type="email" className="input-modal" value={formUsuario.email || ''} onChange={e => setFormUsuario({ ...formUsuario, email: e.target.value.toLowerCase() })} disabled={!!formUsuario.id} style={{ opacity: formUsuario.id ? 0.6 : 1 }} placeholder="exemplo@simplessolucao.com.br" />
-              </div>
-              {!formUsuario.id && (
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Senha Temporária * (Mín. 6 caracteres)</label>
-                  <input required type="password" className="input-modal" value={formUsuario.senha || ''} onChange={e => setFormUsuario({ ...formUsuario, senha: e.target.value })} placeholder="******" />
-                </div>
-              )}
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Nível de Acesso (Perfil)</label>
-                <select className="input-modal" value={formUsuario.perfil || 'Comercial'} onChange={e => setFormUsuario({ ...formUsuario, perfil: e.target.value as any })}>
-                  <option value="Admin">Admin — Acesso Total e Financeiro</option>
-                  <option value="Comercial">Comercial — Propostas e Clientes</option>
-                  <option value="Suporte">Suporte — Apenas Tarefas</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Filial</label>
-                <input required className="input-modal" value={formUsuario.filial || ''} onChange={e => setFormUsuario({ ...formUsuario, filial: e.target.value })} placeholder="Ex: Matriz, São Paulo..." />
-              </div>
-              <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-                <button type="button" onClick={() => setModalUsuario(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>{formUsuario.id ? "Salvar Acessos" : "Registar Membro"}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: MOTIVO DE PERDA */}
-      {modalPerda && (
-        <div className="modal-overlay" onClick={() => setModalPerda(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>📊 Análise de Lead Perdido</h2>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20, marginTop: 8 }}>Informe o motivo da perda para melhorar a análise.</p>
-            <form onSubmit={confirmarPerda} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <select required className="input-modal" value={formPerda.motivo} onChange={e => setFormPerda({ ...formPerda, motivo: e.target.value })}>
-                <option value="" disabled>Selecione um motivo...</option>
-                <option value="Preço">💰 Preço alto</option>
-                <option value="Sem interesse">🤷 Sem interesse no momento</option>
-                <option value="Concorrente">⚔️ Fechou com concorrente</option>
-                <option value="Sem retorno">📵 Cliente não deu mais retorno</option>
-                <option value="Fora do perfil">🎯 Fora do perfil de cliente</option>
-                <option value="Orçamento indisponível">📅 Orçamento indisponível agora</option>
-              </select>
-              <textarea className="input-modal" rows={3} value={formPerda.obs} onChange={e => setFormPerda({ ...formPerda, obs: e.target.value })} placeholder="Observações adicionais (opcional)..." />
-              <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-                <button type="button" onClick={() => setModalPerda(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" disabled={!formPerda.motivo} className="btn-action" style={{ flex: 1, background: "#f87171", color: "#fff", borderColor: "#f87171", opacity: !formPerda.motivo ? 0.5 : 1 }}>Registar Perda</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: COMUNICADO EM MASSA */}
-      {modalComunicado && (
-        <div className="modal-overlay" onClick={() => !progressoEmail.ativo && setModalComunicado(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>📢 Comunicado em Massa</h2>
-            {progressoEmail.ativo ? (
-              <div style={{ marginTop: 24, textAlign: "center" }}>
-                <p style={{ marginBottom: 12, fontSize: 14 }}>A enviar e-mails... ({progressoEmail.enviado} de {progressoEmail.total})</p>
-                <div style={{ width: "100%", background: "var(--bg-main)", borderRadius: 10, height: 10, overflow: "hidden" }}>
-                  <div style={{ width: `${(progressoEmail.enviado / progressoEmail.total) * 100}%`, background: "#4A90D9", height: "100%", transition: "width 0.3s" }} />
-                </div>
-                <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 12 }}>{Math.round((progressoEmail.enviado / progressoEmail.total) * 100)}% concluído</p>
-              </div>
-            ) : (
-              <form style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Público alvo</label>
-                  <select className="input-modal" value={formComunicado.publico} onChange={e => setFormComunicado({ ...formComunicado, publico: e.target.value })}>
-                    <option value="Todos">Todos (Clientes, Leads e Parceiros)</option>
-                    <option value="Cliente">Apenas Clientes Ativos</option>
-                    <option value="Lead">Apenas Leads</option>
-                    <option value="Parceiro">Apenas Parceiros</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Assunto (para E-mail)</label>
-                  <input required className="input-modal" value={formComunicado.assunto} onChange={e => setFormComunicado({ ...formComunicado, assunto: e.target.value })} placeholder="Assunto do e-mail..." />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Mensagem</label>
-                  <textarea required className="input-modal" rows={6} value={formComunicado.mensagem} onChange={e => setFormComunicado({ ...formComunicado, mensagem: e.target.value })} placeholder="Escreva o comunicado aqui..." />
-                </div>
-                <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-                  <button type="button" onClick={() => setModalComunicado(false)} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                  <button type="button" onClick={gerarFilaWhatsapp} className="btn-action" style={{ flex: 1, background: "#22c55e", color: "#fff", borderColor: "#22c55e" }}>💬 Fila WhatsApp</button>
-                  <button type="button" onClick={dispararEmailsMassa} className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>📧 Disparar E-mails</button>
-                </div>
-              </form>
-            )}
           </div>
         </div>
       )}
