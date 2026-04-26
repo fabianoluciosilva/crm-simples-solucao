@@ -310,6 +310,14 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
+  // CORREÇÃO: Função diasSemInteracao recuperada e colocada corretamente
+  const diasSemInteracao = useCallback((prop: PropostaDB): number => {
+    if (prop.status === 'fechada' || prop.status === 'perdida') return 0;
+    const intsCliente = interacoes.filter(i => prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase());
+    const dataRef = intsCliente.length > 0 ? new Date(intsCliente[0].created_at) : new Date(prop.created_at);
+    return Math.floor((Date.now() - dataRef.getTime()) / (1000 * 60 * 60 * 24));
+  }, [interacoes]);
+
   const tarefasComAtraso = useMemo(() => tarefas.map(t => {
       if (t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0) return { ...t, status: 'Atrasado' as string };
       return t;
@@ -1003,7 +1011,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.2 - Módulos Totais</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.2 - Total Modular</div>
         </div>
       </aside>
 
