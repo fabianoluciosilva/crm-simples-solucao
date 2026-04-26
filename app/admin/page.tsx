@@ -344,7 +344,7 @@ export default function AdminPage() {
     return lista;
   }, [propostas, contratos, tarefas, clientesBase, leads, filtroTipoCliente, debouncedBusca, interacoes, mostrarDesativados]);
 
-  // --- FUNÇÕES DE AÇÃO ---
+  // ─── FUNÇÕES DE AÇÃO ───────────────────────────────────────────────────────
   const alternarStatusCliente = async (cliente: any) => {
     const novoStatus = cliente.ativo === false ? true : false;
     try {
@@ -359,7 +359,7 @@ export default function AdminPage() {
   };
 
   const dispararEmailsMassa = async () => {
-    showToast("A processar disparos...");
+    showToast("A simular disparo de e-mails...");
     setModalComunicado(false);
   };
 
@@ -378,6 +378,7 @@ export default function AdminPage() {
     setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
+  // FUNÇÕES RECUPERADAS (Críticas para os Modais)
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
     setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(prop.telefone || "") });
   };
@@ -389,6 +390,11 @@ export default function AdminPage() {
   };
 
   const visualizarProposta = (prop: PropostaDB) => { window.open("", "_blank"); };
+
+  const abrirNovaTarefa = (referencia?: string, leadId?: number, propostaId?: number, clienteId?: string) => {
+    setFormTarefa({ titulo: "", descricao: "", data_vencimento: "", status: "Pendente", usuario_email: session?.user?.email || "", cliente_id: clienteId, nome_referencia: referencia || "", lead_id: leadId, proposta_id: propostaId, prioridade: "Normal" });
+    setModalTarefa(true);
+  };
 
   const handleDragStart = (e: React.DragEvent, prop: PropostaDB) => { e.dataTransfer.setData("propId", prop.id.toString()); setTarefaArrastando(prop.id); };
   const handleDragEnd = () => setTarefaArrastando(null);
@@ -520,7 +526,6 @@ export default function AdminPage() {
         .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; }
         .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; margin-bottom: 12px; cursor: grab; }
         .notificacao-badge { background: #f87171; color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; }
-        
         @media (max-width: 768px) {
           .sidebar { transform: translateX(-100%); }
           .sidebar.open { transform: translateX(0); }
