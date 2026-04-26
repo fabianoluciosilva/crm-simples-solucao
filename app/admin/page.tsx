@@ -295,7 +295,6 @@ export default function AdminPage() {
 
   const tarefasUrgentes = useMemo(() => tarefas.filter(t => t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) >= -2), [tarefas]);
 
-  // Lógica de Alertas (Notificações em Tempo Real)
   const alertasLeadCount = useMemo(() => {
     return propostas.filter(p => {
       if (p.status === 'fechada' || p.status === 'perdida') return false;
@@ -400,6 +399,13 @@ export default function AdminPage() {
     alvos = alvos.filter(c => (c.whatsapp || c.telefone) && c.ativo !== false);
     setFilaWpp(alvos);
     setModalComunicado(false);
+  };
+
+  const enviarWhatsAppDaFila = (cli: ClienteDB) => {
+    const numero = formatarWhatsApp(cli.whatsapp || cli.telefone);
+    const texto = `Olá *${cli.nome}*,\n\n${formComunicado.mensagem}`;
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank');
+    setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
@@ -507,7 +513,7 @@ export default function AdminPage() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      {/* 1. ESTILOS CSS VITAIS */}
+      {/* 1. ESTILOS CSS VITAIS (Sidebar fixa e sem scroll) */}
       <style>{`
         :root {
           --bg-main: ${tema === 'dark' ? '#080f1e' : '#f4f7f9'};
@@ -521,7 +527,25 @@ export default function AdminPage() {
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
-        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100; transition: transform 0.3s ease; background: var(--bg-sidebar); overflow-y: auto; border-right: 1px solid var(--border-light); }
+        
+        .sidebar { 
+          width: 260px; 
+          position: fixed; 
+          top: 0; 
+          bottom: 0; 
+          left: 0; 
+          z-index: 100; 
+          transition: transform 0.3s ease; 
+          background: var(--bg-sidebar); 
+          overflow-y: auto; 
+          border-right: 1px solid var(--border-light);
+          scrollbar-width: none; 
+          -ms-overflow-style: none; 
+        }
+        .sidebar::-webkit-scrollbar { display: none; }
+        
+        .close-menu-btn { display: none; }
+
         .main-content { flex: 1; margin-left: 260px; padding: 40px; width: calc(100% - 260px); min-height: 100vh; transition: all 0.3s; }
         .nav-menu { padding: 20px; display: flex; flex-direction: column; gap: 4px; }
         .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; font-size: 13px; text-align: left; }
@@ -537,15 +561,15 @@ export default function AdminPage() {
         .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; }
         .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; }
         .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; margin-bottom: 12px; cursor: grab; }
-        .notificacao-badge { background: #f87171; color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; }
+        
         @media (max-width: 768px) {
           .sidebar { transform: translateX(-100%); }
           .sidebar.open { transform: translateX(0); }
+          .close-menu-btn { display: block; position: absolute; top: 15px; right: 15px; background: none; border: none; color: var(--text-primary); font-size: 20px; cursor: pointer; }
           .main-content { margin-left: 0; padding: 15px; width: 100%; }
           header { flex-direction: column; align-items: flex-start !important; gap: 15px; }
           .header-controls { width: 100%; flex-wrap: wrap; }
           .mobile-menu-btn { display: block; }
-          .close-menu-btn { display: block; }
         }
       `}</style>
 
@@ -559,7 +583,7 @@ export default function AdminPage() {
       />
 
       <main className="main-content">
-        {/* 3. HEADER - Agora com contador de alertas */}
+        {/* 3. HEADER */}
         <Header 
           setMenuMobileAberto={setMenuMobileAberto} aba={aba} carregando={carregando}
           filtroDias={filtroDias} setFiltroDias={setFiltroDias}
