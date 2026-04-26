@@ -29,6 +29,8 @@ import { ModalUsuario } from "@/components/modals/ModalUsuario";
 import { ModalPerda } from "@/components/modals/ModalPerda";
 import { ModalEditarValor } from "@/components/modals/ModalEditarValor";
 import { ModalComunicado } from "@/components/modals/ModalComunicado";
+import { ModalEnvio } from "@/components/modals/ModalEnvio";
+import { ModalFichaCliente } from "@/components/modals/ModalFichaCliente";
 
 // ─── TIPOS ─────────────────────────────────────────────────────────────────
 interface PropostaDB {
@@ -310,7 +312,6 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
-  // CORREÇÃO: Função diasSemInteracao recuperada e colocada corretamente
   const diasSemInteracao = useCallback((prop: PropostaDB): number => {
     if (prop.status === 'fechada' || prop.status === 'perdida') return 0;
     const intsCliente = interacoes.filter(i => prop.cliente_id ? i.cliente_id === prop.cliente_id : i.cliente_nome.toUpperCase() === prop.cliente.trim().toUpperCase());
@@ -473,29 +474,6 @@ export default function AdminPage() {
     const obs = prop.dados?.obs || "";
     return `<div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;"><div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;"><div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">Simples Solução TI</h2></div><div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div></div><h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SERVIÇOS TÉCNICOS</h1><p>Rio de Janeiro, ${dataFormatada}</p><p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p><p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p><p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>.</p><div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div><h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2><table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;"><tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr><tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção de TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr></table>${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações Adicionais</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}</div>`;
   };
-
-  const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
-    let foneParaTentar = prop.telefone || "";
-    const cb = prop.cliente_id ? clientesBase.find(c => c.id === prop.cliente_id) : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    if (cb) foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
-    setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(foneParaTentar) });
-    setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
-  };
-
-  useEffect(() => {
-    if (modalEnvioProposta.prop && formEnvioMensagem.templateId) {
-      if (formEnvioMensagem.templateId === 'custom') {
-        setFormEnvioMensagem(prev => ({ ...prev, texto: '', assunto: '' }));
-      } else {
-        const tpl = templates.find(t => t.id.toString() === formEnvioMensagem.templateId);
-        if (tpl) {
-          const txt = processarTemplate(tpl.conteudo, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor);
-          const ass = tpl.assunto ? processarTemplate(tpl.assunto, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor) : '';
-          setFormEnvioMensagem(prev => ({ ...prev, texto: txt, assunto: ass }));
-        }
-      }
-    }
-  }, [formEnvioMensagem.templateId, modalEnvioProposta.prop, templates]);
 
   const confirmarEnvioMensagem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1011,7 +989,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.2 - Total Modular</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.3 - Modais Finais</div>
         </div>
       </aside>
 
@@ -1550,64 +1528,14 @@ export default function AdminPage() {
 
       {/* ─── MODAIS DA APLICAÇÃO ─────────────────────────────────────────────── */}
       
-      {/* ─── MODAIS COMPONENTIZADOS ─── */}
-      <ModalTarefa 
-        isOpen={modalTarefa} 
-        onClose={() => setModalTarefa(false)} 
-        formTarefa={formTarefa} 
-        setFormTarefa={setFormTarefa} 
-        salvarTarefa={salvarTarefa} 
-      />
-
-      <ModalClienteForm 
-        isOpen={modalClienteForm} 
-        onClose={() => setModalClienteForm(false)} 
-        formCliente={formCliente} 
-        setFormCliente={setFormCliente} 
-        salvarClienteBase={salvarClienteBase} 
-        isAdmin={isAdmin} 
-      />
-
-      <ModalContrato 
-        isOpen={modalContrato} 
-        onClose={() => setModalContrato(false)} 
-        formContrato={formContrato} 
-        setFormContrato={setFormContrato} 
-        salvarContrato={salvarContrato} 
-      />
-
-      <ModalTemplate 
-        isOpen={modalTemplate} 
-        onClose={() => setModalTemplate(false)} 
-        formTemplate={formTemplate} 
-        setFormTemplate={setFormTemplate} 
-        salvarTemplate={salvarTemplate} 
-      />
-
-      <ModalUsuario 
-        isOpen={modalUsuario} 
-        onClose={() => setModalUsuario(false)} 
-        formUsuario={formUsuario} 
-        setFormUsuario={setFormUsuario} 
-        salvarUsuario={salvarUsuario} 
-      />
-
-      <ModalPerda 
-        isOpen={modalPerda} 
-        onClose={() => setModalPerda(false)} 
-        formPerda={formPerda} 
-        setFormPerda={setFormPerda} 
-        confirmarPerda={confirmarPerda} 
-      />
-
-      <ModalEditarValor 
-        isOpen={modalEditarValor.ativo} 
-        onClose={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })} 
-        modalEditarValor={modalEditarValor} 
-        setModalEditarValor={setModalEditarValor} 
-        salvarNovoValorProposta={salvarNovoValorProposta} 
-      />
-
+      <ModalTarefa isOpen={modalTarefa} onClose={() => setModalTarefa(false)} formTarefa={formTarefa} setFormTarefa={setFormTarefa} salvarTarefa={salvarTarefa} />
+      <ModalClienteForm isOpen={modalClienteForm} onClose={() => setModalClienteForm(false)} formCliente={formCliente} setFormCliente={setFormCliente} salvarClienteBase={salvarClienteBase} isAdmin={isAdmin} />
+      <ModalContrato isOpen={modalContrato} onClose={() => setModalContrato(false)} formContrato={formContrato} setFormContrato={setFormContrato} salvarContrato={salvarContrato} />
+      <ModalTemplate isOpen={modalTemplate} onClose={() => setModalTemplate(false)} formTemplate={formTemplate} setFormTemplate={setFormTemplate} salvarTemplate={salvarTemplate} />
+      <ModalUsuario isOpen={modalUsuario} onClose={() => setModalUsuario(false)} formUsuario={formUsuario} setFormUsuario={setFormUsuario} salvarUsuario={salvarUsuario} />
+      <ModalPerda isOpen={modalPerda} onClose={() => setModalPerda(false)} formPerda={formPerda} setFormPerda={setFormPerda} confirmarPerda={confirmarPerda} />
+      <ModalEditarValor isOpen={modalEditarValor.ativo} onClose={() => setModalEditarValor({ ativo: false, prop: null, novoValor: '' })} modalEditarValor={modalEditarValor} setModalEditarValor={setModalEditarValor} salvarNovoValorProposta={salvarNovoValorProposta} />
+      
       <ModalComunicado 
         isOpen={modalComunicado} 
         onClose={() => setModalComunicado(false)} 
@@ -1618,238 +1546,26 @@ export default function AdminPage() {
         dispararEmailsMassa={dispararEmailsMassa} 
       />
 
-      {/* ─── MODAL INLINE RESTANTE (Diário de Bordo e Envio Inteligente) ─── */}
+      <ModalEnvio 
+        modalEnvioProposta={modalEnvioProposta} 
+        setModalEnvioProposta={setModalEnvioProposta} 
+        formEnvioMensagem={formEnvioMensagem} 
+        setFormEnvioMensagem={setFormEnvioMensagem} 
+        confirmarEnvioMensagem={confirmarEnvioMensagem} 
+        templates={templates} 
+        enviando={enviando} 
+      />
 
-      {/* MODAL: ENVIO INTELIGENTE */}
-      {modalEnvioProposta.ativo && modalEnvioProposta.prop && (
-        <div className="modal-overlay" onClick={() => setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' })}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 6 }}>Enviar {modalEnvioProposta.tipo === 'Email' ? '📧 E-mail' : '💬 WhatsApp'}</h2>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 20 }}>Para: <strong>{modalEnvioProposta.prop.cliente}</strong></p>
-            <form onSubmit={confirmarEnvioMensagem} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {modalEnvioProposta.tipo === 'WhatsApp' && (
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Número de Destino (Com DDD e código do país)</label>
-                  <input required className="input-modal" value={modalEnvioProposta.numeroWpp} onChange={e => setModalEnvioProposta({ ...modalEnvioProposta, numeroWpp: e.target.value })} placeholder="Ex: 5521999999999" />
-                </div>
-              )}
-              <div>
-                <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Template</label>
-                <select className="input-modal" value={formEnvioMensagem.templateId} onChange={e => setFormEnvioMensagem({ ...formEnvioMensagem, templateId: e.target.value })}>
-                  <option value="" disabled>Selecione um template...</option>
-                  {templates.filter(t => t.tipo === modalEnvioProposta.tipo).map(t => (
-                    <option key={t.id} value={t.id.toString()}>{t.nome}</option>
-                  ))}
-                  <option value="custom">✍️ Mensagem personalizada...</option>
-                </select>
-              </div>
-              {formEnvioMensagem.templateId && modalEnvioProposta.tipo === 'Email' && (
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Assunto</label>
-                  <input required className="input-modal" value={formEnvioMensagem.assunto} onChange={e => setFormEnvioMensagem({ ...formEnvioMensagem, assunto: e.target.value })} placeholder="Assunto do e-mail..." />
-                </div>
-              )}
-              {formEnvioMensagem.templateId && (
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Mensagem (pode editar antes de enviar)</label>
-                  <textarea required className="input-modal" rows={8} value={formEnvioMensagem.texto} onChange={e => setFormEnvioMensagem({ ...formEnvioMensagem, texto: e.target.value })} placeholder="Digite a mensagem..." />
-                </div>
-              )}
-              <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-                <button type="button" onClick={() => setModalEnvioProposta({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' })} className="btn-action" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" disabled={!formEnvioMensagem.templateId || !formEnvioMensagem.texto.trim() || enviando === modalEnvioProposta.prop.id} className="btn-action" style={{ flex: 1, background: "#4A90D9", color: "#fff", borderColor: "#4A90D9" }}>
-                  {enviando === modalEnvioProposta.prop.id ? '⏳ A enviar...' : `Enviar ${modalEnvioProposta.tipo}`}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ─── MODAL: FICHA DO CLIENTE (DIÁRIO DE BORDO) — COM CHURN RISK E COPILOTO ─── */}
-      {clienteDetalhe && (
-        <div className="modal-overlay" onClick={() => setClienteDetalhe(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 860, display: "flex", flexWrap: "wrap", gap: 24 }}>
-            <div style={{ flex: "1 1 300px", minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
-                <div>
-                  <h2 style={{ fontSize: 20 }}>{clienteDetalhe.nome}</h2>
-                  <BadgeStatus status={clienteDetalhe.tipo} />
-                </div>
-                <button onClick={() => setClienteDetalhe(null)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 20, padding: 4 }}>✕</button>
-              </div>
-
-              <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>
-                <span>📞 {clienteDetalhe.telefone || clienteDetalhe.contato || '—'}</span><br />
-                <span>💬 {clienteDetalhe.whatsapp || '—'}</span><br />
-                <span>📧 {clienteDetalhe.email || '—'}</span>
-                {clienteDetalhe.documento && <><br /><span>📋 {clienteDetalhe.documento}</span></>}
-                <br />
-                <span style={{ color: "#f87171", fontWeight: "bold" }}>🔥 Score: {clienteDetalhe.score || 0} pts</span>
-              </div>
-
-              {/* BADGE DE CHURN RISK */}
-              {(() => {
-                const risk = calcularChurnRisk(clienteDetalhe);
-                return (
-                  <div style={{ 
-                    marginBottom: 16,
-                    padding: '10px 14px', 
-                    borderRadius: 12, 
-                    background: `${risk.cor}15`,
-                    border: `1px solid ${risk.cor}40`
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: 18 }}>{risk.emoji}</span>
-                      <span style={{ fontWeight: 700, color: risk.cor, fontSize: 14 }}>
-                        Risco de Churn: {risk.nivel} ({risk.score}/100)
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                      {risk.recomendacao}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* COPILOTO COMERCIAL IA */}
-              {(() => {
-                const sugestao = gerarSugestaoIA(clienteDetalhe);
-                return (
-                  <div style={{ 
-                    marginTop: 16,
-                    padding: '14px 16px', 
-                    borderRadius: 12, 
-                    background: 'rgba(74,144,217,0.08)',
-                    border: '1px solid rgba(74,144,217,0.2)'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 18 }}>{sugestao.emoji}</span>
-                      <span style={{ fontWeight: 700, color: '#4A90D9', fontSize: 14 }}>
-                        Sugestão da IA
-                      </span>
-                      <span style={{ 
-                        marginLeft: 'auto', 
-                        fontSize: 11, 
-                        padding: '2px 8px', 
-                        borderRadius: 9999,
-                        background: sugestao.prioridade === 'Alta' ? '#f8717122' : 
-                                   sugestao.prioridade === 'Média' ? '#f59e0b22' : '#22c55e22',
-                        color: sugestao.prioridade === 'Alta' ? '#f87171' : 
-                               sugestao.prioridade === 'Média' ? '#f59e0b' : '#22c55e',
-                        fontWeight: 600
-                      }}>
-                        {sugestao.prioridade}
-                      </span>
-                    </div>
-                    
-                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
-                      {sugestao.titulo}
-                    </div>
-                    
-                    <div style={{ fontSize: 13, color: "var(--text-primary)", marginBottom: 6 }}>
-                      {sugestao.acao}
-                    </div>
-                    
-                    <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                      {sugestao.motivo}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <hr style={{ margin: "12px 0", opacity: 0.1 }} />
-              
-              {isComercial && (
-                <>
-                  <div style={{ marginBottom: 12 }}>
-                    <h4 style={{ color: "#4A90D9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Propostas</h4>
-                    {clienteDetalhe.propostas.length === 0 ? (
-                      <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Nenhuma proposta</div>
-                    ) : (
-                      clienteDetalhe.propostas.map((p: any) => (
-                        <div key={p.id} style={{ fontSize: 13, padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
-                          <span>{p.numero}</span>
-                          <span style={{ fontWeight: 700, color: p.status === 'fechada' ? '#22c55e' : p.status === 'perdida' ? '#f87171' : 'var(--text-primary)' }}>{fmt(p.valor)}</span>
-                          <BadgeStatus status={p.status || 'aberta'} />
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {isAdmin && (
-                    <div style={{ marginBottom: 12 }}>
-                      <h4 style={{ color: "#4A90D9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Contratos</h4>
-                      {clienteDetalhe.contratos.length === 0 ? (
-                        <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Sem contrato</div>
-                      ) : (
-                        clienteDetalhe.contratos.map((c: any) => (
-                          <div key={c.id} style={{ fontSize: 13, padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
-                            <span style={{ color: "#22c55e", fontWeight: 700 }}>{fmt(c.valor_mensal)}/mês</span>
-                            <BadgeStatus status={c.status} />
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-              <div>
-                <h4 style={{ color: "#4A90D9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Tarefas Pendentes</h4>
-                {clienteDetalhe.tarefas.filter((t: any) => t.status !== 'Concluído').length === 0 ? (
-                  <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Nenhuma pendência</div>
-                ) : (
-                  clienteDetalhe.tarefas.filter((t: any) => t.status !== 'Concluído').map((t: any) => (
-                    <div key={t.id} style={{ fontSize: 13, padding: "4px 0" }}>
-                      {t.titulo} — <span style={{ color: "var(--text-secondary)" }}>{new Date(t.data_vencimento).toLocaleDateString('pt-BR')}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div style={{ marginTop: 16 }}>
-                <button className="btn-action" style={{ width: "100%", background: "rgba(74,144,217,0.1)", color: "#4A90D9", borderColor: "rgba(74,144,217,0.3)", padding: 10 }} 
-                  onClick={() => { abrirNovaTarefa(clienteDetalhe.nome, undefined, undefined, clienteDetalhe.id); setClienteDetalhe(null); }}>
-                  + Criar Tarefa para este Cliente
-                </button>
-              </div>
-            </div>
-
-            <div style={{ flex: "1 1 300px", background: "var(--bg-main)", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", minWidth: 0 }}>
-              <h4 style={{ marginBottom: 16, fontSize: 14 }}>📒 Diário de Bordo</h4>
-              <div style={{ flex: 1, overflowY: "auto", marginBottom: 16, paddingRight: 8, maxHeight: 380 }}>
-                {clienteDetalhe.interacoes.length === 0 ? (
-                  <div style={{ fontSize: 12, color: "var(--text-tertiary)", textAlign: "center", marginTop: 40 }}>Nenhuma interação registada.<br />Comece pelo formulário abaixo.</div>
-                ) : (
-                  clienteDetalhe.interacoes.map((i: any) => (
-                    <div key={i.id} style={{ borderLeft: "2px solid #4A90D9", paddingLeft: 12, marginLeft: 5, marginBottom: 18, position: "relative" }}>
-                      <div style={{ position: "absolute", left: -6, top: 3, width: 10, height: 10, borderRadius: 10, background: "#4A90D9" }} />
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 10, fontWeight: "bold", color: "#4A90D9", textTransform: "uppercase", letterSpacing: "0.05em" }}>{i.tipo}</span>
-                        <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{new Date(i.created_at).toLocaleDateString('pt-BR')}</span>
-                      </div>
-                      <div style={{ fontSize: 13, color: "var(--text-primary)", marginTop: 4, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{i.descricao}</div>
-                      <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 4, textAlign: "right" }}>— {i.usuario_email.split('@')[0]}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-              <form onSubmit={salvarInteracao} style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-light)", paddingTop: 14 }}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <select className="input-modal" style={{ width: 130, padding: 8, fontSize: 13 }} value={formInteracao.tipo} onChange={e => setFormInteracao({ ...formInteracao, tipo: e.target.value })}>
-                    <option value="Nota">✏️ Nota</option>
-                    <option value="Ligação">📞 Ligação</option>
-                    <option value="Reunião">🤝 Reunião</option>
-                    <option value="WhatsApp">💬 Wpp</option>
-                    <option value="E-mail">📧 E-mail</option>
-                    <option value="Visita">🏢 Visita</option>
-                  </select>
-                  <textarea required className="input-modal" style={{ flex: 1, padding: 8, fontSize: 13, resize: "vertical" }} rows={3} placeholder="Registe o que foi conversado..." value={formInteracao.descricao} onChange={e => setFormInteracao({ ...formInteracao, descricao: e.target.value })} />
-                </div>
-                <button type="submit" className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: 10 }}>Gravar Interação</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalFichaCliente 
+        clienteDetalhe={clienteDetalhe} 
+        setClienteDetalhe={setClienteDetalhe} 
+        isComercial={isComercial} 
+        isAdmin={isAdmin} 
+        abrirNovaTarefa={abrirNovaTarefa} 
+        formInteracao={formInteracao} 
+        setFormInteracao={setFormInteracao} 
+        salvarInteracao={salvarInteracao} 
+      />
 
     </div>
   );
