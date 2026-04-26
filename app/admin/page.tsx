@@ -9,14 +9,18 @@ import { BadgeStatus } from "@/components/BadgeStatus";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { 
-  fmt, formatarWhatsApp, calcDiasAtraso, analisarSentimento, 
-  calcularChurnRisk, gerarSugestaoIA 
+  fmt, formatarWhatsApp, calcDiasAtraso, analisarSentimento
 } from "@/utils/crmLogic";
 
 // ─── VISTAS (VIEWS) ─────────────────────────────────────────────────────────
 import { DashboardView } from "@/components/views/DashboardView";
 import { RelatoriosView } from "@/components/views/RelatoriosView";
 import { PropostasView } from "@/components/views/PropostasView";
+import { ClientesView } from "@/components/views/ClientesView";
+import { ContratosView } from "@/components/views/ContratosView";
+import { TarefasView } from "@/components/views/TarefasView";
+import { TemplatesView } from "@/components/views/TemplatesView";
+import { UsuariosView } from "@/components/views/UsuariosView";
 
 // ─── MODAIS ─────────────────────────────────────────────────────────────────
 import { ModalTarefa } from "@/components/modals/ModalTarefa";
@@ -204,8 +208,6 @@ export default function AdminPage() {
   }, [router]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
-  
-  // CORREÇÃO: Aceitar string genérica e converter (Cast) para AbaType
   const mudarAba = (novaAba: string) => { setAba(novaAba as AbaType); setMenuMobileAberto(false); };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
@@ -477,7 +479,7 @@ export default function AdminPage() {
       if (tipo === 'Email') {
         if (!prop.email) return showToast("E-mail não registado nesta proposta.", "erro");
         showToast("A processar PDF e enviar e-mail...", "info");
-        // Lógica simplificada de e-mail transferida ao componente ModalEnvio
+        // A lógica do fetch de e-mail é feita no backend
       } else if (tipo === 'WhatsApp') {
         const numeroLimpo = modalEnvioProposta.numeroWpp.replace(/\D/g, "");
         if (!numeroLimpo || numeroLimpo.length < 10) return showToast("Digite um número válido com DDD e código do país.", "erro");
@@ -754,6 +756,7 @@ export default function AdminPage() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg-main); color: var(--text-primary); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
         
+        /* CORREÇÃO DA ROLAGEM NO MENU: Esconde a barra visual mas mantém a funcionalidade */
         .sidebar::-webkit-scrollbar, .nav-menu::-webkit-scrollbar { display: none; }
         .sidebar, .nav-menu { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -968,249 +971,70 @@ export default function AdminPage() {
           />
         )}
 
-        {/* ─── ABA: CLIENTES ───────────────────────────────────────────────────── */}
         {aba === 'clientes' && (
-          <>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap", alignItems: "center" }}>
-              {isComercial && (
-                <button
-                  onClick={() => { setFormCliente({ nome: "", email: "", telefone: "", whatsapp: "", documento: "", tipo: "Cliente", codigo: "", filial: perfilAtivo.filial }); setModalClienteForm(true); }}
-                  className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13, margin: 0 }}
-                >+ Novo Registo</button>
-              )}
-              {isComercial && (
-                <button
-                  onClick={() => { setFormComunicado({ publico: "Cliente", assunto: "", mensagem: "" }); setModalComunicado(true); }}
-                  className="btn-action" style={{ color: "#4A90D9", border: "1px solid #4A90D9", padding: "9px 18px", fontSize: 13, margin: 0 }}
-                >📢 Comunicado em Massa</button>
-              )}
-              <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--bg-card)", padding: "0 12px", borderRadius: 8, border: "1px solid var(--border-light)", cursor: "pointer", fontSize: 13 }}>
-                  <input type="checkbox" checked={mostrarDesativados} onChange={e => setMostrarDesativados(e.target.checked)} />
-                  Exibir Inativos
-                </label>
-                <input className="input-modal" style={{ maxWidth: "240px", margin: 0, padding: "8px 12px" }} placeholder="🔍 Pesquisar..." value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} />
-                <select className="input-modal" value={filtroTipoCliente} onChange={e => setFiltroTipoCliente(e.target.value as any)} style={{ maxWidth: "180px", margin: 0, padding: "8px 12px" }}>
-                  <option value="Todos">Todas as Categorias</option>
-                  <option value="Cliente">Apenas Clientes</option>
-                  <option value="Lead">Apenas Leads</option>
-                  <option value="Parceiro">Apenas Parceiros</option>
-                </select>
-              </div>
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-              {clientesAgrupados.length} registo{clientesAgrupados.length !== 1 ? 's' : ''} encontrado{clientesAgrupados.length !== 1 ? 's' : ''}
-            </div>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr><th>Nome / Cód</th><th>Contatos</th><th>Categoria</th><th>🔥 Score</th>{isComercial && <th>Histórico</th>}<th style={{ textAlign: "right" }}>Ação</th></tr>
-                </thead>
-                <tbody>
-                  {clientesAgrupados.map(c => (
-                    <tr key={c.nome} style={{ opacity: c.ativo === false ? 0.4 : 1 }}>
-                      <td>
-                        <strong>{c.nome}</strong>
-                        {c.codigo && <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{c.codigo}</div>}
-                        {c.ativo === false && <span style={{ fontSize: 10, color: "#f87171", fontWeight: "bold" }}> (INATIVO)</span>}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>📞 {c.telefone || c.contato || '—'}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>💬 {c.whatsapp || '—'}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{c.email}</div>
-                      </td>
-                      <td><BadgeStatus status={c.tipo} /></td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <span style={{ fontWeight: 'bold', color: (c.score || 0) >= 75 ? '#22c55e' : (c.score || 0) >= 45 ? '#f59e0b' : '#f87171' }}>
-                          {c.score || 0} pts
-                        </span>
-                      </td>
-                      {isComercial && (
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                            {c.propostas.length} prop{c.propostas.length !== 1 ? 's' : ''}
-                            {c.contratos.filter((x: any) => x.status === 'Ativo').length > 0 && ` · ${c.contratos.filter((x: any) => x.status === 'Ativo').length} contrato(s)`}
-                            {c.interacoes.length > 0 && <span style={{ color: "#4A90D9", display: "block" }}>{c.interacoes.length} nota(s)</span>}
-                          </span>
-                        </td>
-                      )}
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn-action" onClick={() => setClienteDetalhe(c)}>📋 Diário</button>
-                        {isComercial && (
-                          <button className="btn-action" onClick={() => {
-                            setFormCliente({ id: c.isOficial ? c.id : undefined, nome: c.nome, email: c.email || "", telefone: c.telefone || "", whatsapp: c.whatsapp || "", documento: c.documento || "", tipo: c.tipo || "Lead", codigo: c.codigo || "", filial: c.filial || perfilAtivo.filial });
-                            setModalClienteForm(true);
-                          }}>Editar</button>
-                        )}
-                        {isAdmin && (
-                          <button className="btn-action" style={{ borderColor: c.ativo === false ? "#22c55e" : "#f87171", color: c.ativo === false ? "#22c55e" : "#f87171", margin: 0 }} onClick={() => alternarStatusCliente(c)}>
-                            {c.ativo === false ? 'Ativar' : 'Desativar'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <ClientesView 
+            isComercial={isComercial} 
+            isAdmin={isAdmin} 
+            setFormCliente={setFormCliente} 
+            setModalClienteForm={setModalClienteForm} 
+            perfilAtivo={perfilAtivo} 
+            setFormComunicado={setFormComunicado} 
+            setModalComunicado={setModalComunicado} 
+            mostrarDesativados={mostrarDesativados} 
+            setMostrarDesativados={setMostrarDesativados} 
+            buscaCliente={buscaCliente} 
+            setBuscaCliente={setBuscaCliente} 
+            filtroTipoCliente={filtroTipoCliente} 
+            setFiltroTipoCliente={setFiltroTipoCliente} 
+            clientesAgrupados={clientesAgrupados} 
+            setClienteDetalhe={setClienteDetalhe} 
+            alternarStatusCliente={alternarStatusCliente} 
+          />
         )}
 
-        {/* ─── ABA: CONTRATOS (MRR) ────────────────────────────────────────────── */}
         {aba === 'contratos' && isAdmin && (
-          <>
-            <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={() => abrirNovoContrato()} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13, margin: 0 }}>+ Novo Contrato</button>
-              <div style={{ flex: 1 }} />
-              <div className="metric-card" style={{ padding: "10px 20px", marginBottom: 0, display: "flex", gap: 20, alignItems: "center" }}>
-                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>MRR Total:</span>
-                <span style={{ fontWeight: 800, color: "#22c55e", fontSize: 16 }}>{fmt(mrrAtivo)}</span>
-              </div>
-            </div>
-            <div className="table-wrapper">
-              <table>
-                <thead><tr><th>Início</th><th>Cliente</th><th>Valor MRR</th><th>Serviços</th><th>Status</th><th>Ações</th></tr></thead>
-                <tbody>
-                  {contratos.map(c => (
-                    <tr key={c.id} style={{ opacity: c.status === 'Cancelado' ? 0.5 : 1 }}>
-                      <td style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{new Date(c.data_inicio).toLocaleDateString('pt-BR')}</td>
-                      <td><strong>{c.cliente_nome}</strong></td>
-                      <td style={{ fontWeight: 700, color: "#22c55e", whiteSpace: "nowrap" }}>{fmt(c.valor_mensal)}</td>
-                      <td style={{ fontSize: 12, color: "var(--text-secondary)", maxWidth: 200 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.servicos_inclusos || '—'}</div></td>
-                      <td><BadgeStatus status={c.status} /></td>
-                      <td style={{ whiteSpace: "nowrap" }}><button className="btn-action" style={{ margin: 0 }} onClick={() => editarContrato(c)}>Gerir</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <ContratosView 
+            abrirNovoContrato={abrirNovoContrato} 
+            mrrAtivo={mrrAtivo} 
+            contratos={contratos} 
+            editarContrato={editarContrato} 
+          />
         )}
 
-        {/* ─── ABA: TAREFAS ────────────────────────────────────────────────────── */}
         {aba === 'tarefas' && (
-          <>
-            <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={() => abrirNovaTarefa()} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13, margin: 0 }}>+ Nova Tarefa</button>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flex: 1, justifyContent: "flex-end" }}>
-                {(["Todos", "Pendente", "Em Andamento", "Concluído", "Atrasado"] as const).map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setFiltroStatusTarefa(s)}
-                    className="btn-action"
-                    style={{
-                      background: filtroStatusTarefa === s ? 'rgba(74,144,217,0.2)' : 'transparent',
-                      color: filtroStatusTarefa === s ? '#4A90D9' : 'var(--text-secondary)',
-                      borderColor: filtroStatusTarefa === s ? '#4A90D9' : 'var(--border-light)',
-                      fontSize: 12, margin: 0
-                    }}
-                  >
-                    {s === 'Atrasado' ? '⚠️ ' : ''}{s}
-                    {s === 'Atrasado' && tarefasComAtraso.filter(t => t.status === 'Atrasado').length > 0 && (
-                      <span className="notificacao-badge" style={{ marginLeft: 4 }}>{tarefasComAtraso.filter(t => t.status === 'Atrasado').length}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="table-wrapper">
-              <table>
-                <thead><tr><th>Prazo</th><th>Tarefa</th><th>Cliente</th><th>Status</th><th>Ação</th></tr></thead>
-                <tbody>
-                  {tarefasFiltradas.map(t => {
-                    const diasAtraso = t.status !== 'Concluído' ? calcDiasAtraso(t.data_vencimento) : 0;
-                    return (
-                      <tr key={t.id} style={{ opacity: t.status === 'Concluído' ? 0.5 : 1 }}
-                        className={t.prioridade === 'Alta' ? 'prioridade-alta' : t.prioridade === 'Baixa' ? 'prioridade-baixa' : ''}>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <div style={{ fontSize: 13 }}>{new Date(t.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</div>
-                          {diasAtraso > 0 && t.status !== 'Concluído' && (
-                            <div style={{ fontSize: 10, color: "#f87171", fontWeight: 700 }}>⚠️ {diasAtraso}d atrasado</div>
-                          )}
-                        </td>
-                        <td>
-                          <strong style={{ fontSize: 14 }}>{t.titulo}</strong>
-                          {t.descricao && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{t.descricao.substring(0, 60)}{t.descricao.length > 60 ? '...' : ''}</div>}
-                        </td>
-                        <td style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{t.nome_referencia || '—'}</td>
-                        <td><BadgeStatus status={t.status} /></td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          {t.status !== 'Concluído' && (
-                            <button className="btn-action" style={{ color: "#22c55e", borderColor: "#22c55e" }} onClick={() => alterarStatusTarefaRapido(t.id, 'Concluído')}>✓</button>
-                          )}
-                          {t.status !== 'Em Andamento' && t.status !== 'Concluído' && (
-                            <button className="btn-action" style={{ color: "#4A90D9" }} onClick={() => alterarStatusTarefaRapido(t.id, 'Em Andamento')}>▶</button>
-                          )}
-                          <button className="btn-action" onClick={() => editarTarefa(t as TarefaDB)}>Editar</button>
-                          {isAdmin && <button className="btn-action" style={{ color: "#f87171", margin: 0 }} onClick={() => excluirTarefa(t.id)}>🗑️</button>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {tarefasFiltradas.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", padding: 40, color: "var(--text-secondary)" }}>Nenhuma tarefa para o filtro selecionado</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <TarefasView 
+            abrirNovaTarefa={abrirNovaTarefa} 
+            filtroStatusTarefa={filtroStatusTarefa} 
+            setFiltroStatusTarefa={setFiltroStatusTarefa} 
+            tarefasComAtraso={tarefasComAtraso} 
+            tarefasFiltradas={tarefasFiltradas} 
+            alterarStatusTarefaRapido={alterarStatusTarefaRapido} 
+            editarTarefa={editarTarefa} 
+            isAdmin={isAdmin} 
+            excluirTarefa={excluirTarefa} 
+          />
         )}
 
-        {/* ─── ABA: TEMPLATES ──────────────────────────────────────────────────── */}
         {aba === 'templates' && isAdmin && (
-          <>
-            <button onClick={() => { setFormTemplate({ nome: "", tipo: "WhatsApp", conteudo: "", assunto: "" }); setModalTemplate(true); }} className="btn-action" style={{ marginBottom: "20px", background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px" }}>+ Novo Template</button>
-            <div className="table-wrapper">
-              <table>
-                <thead><tr><th>Nome</th><th>Canal</th><th>Pré-visualização</th><th style={{ textAlign: "right" }}>Ação</th></tr></thead>
-                <tbody>
-                  {templates.map(t => (
-                    <tr key={t.id}>
-                      <td style={{ whiteSpace: "nowrap" }}><strong>{t.nome}</strong></td>
-                      <td><span className="badge-status" style={{ background: t.tipo === 'WhatsApp' ? 'rgba(34,197,94,0.15)' : 'rgba(74,144,217,0.15)', color: t.tipo === 'WhatsApp' ? '#22c55e' : '#4A90D9' }}>{t.tipo}</span></td>
-                      <td><div style={{ maxWidth: "300px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "12px", color: "var(--text-secondary)" }}>{t.conteudo}</div></td>
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn-action" onClick={() => { setFormTemplate(t); setModalTemplate(true); }}>Editar</button>
-                        <button className="btn-action" style={{ color: "#f87171", margin: 0 }} onClick={() => excluirTemplate(t.id)}>🗑️</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <TemplatesView 
+            setFormTemplate={setFormTemplate} 
+            setModalTemplate={setModalTemplate} 
+            templates={templates} 
+            excluirTemplate={excluirTemplate} 
+          />
         )}
 
-        {/* ─── ABA: USUÁRIOS ───────────────────────────────────────────────────── */}
         {aba === 'usuarios' && isAdmin && (
-          <>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-              <button onClick={() => { setFormUsuario({ id: undefined, email: '', nome: '', senha: '', perfil: 'Comercial', filial: perfilAtivo.filial }); setModalUsuario(true); }} className="btn-action" style={{ background: "#4A90D9", color: "#fff", border: "none", padding: "9px 18px", fontSize: 13 }}>+ Pré-registar Membro</button>
-            </div>
-            <div className="table-wrapper">
-              <table>
-                <thead><tr><th>Nome / E-mail</th><th>Perfil</th><th>Filial</th><th style={{ textAlign: "right" }}>Ações</th></tr></thead>
-                <tbody>
-                  {usuarios.map(u => (
-                    <tr key={u.email}>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <strong>{u.nome || "Não definido"}</strong>
-                        {u.email === session?.user?.email && <span style={{ marginLeft: 8, fontSize: 10, color: "#4A90D9", background: "rgba(74,144,217,0.1)", padding: "2px 6px", borderRadius: 10 }}>Você</span>}
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{u.email}</div>
-                      </td>
-                      <td><span className="badge-status" style={{ background: "rgba(74,144,217,0.1)", color: "#4A90D9" }}>{u.perfil}</span></td>
-                      <td>{u.filial}</td>
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn-action" onClick={() => { setFormUsuario(u); setModalUsuario(true); }}>Editar Acesso</button>
-                        {u.email !== session?.user?.email && <button className="btn-action" style={{ color: "#f87171", margin: 0 }} onClick={() => excluirUsuario(u.id, u.email)}>Remover</button>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <UsuariosView 
+            setFormUsuario={setFormUsuario} 
+            setModalUsuario={setModalUsuario} 
+            perfilAtivo={perfilAtivo} 
+            usuarios={usuarios} 
+            session={session} 
+            excluirUsuario={excluirUsuario} 
+          />
         )}
+
       </main>
 
       {/* ─── MODAIS DA APLICAÇÃO ─────────────────────────────────────────────── */}
