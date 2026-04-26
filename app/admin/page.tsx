@@ -295,6 +295,14 @@ export default function AdminPage() {
 
   const tarefasUrgentes = useMemo(() => tarefas.filter(t => t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) >= -2), [tarefas]);
 
+  // Lógica de Alertas (Notificações em Tempo Real)
+  const alertasLeadCount = useMemo(() => {
+    return propostas.filter(p => {
+      if (p.status === 'fechada' || p.status === 'perdida') return false;
+      return diasSemInteracao(p) >= 7;
+    }).length;
+  }, [propostas, diasSemInteracao]);
+
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
     clientesBase.forEach(c => mapa.set(`ID_${c.id}`, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: [] }));
@@ -392,13 +400,6 @@ export default function AdminPage() {
     alvos = alvos.filter(c => (c.whatsapp || c.telefone) && c.ativo !== false);
     setFilaWpp(alvos);
     setModalComunicado(false);
-  };
-
-  const enviarWhatsAppDaFila = (cli: ClienteDB) => {
-    const numero = formatarWhatsApp(cli.whatsapp || cli.telefone);
-    const texto = `Olá *${cli.nome}*,\n\n${formComunicado.mensagem}`;
-    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, '_blank');
-    setFilaWpp(prev => prev.filter(c => c.id !== cli.id));
   };
 
   const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
@@ -558,11 +559,12 @@ export default function AdminPage() {
       />
 
       <main className="main-content">
-        {/* 3. HEADER */}
+        {/* 3. HEADER - Agora com contador de alertas */}
         <Header 
           setMenuMobileAberto={setMenuMobileAberto} aba={aba} carregando={carregando}
           filtroDias={filtroDias} setFiltroDias={setFiltroDias}
           vistaPropostas={vistaPropostas} setVistaPropostas={setVistaPropostas} carregarTudo={carregarTudo}
+          alertasCount={alertasLeadCount + tarefasUrgentes.length}
         />
 
         {/* 4. CONTEÚDO DINÂMICO (VIEWS) */}
