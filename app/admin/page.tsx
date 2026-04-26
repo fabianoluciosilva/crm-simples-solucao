@@ -3,13 +3,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import {
-  PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line, Area, AreaChart
-} from 'recharts';
 
 // ─── COMPONENTES E LÓGICA IMPORTADOS ────────────────────────────────────────
-import { MetricCard } from "@/components/MetricCard";
 import { BadgeStatus } from "@/components/BadgeStatus";
 import { 
   fmt, 
@@ -19,6 +14,10 @@ import {
   calcularChurnRisk, 
   gerarSugestaoIA 
 } from "@/utils/crmLogic";
+
+// ─── VISTAS (VIEWS) IMPORTADAS ──────────────────────────────────────────────
+import { DashboardView } from "@/components/views/DashboardView";
+import { RelatoriosView } from "@/components/views/RelatoriosView";
 
 // ─── MODAIS IMPORTADOS ──────────────────────────────────────────────────────
 import { ModalTarefa } from "@/components/modals/ModalTarefa";
@@ -334,8 +333,6 @@ export default function AdminPage() {
       return calcDiasAtraso(t.data_vencimento) >= -2;
     }), [tarefasComAtraso]);
 
-  const COLORS_PIE = ['#f87171', '#f59e0b', '#4A90D9', '#a855f7', '#64748b'];
-
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
     clientesBase.forEach(c => mapa.set(`ID_${c.id}`, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: [] }));
@@ -474,29 +471,6 @@ export default function AdminPage() {
     const obs = prop.dados?.obs || "";
     return `<div style="font-family: Arial, sans-serif; color: #333; padding: 40px; font-size: 14px; line-height: 1.6; max-width: 800px; margin: 0 auto; background: #fff;"><div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 50px;"><div><h2 style="margin: 0; color: #0a1628; font-size: 26px;">Simples Solução TI</h2></div><div style="text-align: right; font-size: 12px; color: #666;"><strong>Proposta:</strong> ${prop.numero}<br><strong>Data:</strong> ${dataFormatada}<br><strong>Empresa:</strong> ${prop.cliente}</div></div><h1 style="color: #0a1628; font-size: 24px; border-bottom: 2px solid #4A90D9; padding-bottom: 10px; margin-bottom: 20px;">PROPOSTA DE SERVIÇOS TÉCNICOS</h1><p>Rio de Janeiro, ${dataFormatada}</p><p>Prezada(o) <strong>${prop.contato || 'Cliente'}</strong>,</p><p>Agradecemos a oportunidade de apresentar a nossa empresa e discutir possíveis caminhos para o futuro da <strong>${prop.cliente}</strong>.</p><p>Este documento tem como objetivo definir o escopo de trabalho a ser empregado na prestação de serviço de suporte de informática à <strong>${prop.cliente}</strong>.</p><div style="margin-top: 40px; margin-bottom: 40px; font-weight: bold;">Fabiano Lucio<br><span style="font-weight: normal; font-size: 13px; color: #555;">Diretor Comercial<br>(21) 3529-7993<br>fabiano@simplessolucao.com.br<br>www.simplessolucao.com.br</span></div><h2 style="color: #4A90D9; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Proposta Comercial</h2><table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px; font-size: 14px;"><tr><th style="background: #0a1628; color: #fff; padding: 12px; text-align: left;">Descrição do Serviço</th><th style="background: #0a1628; color: #fff; padding: 12px; text-align: right; width: 200px;">Valor Mensal</th></tr><tr><td style="padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">Manutenção de TI</td><td style="text-align: right; color: #4A90D9; padding: 20px 12px; font-size: 16px; font-weight: bold; background: #f8f9fa; border-top: 2px solid #0a1628; border-bottom: 2px solid #0a1628;">${fmt(prop.valor)}</td></tr></table>${obs ? `<h3 style="color: #0a1628; font-size: 16px; margin-top: 25px;">Observações Adicionais</h3><p style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4A90D9;">${obs.replace(/\n/g, '<br>')}</p>` : ""}</div>`;
   };
-
-  const abrirModalEnvio = (prop: PropostaDB, tipo: 'Email' | 'WhatsApp') => {
-    let foneParaTentar = prop.telefone || "";
-    const cb = prop.cliente_id ? clientesBase.find(c => c.id === prop.cliente_id) : clientesBase.find(c => c.nome.toUpperCase() === prop.cliente.trim().toUpperCase());
-    if (cb) foneParaTentar = foneParaTentar || cb.whatsapp || cb.telefone || "";
-    setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(foneParaTentar) });
-    setFormEnvioMensagem({ templateId: '', texto: '', assunto: '' });
-  };
-
-  useEffect(() => {
-    if (modalEnvioProposta.prop && formEnvioMensagem.templateId) {
-      if (formEnvioMensagem.templateId === 'custom') {
-        setFormEnvioMensagem(prev => ({ ...prev, texto: '', assunto: '' }));
-      } else {
-        const tpl = templates.find(t => t.id.toString() === formEnvioMensagem.templateId);
-        if (tpl) {
-          const txt = processarTemplate(tpl.conteudo, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor);
-          const ass = tpl.assunto ? processarTemplate(tpl.assunto, modalEnvioProposta.prop!.contato, modalEnvioProposta.prop!.cliente, modalEnvioProposta.prop!.valor) : '';
-          setFormEnvioMensagem(prev => ({ ...prev, texto: txt, assunto: ass }));
-        }
-      }
-    }
-  }, [formEnvioMensagem.templateId, modalEnvioProposta.prop, templates]);
 
   const confirmarEnvioMensagem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1012,7 +986,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.3 - Modais Finais</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.4 - Vistas Extraídas</div>
         </div>
       </aside>
 
@@ -1055,95 +1029,34 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {/* ─── ABA: DASHBOARD ─────────────────────────────────────────────────── */}
+        {/* ─── VISTAS (VIEWS) ─────────────────────────────────────────────────── */}
+
         {aba === 'dashboard' && isComercial && (
-          <>
-            <div className="grid-metrics">
-              {isAdmin && <MetricCard label="MRR ATIVO" value={fmt(mrrAtivo)} borderColor="#22c55e" icon="💰" sub={`${contratos.filter(c => c.status === 'Ativo').length} contratos`} />}
-              <MetricCard label="TAXA DE CONVERSÃO" value={`${taxaConversao.toFixed(1)}%`} color="#4A90D9" borderColor="#4A90D9" icon="📈" />
-              <MetricCard label="GANHAS (VALOR)" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" icon="🏆" sub={`${propostasFechadas.length} negócios`} />
-              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} borderColor="#a855f7" icon="🎟️" />
-              <MetricCard label="PERDIDAS" value={propostasPerdidas.length} color="#f87171" borderColor="#f87171" icon="❌" />
-            </div>
+          <DashboardView 
+            isAdmin={isAdmin} 
+            mrrAtivo={mrrAtivo} 
+            taxaConversao={taxaConversao} 
+            propostasFechadas={propostasFechadas} 
+            ticketMedio={ticketMedio} 
+            propostasPerdidas={propostasPerdidas} 
+            propostasAbertas={propostasAbertas} 
+            propostasEnviadas={propostasEnviadas} 
+            tarefasUrgentes={tarefasUrgentes} 
+            mudarAba={mudarAba} 
+            pFiltradas={pFiltradas} 
+            dadosMotivosPerda={dadosMotivosPerda} 
+            dadosPipelineMensal={dadosPipelineMensal} 
+          />
+        )}
 
-            <div className="grid-metrics" style={{ marginBottom: "24px" }}>
-              <MetricCard label="EM ABERTO (NOVAS)" value={fmt(propostasAbertas.reduce((a, b) => a + b.valor, 0))} borderColor="#64748b" />
-              <MetricCard label="EM NEGOCIAÇÃO" value={fmt(propostasEnviadas.reduce((a, b) => a + b.valor, 0))} color="#4A90D9" borderColor="#4A90D9" />
-              <MetricCard label="FECHADO NO PERÍODO" value={fmt(propostasFechadas.reduce((a, b) => a + b.valor, 0))} color="#22c55e" borderColor="#22c55e" />
-            </div>
-
-            {/* ALERTAS RÁPIDOS */}
-            {tarefasUrgentes.length > 0 && (
-              <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                <div>
-                  <span style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>⚠️ {tarefasUrgentes.length} tarefa{tarefasUrgentes.length > 1 ? 's' : ''} urgente{tarefasUrgentes.length > 1 ? 's' : ''}</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: 13, marginLeft: 10 }}>{tarefasUrgentes.slice(0, 2).map(t => t.titulo).join(', ')}{tarefasUrgentes.length > 2 ? '...' : ''}</span>
-                </div>
-                <button className="btn-action" style={{ color: "#f87171", borderColor: "#f87171", margin: 0 }} onClick={() => mudarAba('tarefas')}>Ver Tarefas</button>
-              </div>
-            )}
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
-              <div className="metric-card" style={{ height: 320 }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📊 Funil de Negociação</div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[{ name: 'Criadas', qtd: pFiltradas.length }, { name: 'Enviadas', qtd: propostasEnviadas.length + propostasFechadas.length }, { name: 'Ganhas', qtd: propostasFechadas.length }]} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" horizontal={false} />
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} width={80} />
-                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Bar dataKey="qtd" fill="#4A90D9" radius={[0, 6, 6, 0]} barSize={28} label={{ position: 'right', fill: 'var(--text-secondary)', fontSize: 12 }} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="metric-card" style={{ height: 320 }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📉 Motivos de Perda</div>
-                {propostasPerdidas.length === 0 ? (
-                  <div style={{ height: "80%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", flexDirection: "column", gap: 8 }}>
-                    <span style={{ fontSize: 32 }}>🎉</span>
-                    <span>Nenhuma perda no período!</span>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={dadosMotivosPerda} cx="50%" cy="45%" innerRadius={55} outerRadius={90} paddingAngle={5} dataKey="value">
-                        {dadosMotivosPerda.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS_PIE[index % COLORS_PIE.length]} />)}
-                      </Pie>
-                      <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} itemStyle={{ color: '#fff' }} />
-                      <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-
-              <div className="metric-card" style={{ height: 280, gridColumn: "1 / -1" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 16 }}>📅 Evolução Mensal de Propostas (6 meses)</div>
-                <ResponsiveContainer width="100%" height="85%">
-                  <AreaChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <defs>
-                      <linearGradient id="colorGanhas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorPerdidas" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f87171" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
-                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
-                    <Area type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" fill="url(#colorGanhas)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" fill="url(#colorPerdidas)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="abertas" name="Em Aberto" stroke="#4A90D9" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </>
+        {aba === 'relatorios' && isAdmin && (
+          <RelatoriosView 
+            clientesAgrupados={clientesAgrupados} 
+            contratos={contratos} 
+            mrrAtivo={mrrAtivo} 
+            ticketMedio={ticketMedio} 
+            dadosPipelineMensal={dadosPipelineMensal} 
+          />
         )}
 
         {/* ─── ABA: PROPOSTAS (KANBAN) ─────────────────────────────────────────── */}
@@ -1444,50 +1357,6 @@ export default function AdminPage() {
                   )}
                 </tbody>
               </table>
-            </div>
-          </>
-        )}
-
-        {/* ─── ABA: RELATÓRIOS ─────────────────────────────────────────────────── */}
-        {aba === 'relatorios' && isAdmin && (
-          <>
-            <div className="grid-metrics" style={{ marginBottom: 24 }}>
-              <MetricCard label="CLIENTES ATIVOS" value={clientesAgrupados.filter(c => c.tipo === 'Cliente' && c.ativo !== false).length} icon="👥" />
-              <MetricCard label="LEADS NA BASE" value={clientesAgrupados.filter(c => c.tipo === 'Lead').length} color="#f59e0b" icon="🎯" />
-              <MetricCard label="CONTRATOS ATIVOS" value={contratos.filter(c => c.status === 'Ativo').length} color="#22c55e" icon="📄" />
-              <MetricCard label="CHURN (CANCELADOS)" value={contratos.filter(c => c.status === 'Cancelado').length} color="#f87171" icon="📉" />
-              <MetricCard label="MRR TOTAL" value={fmt(mrrAtivo)} color="#22c55e" icon="💰" />
-              <MetricCard label="TICKET MÉDIO" value={fmt(ticketMedio)} icon="🎟️" />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
-              <div className="metric-card" style={{ height: 360 }}>
-                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>MRR Atual vs Meta Trimestral</div>
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Valor recorrente por contratos ativos</div>
-                <ResponsiveContainer width="100%" height="80%">
-                  <BarChart data={[{ name: 'MRR Atual', Receita: mrrAtivo }, { name: 'Meta (+20%)', Receita: mrrAtivo * 1.2 }]} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" stroke="var(--text-secondary)" tick={{ fontSize: 12 }} axisLine={false} />
-                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={50} />
-                    <ChartTooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} formatter={(v: any) => fmt(v)} />
-                    <Bar dataKey="Receita" fill="#22c55e" radius={[6, 6, 0, 0]} barSize={60} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="metric-card" style={{ height: 360 }}>
-                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: 8 }}>Evolução Mensal de Propostas</div>
-                <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: 16 }}>Ganhas vs Perdidas nos últimos 6 meses</div>
-                <ResponsiveContainer width="100%" height="80%">
-                  <LineChart data={dadosPipelineMensal} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
-                    <ChartTooltip contentStyle={{ background: '#0a1628', border: 'none', borderRadius: 8, color: '#fff' }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="ganhas" name="Ganhas" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} />
-                    <Line type="monotone" dataKey="perdidas" name="Perdidas" stroke="#f87171" strokeWidth={2} dot={{ fill: '#f87171', r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
             </div>
           </>
         )}
