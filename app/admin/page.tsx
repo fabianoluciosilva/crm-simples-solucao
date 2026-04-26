@@ -74,6 +74,16 @@ type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" 
 
 const ADMIN_EMAIL_PRINCIPAL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fabiano@simplessolucao.com.br';
 
+// ─── HOOK: USE DEBOUNCE (A função que faltava!) ─────────────────────────────
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AdminPage() {
   const router = useRouter();
@@ -141,6 +151,36 @@ export default function AdminPage() {
   const [formInteracao, setFormInteracao] = useState({ tipo: "Nota", descricao: "" });
   const [modalPerda, setModalPerda] = useState(false);
   const [formPerda, setFormPerda] = useState({ id: 0, motivo: "", obs: "" });
+
+  // ─── AUTENTICAÇÃO E TEMA ──────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) { router.push("/"); return; }
+      setSession(session);
+      const emailUser = session.user.email || "";
+      const { data: perfilData } = await supabase.from('perfis').select('*').eq('email', emailUser).single();
+      
+      let pFinal: PerfilUsuario;
+      if (perfilData) {
+        pFinal = { id: perfilData.id, email: emailUser, perfil: perfilData.perfil, filial: perfilData.filial, nome: perfilData.nome };
+      } else {
+        const isDono = emailUser === ADMIN_EMAIL_PRINCIPAL;
+        pFinal = { id: session.user.id, email: emailUser, perfil: isDono ? 'Admin' : 'Comercial', filial: 'Matriz', nome: isDono ? 'Fabiano' : '' };
+        await supabase.from('perfis').upsert([{ 
+          id: pFinal.id, email: pFinal.email, perfil: pFinal.perfil, filial: pFinal.filial, nome: pFinal.nome
+        }]);
+      }
+      
+      setPerfilAtivo(pFinal);
+      setFormTarefa(prev => ({ ...prev, usuario_email: emailUser }));
+      if (pFinal.perfil === 'Admin' || pFinal.perfil === 'Comercial') setAba('dashboard');
+      else setAba('tarefas');
+      setCarregandoAuth(false);
+    });
+  }, [router]);
+
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push("/"); };
+  const mudarAba = (novaAba: string) => { setAba(novaAba as AbaType); setMenuMobileAberto(false); };
 
   // ─── CARREGAMENTO DE DADOS ────────────────────────────────────────────────
   const carregarTudo = useCallback(async () => {
@@ -472,10 +512,15 @@ export default function AdminPage() {
         .kanban-col { flex: 1; min-width: 260px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 14px; display: flex; flex-direction: column; }
         .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 10px; padding: 14px; margin-bottom: 12px; cursor: grab; }
         .notificacao-badge { background: #f87171; color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; }
+        
         @media (max-width: 768px) {
           .sidebar { transform: translateX(-100%); }
           .sidebar.open { transform: translateX(0); }
           .main-content { margin-left: 0; padding: 15px; width: 100%; }
+          header { flex-direction: column; align-items: flex-start !important; gap: 15px; }
+          .header-controls { width: 100%; flex-wrap: wrap; }
+          .mobile-menu-btn { display: block; }
+          .close-menu-btn { display: block; }
         }
       `}</style>
 
