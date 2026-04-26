@@ -24,6 +24,13 @@ import {
 import { ModalTarefa } from "@/components/modals/ModalTarefa";
 import { ModalClienteForm } from "@/components/modals/ModalClienteForm";
 import { ModalContrato } from "@/components/modals/ModalContrato";
+import { ModalTemplate } from "@/components/modals/ModalTemplate";
+import { ModalUsuario } from "@/components/modals/ModalUsuario";
+import { ModalPerda } from "@/components/modals/ModalPerda";
+import { ModalEditarValor } from "@/components/modals/ModalEditarValor";
+import { ModalComunicado } from "@/components/modals/ModalComunicado";
+import { ModalEnvio } from "@/components/modals/ModalEnvio";
+import { ModalFichaCliente } from "@/components/modals/ModalFichaCliente";
 
 // ─── TIPOS ─────────────────────────────────────────────────────────────────
 interface PropostaDB {
@@ -1011,7 +1018,7 @@ export default function AdminPage() {
             <button onClick={alternarTema} className="btn-action" style={{ flex: 1, textAlign: "center" }}>{tema === 'dark' ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ flex: 1, color: "#f87171", background: "none", border: "1px solid rgba(248,113,113,0.2)", cursor: "pointer", fontSize: "12px", padding: "6px", borderRadius: 6, fontWeight: 600 }}>Sair</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.4 - Modais Finais</div>
+          <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: 10, textAlign: "center" }}>v4.3 - Modais Finais</div>
         </div>
       </aside>
 
