@@ -185,13 +185,28 @@ export default function AdminPage() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <style>{`
-        :root { --bg-main: ${tema === 'dark' ? '#080f1e' : '#f4f7f9'}; --bg-sidebar: ${tema === 'dark' ? '#050a14' : '#ffffff'}; --border-light: rgba(255,255,255,0.05); }
-        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); z-index: 100; scrollbar-width: none; }
+  <style>{`
+        :root { --bg-main: ${tema === 'dark' ? '#080f1e' : '#f4f7f9'}; --bg-sidebar: ${tema === 'dark' ? '#050a14' : '#ffffff'}; --border-light: rgba(255,255,255,0.05); --text-primary: ${tema === 'dark' ? '#ffffff' : '#0f172a'}; --text-secondary: ${tema === 'dark' ? 'rgba(255,255,255,0.5)' : '#64748b'}; }
+        body { background: var(--bg-main); color: var(--text-primary); }
+        .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); z-index: 100; scrollbar-width: none; overflow-y: auto; }
         .sidebar::-webkit-scrollbar { display: none; }
         .main-content { flex: 1; margin-left: 260px; padding: 40px; background: var(--bg-main); min-height: 100vh; }
+        
+        /* 🎨 ESTILOS RECUPERADOS: Dashboard, Kanban e Tabelas */
+        .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .metric-card { background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 12px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
+        .table-wrapper { background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 12px; overflow-x: auto; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: rgba(0,0,0,0.05); padding: 12px 16px; font-size: 11px; text-transform: uppercase; color: var(--text-secondary); text-align: left; }
+        td { padding: 12px 16px; border-bottom: 1px solid var(--border-light); font-size: 13px; }
+        .btn-action { cursor: pointer; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-light); background: rgba(255,255,255,0.05); color: var(--text-primary); font-weight: 600; transition: 0.2s; }
+        .btn-action:hover { background: rgba(74,144,217,0.2); border-color: #4A90D9; }
+        .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; }
+        .kanban-col { flex: 1; min-width: 280px; max-width: 320px; background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; padding: 12px;}
+        .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 14px; margin-bottom: 12px; cursor: grab; }
+        
         .modal-overlay { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999 !important; backdrop-filter: blur(4px); }
-        .modal-content { background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 30px; max-height: 90vh; overflow-y: auto; width: 95%; max-width: 800px; position: relative; }
+        .modal-content { background: ${tema === 'dark' ? '#0f172a' : '#ffffff'}; border: 1px solid var(--border-light); border-radius: 20px; padding: 30px; max-height: 90vh; overflow-y: auto; width: 95%; max-width: 800px; position: relative; color: var(--text-primary); }
         @media (max-width: 768px) { .sidebar { transform: translateX(-100%); } .main-content { margin-left: 0; padding: 20px; } }
       `}</style>
 
