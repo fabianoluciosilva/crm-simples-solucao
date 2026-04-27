@@ -31,6 +31,16 @@ import { fmt, formatarWhatsApp, calcDiasAtraso } from "@/utils/crmLogic";
 
 type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "templates" | "usuarios" | "relatorios";
 
+// Hook para não travar a pesquisa
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [tema, setTema] = useState<"dark" | "light">("dark");
@@ -52,9 +62,11 @@ export default function AdminPage() {
 
   // --- ESTADOS DE FILTROS E BUSCA ---
   const [buscaCliente, setBuscaCliente] = useState("");
+  const debouncedBusca = useDebounce(buscaCliente, 300); // Pesquisa fluida
   const [filtroTipoCliente, setFiltroTipoCliente] = useState("Todos");
   const [mostrarDesativados, setMostrarDesativados] = useState(false);
   const [filtroStatusTarefa, setFiltroStatusTarefa] = useState("Todos");
+  const [mostrarBuscaGlobal, setMostrarBuscaGlobal] = useState(false);
 
   // --- ESTADOS DE MODAIS ---
   const [clienteDetalhe, setClienteDetalhe] = useState<any>(null);
@@ -68,10 +80,10 @@ export default function AdminPage() {
   const [modalEnvioProposta, setModalEnvioProposta] = useState<any>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
 
   // --- FORMULÁRIOS DE MODAIS ---
-  const [formTarefa, setFormTarefa] = useState<any>({});
+  const [formTarefa, setFormTarefa] = useState<any>({ titulo: "", descricao: "", status: "Pendente" });
   const [formInteracao, setFormInteracao] = useState({ tipo: 'Nota', descricao: '' });
-  const [formCliente, setFormCliente] = useState<any>({});
-  const [formContrato, setFormContrato] = useState<any>({});
+  const [formCliente, setFormCliente] = useState<any>({ nome: "", tipo: "Cliente" });
+  const [formContrato, setFormContrato] = useState<any>({ cliente_nome: "", valor_mensal: 0, status: "Ativo" });
   const [formTemplate, setFormTemplate] = useState<any>({ nome: "", tipo: "WhatsApp", conteudo: "" });
   const [formUsuario, setFormUsuario] = useState<any>({ email: "", perfil: "Comercial", filial: "Matriz" });
   const [formComunicado, setFormComunicado] = useState<any>({ publico: "Todos", assunto: "", mensagem: "" });
@@ -122,45 +134,59 @@ export default function AdminPage() {
     });
   }, [router, carregarTudo]);
 
-  // ─── LÓGICA DE NEGÓCIO E BUSCAS ───────────────────────────────────────────
+  // ─── MOTOR COMPLETO DE CLIENTES (CORRIGE O CRASH DA BASE DE CLIENTES) ───
   const clientesAgrupados = useMemo(() => {
-    const mapa = new Map();
-    clientesBase.forEach(c => mapa.set(c.id, { ...c, propostas: [], interacoes: [] }));
+    const mapa = new Map<string, any>();
     
-    propostas.forEach(p => {
-      const cli = Array.from(mapa.values()).find(c => c.id === p.cliente_id || c.nome.toUpperCase() === p.cliente.toUpperCase());
-      if (cli) cli.propostas.push(p);
-    });
-    
+    // 1. Inicia os clientes com listas vazias protegidas para não dar erro
+    clientesBase.forEach(c => mapa.set(`ID_${c.id}`, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: [] }));
+
+    const getChaveCliente = (id?: string | number, nomeRef?: string) => {
+      if (id) return `ID_${id}`;
+      if (nomeRef) {
+        const oficial = clientesBase.find(c => c.nome.trim().toUpperCase() === nomeRef.trim().toUpperCase());
+        if (oficial) return `ID_${oficial.id}`;
+        return `NAME_${nomeRef.trim().toUpperCase()}`;
+      }
+      return `UNKNOWN`;
+    };
+
+    // 2. Alimenta Interações
     interacoes.forEach(i => {
-      const cli = Array.from(mapa.values()).find(c => c.id === i.cliente_id || c.nome.toUpperCase() === i.cliente_nome.toUpperCase());
-      if (cli) cli.interacoes.push(i);
+      const key = getChaveCliente(i.cliente_id, i.cliente_nome);
+      if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
+      mapa.get(key).interacoes.push(i);
     });
+
+    // 3. Alimenta Propostas
+    propostas.forEach(p => {
+      const key = getChaveCliente(p.cliente_id, p.cliente);
+      if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
+      mapa.get(key).propostas.push(p);
+    });
+
+    // 4. Alimenta Contratos
+    contratos.forEach(c => {
+      const key = getChaveCliente(c.cliente_id, c.cliente_nome);
+      if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
+      mapa.get(key).contratos.push(c);
+      if (mapa.get(key).tipo === 'Lead') mapa.get(key).tipo = 'Cliente';
+    });
+
+    let lista = Array.from(mapa.values()).sort((a: any, b: any) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
     
-    let lista = Array.from(mapa.values());
-    
-    // Aplicação dos Filtros da Tela de Clientes (Pesquisa Restaurada)
+    // 5. Filtros de Pesquisa (Funcionais)
     if (!mostrarDesativados) lista = lista.filter(c => c.ativo !== false);
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
-    if (buscaCliente) {
-      const b = buscaCliente.toLowerCase();
+    if (debouncedBusca) {
+      const b = debouncedBusca.toLowerCase();
       lista = lista.filter(c => c.nome?.toLowerCase().includes(b) || c.email?.toLowerCase().includes(b));
     }
     
     return lista;
-  }, [clientesBase, propostas, interacoes, mostrarDesativados, filtroTipoCliente, buscaCliente]);
+  }, [clientesBase, propostas, interacoes, contratos, mostrarDesativados, filtroTipoCliente, debouncedBusca]);
 
-  const alertasCount = useMemo(() => {
-    const leadsGelados = propostas.filter(p => {
-      if (p.status === 'fechada' || p.status === 'perdida') return false;
-      const cli = clientesAgrupados.find(c => c.id === p.cliente_id || c.nome.toUpperCase() === p.cliente.toUpperCase());
-      const dataRef = cli?.interacoes?.[0] ? new Date(cli.interacoes[0].created_at) : new Date(p.created_at);
-      return Math.floor((Date.now() - dataRef.getTime()) / (1000 * 60 * 60 * 24)) >= 7;
-    }).length;
-    const tarefasAtrasadas = tarefas.filter(t => t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0).length;
-    return leadsGelados + tarefasAtrasadas;
-  }, [propostas, tarefas, clientesAgrupados]);
-
+  // Métricas do Dashboard
   const mrrAtivo = useMemo(() => contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0), [contratos]);
   const propostasFechadas = useMemo(() => propostas.filter(p => p.status === 'fechada'), [propostas]);
   const taxaConversao = propostas.length > 0 ? (propostasFechadas.length / propostas.length) * 100 : 0;
@@ -195,13 +221,25 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
+  // Alertas
+  const alertasCount = useMemo(() => {
+    const leadsGelados = propostas.filter(p => {
+      if (p.status === 'fechada' || p.status === 'perdida') return false;
+      const cli = clientesAgrupados.find(c => c.id === p.cliente_id || c.nome.toUpperCase() === p.cliente.toUpperCase());
+      const dataRef = cli?.interacoes?.[0] ? new Date(cli.interacoes[0].created_at) : new Date(p.created_at);
+      return Math.floor((Date.now() - dataRef.getTime()) / (1000 * 60 * 60 * 24)) >= 7;
+    }).length;
+    const tarefasAtrasadas = tarefas.filter(t => t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0).length;
+    return leadsGelados + tarefasAtrasadas;
+  }, [propostas, tarefas, clientesAgrupados]);
+
+  // Ações Auxiliares
   const diasSemInteracao = useCallback((prop: any) => {
     const cli = clientesAgrupados.find(c => c.id === prop.cliente_id || c.nome.toUpperCase() === prop.cliente.toUpperCase());
     if (!cli || cli.interacoes.length === 0) return Math.abs(calcDiasAtraso(prop.created_at));
     return Math.floor((Date.now() - new Date(cli.interacoes[0].created_at).getTime()) / (1000 * 60 * 60 * 24));
   }, [clientesAgrupados]);
 
-  // ─── FUNÇÕES DE INTERFACE ───────────────────────────────────────────────────
   const abrirModalEnvio = (prop: any, tipo: any) => setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(prop.telefone || "") });
   const abrirNotasDaProposta = (prop: any) => {
     const cli = clientesAgrupados.find(c => c.id === prop.cliente_id || c.nome.toUpperCase() === prop.cliente.toUpperCase());
@@ -247,7 +285,7 @@ export default function AdminPage() {
         tema={tema} alternarTema={() => {const n=tema==='dark'?'light':'dark'; setTema(n); localStorage.setItem("tema_ssti",n);}} 
         aba={aba} mudarAba={(a: any) => setAba(a)} isComercial={isComercial} isAdmin={isAdmin} 
         tarefasUrgentesCount={tarefas.filter(t => t.status !== 'Concluído' && calcDiasAtraso(t.data_vencimento) > 0).length} 
-        router={router} abrirBuscaGlobal={()=>{}} perfilAtivo={perfilAtivo} handleLogout={()=>supabase.auth.signOut()} 
+        router={router} abrirBuscaGlobal={()=>{setMostrarBuscaGlobal(!mostrarBuscaGlobal)}} perfilAtivo={perfilAtivo} handleLogout={()=>supabase.auth.signOut()} 
       />
 
       <main className="main-content">
@@ -256,7 +294,6 @@ export default function AdminPage() {
           vistaPropostas="kanban" setVistaPropostas={()=>{}} carregarTudo={carregarTudo} alertasCount={alertasCount} 
         />
 
-        {/* ─── VISTAS ─── */}
         {aba === 'dashboard' && (
           <DashboardView 
             isAdmin={isAdmin} mrrAtivo={mrrAtivo} taxaConversao={taxaConversao} propostasFechadas={propostasFechadas}
