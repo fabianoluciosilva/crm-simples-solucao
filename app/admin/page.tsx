@@ -247,8 +247,11 @@ export default function AdminPage() {
   const handleDragStart = (e: any, prop: any) => { setPropostaArrastando(prop); };
   const handleDragEnd = () => { setPropostaArrastando(null); };
   const handleDragOver = (e: any) => { e.preventDefault(); };
-  const handleDropStatus = async (novoStatus: string, propIdOverride?: number) => {
-    const idParaMover = propIdOverride || propostaArrastando?.id;
+  
+  // CORREÇÃO: O TypeScript queria o evento (e) primeiro e o status depois. 
+  const handleDropStatus = async (e: any, novoStatus: string) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const idParaMover = propostaArrastando?.id;
     if (!idParaMover) return;
     await supabase.from('propostas').update({ status: novoStatus }).eq('id', idParaMover);
     setPropostaArrastando(null);
