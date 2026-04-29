@@ -51,6 +51,7 @@ export default function AdminPage() {
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const [toast, setToast] = useState<{ msg: string; tipo: string } | null>(null);
 
+  
   // --- ESTADOS DE DADOS ---
   const [propostas, setPropostas] = useState<any[]>([]);
   const [clientesBase, setClientesBase] = useState<any[]>([]);
