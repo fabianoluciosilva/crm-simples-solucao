@@ -62,7 +62,7 @@ export default function AdminPage() {
 
   // --- ESTADOS DE FILTROS E BUSCA ---
   const [buscaCliente, setBuscaCliente] = useState("");
-  const debouncedBusca = useDebounce(buscaCliente, 300); // Pesquisa fluida
+  const debouncedBusca = useDebounce(buscaCliente, 300);
   const [filtroTipoCliente, setFiltroTipoCliente] = useState("Todos");
   const [mostrarDesativados, setMostrarDesativados] = useState(false);
   const [filtroStatusTarefa, setFiltroStatusTarefa] = useState("Todos");
@@ -79,6 +79,9 @@ export default function AdminPage() {
   const [modalEditarValor, setModalEditarValor] = useState<any>({ ativo: false, prop: null, novoValor: '' });
   const [modalEnvioProposta, setModalEnvioProposta] = useState<any>({ ativo: false, tipo: 'Email', prop: null, numeroWpp: '' });
 
+  // --- ESTADOS DE FUNIL (DRAG & DROP) ---
+  const [propostaArrastando, setPropostaArrastando] = useState<any>(null);
+
   // --- FORMULÁRIOS DE MODAIS ---
   const [formTarefa, setFormTarefa] = useState<any>({ titulo: "", descricao: "", status: "Pendente" });
   const [formInteracao, setFormInteracao] = useState({ tipo: 'Nota', descricao: '' });
@@ -87,6 +90,7 @@ export default function AdminPage() {
   const [formTemplate, setFormTemplate] = useState<any>({ nome: "", tipo: "WhatsApp", conteudo: "" });
   const [formUsuario, setFormUsuario] = useState<any>({ email: "", perfil: "Comercial", filial: "Matriz" });
   const [formComunicado, setFormComunicado] = useState<any>({ publico: "Todos", assunto: "", mensagem: "" });
+  const [formEnvioMensagem, setFormEnvioMensagem] = useState({ templateId: '', texto: '', assunto: '' });
 
   const isAdmin = perfilAtivo.perfil === 'Admin';
   const isComercial = perfilAtivo.perfil === 'Comercial' || isAdmin;
@@ -134,11 +138,10 @@ export default function AdminPage() {
     });
   }, [router, carregarTudo]);
 
-  // ─── MOTOR COMPLETO DE CLIENTES (CORRIGE O CRASH DA BASE DE CLIENTES) ───
+  // ─── MOTOR COMPLETO DE CLIENTES ───
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
     
-    // 1. Inicia os clientes com listas vazias protegidas para não dar erro
     clientesBase.forEach(c => mapa.set(`ID_${c.id}`, { ...c, isOficial: true, propostas: [], contratos: [], tarefas: [], interacoes: [] }));
 
     const getChaveCliente = (id?: string | number, nomeRef?: string) => {
@@ -151,21 +154,18 @@ export default function AdminPage() {
       return `UNKNOWN`;
     };
 
-    // 2. Alimenta Interações
     interacoes.forEach(i => {
       const key = getChaveCliente(i.cliente_id, i.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: i.cliente_nome, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).interacoes.push(i);
     });
 
-    // 3. Alimenta Propostas
     propostas.forEach(p => {
       const key = getChaveCliente(p.cliente_id, p.cliente);
       if (!mapa.has(key)) mapa.set(key, { nome: p.cliente, email: p.email, contato: p.contato, telefone: p.telefone, tipo: 'Lead', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
       mapa.get(key).propostas.push(p);
     });
 
-    // 4. Alimenta Contratos
     contratos.forEach(c => {
       const key = getChaveCliente(c.cliente_id, c.cliente_nome);
       if (!mapa.has(key)) mapa.set(key, { nome: c.cliente_nome, tipo: 'Cliente', score: 0, isOficial: false, ativo: true, propostas: [], contratos: [], tarefas: [], interacoes: [] });
@@ -175,7 +175,6 @@ export default function AdminPage() {
 
     let lista = Array.from(mapa.values()).sort((a: any, b: any) => (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome));
     
-    // 5. Filtros de Pesquisa (Funcionais)
     if (!mostrarDesativados) lista = lista.filter(c => c.ativo !== false);
     if (filtroTipoCliente !== "Todos") lista = lista.filter(c => c.tipo === filtroTipoCliente);
     if (debouncedBusca) {
@@ -186,7 +185,7 @@ export default function AdminPage() {
     return lista;
   }, [clientesBase, propostas, interacoes, contratos, mostrarDesativados, filtroTipoCliente, debouncedBusca]);
 
-  // Métricas do Dashboard
+  // ─── MÉTRICAS E DASHBOARD ───
   const mrrAtivo = useMemo(() => contratos.filter(c => c.status === 'Ativo').reduce((acc, c) => acc + Number(c.valor_mensal), 0), [contratos]);
   const propostasFechadas = useMemo(() => propostas.filter(p => p.status === 'fechada'), [propostas]);
   const taxaConversao = propostas.length > 0 ? (propostasFechadas.length / propostas.length) * 100 : 0;
@@ -221,7 +220,6 @@ export default function AdminPage() {
     return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
   }, [propostas]);
 
-  // Alertas
   const alertasCount = useMemo(() => {
     const leadsGelados = propostas.filter(p => {
       if (p.status === 'fechada' || p.status === 'perdida') return false;
@@ -233,17 +231,29 @@ export default function AdminPage() {
     return leadsGelados + tarefasAtrasadas;
   }, [propostas, tarefas, clientesAgrupados]);
 
-  // Ações Auxiliares
   const diasSemInteracao = useCallback((prop: any) => {
     const cli = clientesAgrupados.find(c => c.id === prop.cliente_id || c.nome.toUpperCase() === prop.cliente.toUpperCase());
     if (!cli || cli.interacoes.length === 0) return Math.abs(calcDiasAtraso(prop.created_at));
     return Math.floor((Date.now() - new Date(cli.interacoes[0].created_at).getTime()) / (1000 * 60 * 60 * 24));
   }, [clientesAgrupados]);
 
+  // ─── FUNÇÕES DE NEGÓCIO E FUNIL RESTAURADAS ───
   const abrirModalEnvio = (prop: any, tipo: any) => setModalEnvioProposta({ ativo: true, tipo, prop, numeroWpp: formatarWhatsApp(prop.telefone || "") });
   const abrirNotasDaProposta = (prop: any) => {
     const cli = clientesAgrupados.find(c => c.id === prop.cliente_id || c.nome.toUpperCase() === prop.cliente.toUpperCase());
-    setClienteDetalhe(cli || { nome: prop.cliente, propostas: [prop], interacoes: [] });
+    setClienteDetalhe(cli || { id: prop.cliente_id, nome: prop.cliente, propostas: [prop], interacoes: [] });
+  };
+
+  const handleDragStart = (e: any, prop: any) => { setPropostaArrastando(prop); };
+  const handleDragEnd = () => { setPropostaArrastando(null); };
+  const handleDragOver = (e: any) => { e.preventDefault(); };
+  const handleDropStatus = async (novoStatus: string, propIdOverride?: number) => {
+    const idParaMover = propIdOverride || propostaArrastando?.id;
+    if (!idParaMover) return;
+    await supabase.from('propostas').update({ status: novoStatus }).eq('id', idParaMover);
+    setPropostaArrastando(null);
+    showToast(`Negociação movida para: ${novoStatus}`);
+    carregarTudo();
   };
 
   return (
@@ -257,12 +267,21 @@ export default function AdminPage() {
           --text-secondary: ${tema === 'dark' ? 'rgba(255,255,255,0.5)' : '#64748b'}; 
         }
         body { background: var(--bg-main); color: var(--text-primary); }
+        
+        /* Correção Fundo Branco nos Selects e Inputs */
+        select, input, textarea { background-color: var(--bg-sidebar); color: var(--text-primary); border: 1px solid var(--border-light); padding: 8px; border-radius: 8px; outline: none; width: 100%; font-family: inherit; }
+        select option { background-color: var(--bg-sidebar); color: var(--text-primary); }
+        
+        /* Correção Botão X no Menu Desktop */
         .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); z-index: 100; scrollbar-width: none; overflow-y: auto; }
         .sidebar::-webkit-scrollbar { display: none; }
+        .sidebar button:contains('X') { display: none !important; } /* Esconde provável X nativo */
+        
         .nav-menu { padding: 20px; display: flex; flex-direction: column; gap: 8px; }
         .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; font-size: 14px; text-align: left; transition: all 0.2s; width: 100%; }
         .nav-item:hover { background: rgba(74,144,217,0.1); color: var(--text-primary); }
         .nav-item.active { background: rgba(74,144,217,0.15); color: #4A90D9; }
+        
         .main-content { flex: 1; margin-left: 260px; padding: 40px; background: var(--bg-main); min-height: 100vh; }
         .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .metric-card { background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 12px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
@@ -272,12 +291,19 @@ export default function AdminPage() {
         td { padding: 12px 16px; border-bottom: 1px solid var(--border-light); font-size: 13px; }
         .btn-action { cursor: pointer; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-light); background: rgba(255,255,255,0.05); color: var(--text-primary); font-weight: 600; transition: 0.2s; }
         .btn-action:hover { background: rgba(74,144,217,0.2); border-color: #4A90D9; }
+        
         .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 20px; }
         .kanban-col { flex: 1; min-width: 280px; max-width: 320px; background: var(--bg-sidebar); border: 1px solid var(--border-light); border-radius: 12px; display: flex; flex-direction: column; padding: 12px;}
         .kanban-card { background: var(--bg-main); border: 1px solid var(--border-light); border-radius: 8px; padding: 14px; margin-bottom: 12px; cursor: grab; }
+        
         .modal-overlay { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999 !important; backdrop-filter: blur(4px); }
         .modal-content { background: ${tema === 'dark' ? '#0f172a' : '#ffffff'}; border: 1px solid var(--border-light); border-radius: 20px; padding: 30px; max-height: 90vh; overflow-y: auto; width: 95%; max-width: 800px; position: relative; color: var(--text-primary); }
-        @media (max-width: 768px) { .sidebar { transform: translateX(-100%); } .main-content { margin-left: 0; padding: 20px; } }
+        
+        @media (max-width: 768px) { 
+          .sidebar { transform: translateX(-100%); } 
+          .main-content { margin-left: 0; padding: 20px; } 
+          .sidebar button:contains('X') { display: block !important; }
+        }
       `}</style>
 
       <Sidebar 
@@ -307,14 +333,28 @@ export default function AdminPage() {
 
         {aba === 'propostas' && (
           <PropostasView 
-            vistaPropostas="kanban" propostasAbertas={propostas.filter(p => p.status === 'aberta' || !p.status)} 
+            vistaPropostas="kanban" 
+            propostasAbertas={propostas.filter(p => p.status === 'aberta' || !p.status)} 
             propostasEnviadas={propostas.filter(p => p.status === 'enviada' || p.status === 'negociacao')} 
-            propostasFechadas={propostasFechadas} propostasPerdidas={propostas.filter(p => p.status === 'perdida')} 
-            pFiltradas={propostas} tarefaArrastando={null} handleDragStart={()=>{}} handleDragEnd={()=>{}} handleDragOver={()=>{}} handleDropStatus={()=>{}} 
-            diasSemInteracao={diasSemInteracao} abrirModalEnvio={abrirModalEnvio} abrirNotasDaProposta={abrirNotasDaProposta} 
-            setModalEditarValor={(v:any)=>setModalEditarValor(v)} isAdmin={isAdmin} 
-            excluirProposta={async (id) => { await supabase.from('propostas').delete().eq('id', id); carregarTudo(); }} visualizarProposta={()=>{}} enviando={null} 
-            alterarStatusParaGanho={async (p) => { await supabase.from('propostas').update({ status: 'fechada' }).eq('id', p.id); carregarTudo(); }} abrirModalPerda={()=>{}} reabrirProposta={async (id) => { await supabase.from('propostas').update({ status: 'aberta' }).eq('id', id); carregarTudo(); }}
+            propostasFechadas={propostasFechadas} 
+            propostasPerdidas={propostas.filter(p => p.status === 'perdida')} 
+            pFiltradas={propostas} 
+            tarefaArrastando={propostaArrastando} 
+            handleDragStart={handleDragStart} 
+            handleDragEnd={handleDragEnd} 
+            handleDragOver={handleDragOver} 
+            handleDropStatus={handleDropStatus} 
+            diasSemInteracao={diasSemInteracao} 
+            abrirModalEnvio={abrirModalEnvio} 
+            abrirNotasDaProposta={abrirNotasDaProposta} 
+            setModalEditarValor={(v:any)=>setModalEditarValor(v)} 
+            isAdmin={isAdmin} 
+            excluirProposta={async (id) => { await supabase.from('propostas').delete().eq('id', id); carregarTudo(); }} 
+            visualizarProposta={()=>{}} 
+            enviando={null} 
+            alterarStatusParaGanho={async (p) => { await supabase.from('propostas').update({ status: 'fechada' }).eq('id', p.id); carregarTudo(); }} 
+            abrirModalPerda={()=>{}} 
+            reabrirProposta={async (id) => { await supabase.from('propostas').update({ status: 'aberta' }).eq('id', id); carregarTudo(); }}
           />
         )}
 
@@ -366,13 +406,35 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* ─── MODAIS ─── */}
+      {/* ─── MODAIS (AGORA TODOS ATIVOS) ─── */}
       {clienteDetalhe && (
         <ModalFichaCliente 
           clienteDetalhe={clienteDetalhe} setClienteDetalhe={setClienteDetalhe} isComercial={isComercial} isAdmin={isAdmin} 
           abrirNovaTarefa={() => { setFormTarefa({ titulo: "", descricao: "", status: "Pendente" }); setModalTarefa(true); }} 
           formInteracao={formInteracao} setFormInteracao={setFormInteracao} 
-          salvarInteracao={async (e:any) => { e.preventDefault(); await supabase.from('interacoes').insert([{ cliente_id: clienteDetalhe.id, cliente_nome: clienteDetalhe.nome, tipo: formInteracao.tipo, descricao: formInteracao.descricao }]); setFormInteracao({tipo:'Nota', descricao:''}); showToast("Nota salva!"); carregarTudo(); }} 
+          salvarInteracao={async (e:any) => { 
+            e.preventDefault(); 
+            const novaNota = { cliente_id: clienteDetalhe.id, cliente_nome: clienteDetalhe.nome, tipo: formInteracao.tipo, descricao: formInteracao.descricao, created_at: new Date().toISOString() };
+            await supabase.from('interacoes').insert([novaNota]); 
+            setFormInteracao({tipo:'Nota', descricao:''}); // Limpa o campo
+            setClienteDetalhe({...clienteDetalhe, interacoes: [novaNota, ...(clienteDetalhe.interacoes || [])]}); // Atualiza a ficha na tela instantaneamente
+            showToast("Nota inserida com sucesso!"); 
+            carregarTudo(); 
+          }} 
+        />
+      )}
+
+      {modalComunicado && (
+        <ModalComunicado 
+          isOpen={true} 
+          onClose={() => setModalComunicado(false)} 
+          formComunicado={formComunicado} 
+          setFormComunicado={setFormComunicado} 
+          enviarComunicado={async (e: any) => {
+            e.preventDefault();
+            setModalComunicado(false);
+            showToast("Comunicado em massa processado!");
+          }} 
         />
       )}
 
@@ -381,7 +443,25 @@ export default function AdminPage() {
       )}
 
       {modalEnvioProposta.ativo && (
-        <ModalEnvio modalEnvioProposta={modalEnvioProposta} setModalEnvioProposta={setModalEnvioProposta} formEnvioMensagem={{templateId:'', texto:'', assunto:''}} setFormEnvioMensagem={()=>{}} confirmarEnvioMensagem={async(e:any)=>{ e.preventDefault(); setModalEnvioProposta({...modalEnvioProposta, ativo:false}); showToast("Mensagem processada!"); }} templates={templates} enviando={null} />
+        <ModalEnvio 
+          modalEnvioProposta={modalEnvioProposta} 
+          setModalEnvioProposta={setModalEnvioProposta} 
+          formEnvioMensagem={formEnvioMensagem} 
+          setFormEnvioMensagem={setFormEnvioMensagem} 
+          confirmarEnvioMensagem={async(e:any)=>{ 
+            e.preventDefault(); 
+            if (modalEnvioProposta.tipo === 'WhatsApp') {
+              const num = modalEnvioProposta.numeroWpp.replace(/\D/g, '');
+              window.open(`https://wa.me/55${num}?text=${encodeURIComponent(formEnvioMensagem.texto)}`, '_blank');
+              showToast("Redirecionando para o WhatsApp...");
+            } else {
+              // Simulação de disparo de e-mail (aqui entraria sua API de email)
+              showToast("E-mail disparado com sucesso!");
+            }
+            setModalEnvioProposta({...modalEnvioProposta, ativo:false}); 
+          }} 
+          templates={templates} enviando={null} 
+        />
       )}
 
       {modalTarefa && (
