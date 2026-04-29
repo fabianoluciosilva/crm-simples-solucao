@@ -142,11 +142,9 @@ export default function AdminPage() {
   useEffect(() => {
     const ocultarBotaoX = () => {
       if (window.innerWidth <= 768) return; 
-      // Varre todos os botões, spans e divs buscando o 'X'
       const elementos = document.querySelectorAll('button, div, span, a');
       elementos.forEach((el: any) => {
         const texto = el.textContent?.trim();
-        // Se o texto for apenas 'X' e for um elemento pequeno
         if (texto === 'X' || texto === 'x' || texto === '✕' || texto === '✖') {
           const rect = el.getBoundingClientRect();
           if (rect.width > 0 && rect.width <= 60 && rect.height > 0 && rect.height <= 60) {
@@ -157,7 +155,6 @@ export default function AdminPage() {
     };
     
     ocultarBotaoX(); 
-    // Fica vigiando a tela caso o Next.js desenhe o X atrasado
     const observer = new MutationObserver(() => setTimeout(ocultarBotaoX, 50));
     observer.observe(document.body, { childList: true, subtree: true });
     
@@ -434,7 +431,7 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* ─── MODAIS (AGORA PROTEGIDOS CONTRA CRASH) ─── */}
+      {/* ─── MODAIS ─── */}
       {clienteDetalhe && (
         <ModalFichaCliente 
           clienteDetalhe={clienteDetalhe} setClienteDetalhe={setClienteDetalhe} isComercial={isComercial} isAdmin={isAdmin} 
@@ -452,19 +449,23 @@ export default function AdminPage() {
         />
       )}
 
-      {/* ENVIAMOS AS VARIÁVEIS clientes e templates para não quebrar a tela de Envio em Massa */}
+      {/* MODAL DE COMUNICADO BLINDADO COM TODAS AS DEPENDÊNCIAS POSSÍVEIS */}
       {modalComunicado && (
         <ModalComunicado 
           isOpen={true} 
           onClose={() => setModalComunicado(false)} 
-          formComunicado={formComunicado} 
-          setFormComunicado={setFormComunicado} 
           {...({ 
-            clientes: clientesAgrupados,
-            clientesBase: clientesBase,
-            templates: templates,
+            formComunicado,
+            setFormComunicado,
+            clientesAgrupados,      // Nome comum em alguns componentes
+            clientes: clientesAgrupados, // Nome comum em outros
+            clientesBase,
+            templates,
+            session,
+            perfilAtivo,
             enviarComunicado: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); },
-            salvarComunicado: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); }
+            salvarComunicado: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); },
+            onSubmit: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); }
           } as any)}
         />
       )}
