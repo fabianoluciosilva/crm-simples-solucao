@@ -51,7 +51,6 @@ export default function AdminPage() {
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const [toast, setToast] = useState<{ msg: string; tipo: string } | null>(null);
 
-  
   // --- ESTADOS DE DADOS ---
   const [propostas, setPropostas] = useState<any[]>([]);
   const [clientesBase, setClientesBase] = useState<any[]>([]);
@@ -139,6 +138,22 @@ export default function AdminPage() {
     });
   }, [router, carregarTudo]);
 
+  // ─── SCRIPT PARA REMOVER O "X" DO MENU NO PC ───
+  useEffect(() => {
+    const ocultarBotaoX = () => {
+      const botoes = document.querySelectorAll('.sidebar button');
+      botoes.forEach((btn: any) => {
+        if (btn.innerText?.trim() === 'X' || btn.textContent?.trim() === 'X') {
+          btn.style.display = window.innerWidth > 768 ? 'none' : 'block';
+        }
+      });
+    };
+    // Executa ao carregar e ao redimensionar o ecrã
+    setTimeout(ocultarBotaoX, 100); 
+    window.addEventListener('resize', ocultarBotaoX);
+    return () => window.removeEventListener('resize', ocultarBotaoX);
+  }, [aba, menuMobileAberto]);
+
   // ─── MOTOR COMPLETO DE CLIENTES ───
   const clientesAgrupados = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -218,7 +233,7 @@ export default function AdminPage() {
         else meses[key].abertas++;
       }
     });
-    return Object.entries(meses).map(([name, v]) => ({ name, ...v }));
+    return Object.entries(meses).map(([name, v]) => ({ name, v }));
   }, [propostas]);
 
   const alertasCount = useMemo(() => {
@@ -249,7 +264,6 @@ export default function AdminPage() {
   const handleDragEnd = () => { setPropostaArrastando(null); };
   const handleDragOver = (e: any) => { e.preventDefault(); };
   
-  // CORREÇÃO: O TypeScript queria o evento (e) primeiro e o status depois. 
   const handleDropStatus = async (e: any, novoStatus: string) => {
     if (e && e.preventDefault) e.preventDefault();
     const idParaMover = propostaArrastando?.id;
@@ -272,14 +286,12 @@ export default function AdminPage() {
         }
         body { background: var(--bg-main); color: var(--text-primary); }
         
-        /* Correção Fundo Branco nos Selects e Inputs */
+        /* Fundo correto nos Selects e Inputs */
         select, input, textarea { background-color: var(--bg-sidebar); color: var(--text-primary); border: 1px solid var(--border-light); padding: 8px; border-radius: 8px; outline: none; width: 100%; font-family: inherit; }
         select option { background-color: var(--bg-sidebar); color: var(--text-primary); }
         
-        /* Correção Botão X no Menu Desktop */
         .sidebar { width: 260px; position: fixed; top: 0; bottom: 0; left: 0; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); z-index: 100; scrollbar-width: none; overflow-y: auto; }
         .sidebar::-webkit-scrollbar { display: none; }
-        .sidebar button:contains('X') { display: none !important; } /* Esconde provável X nativo */
         
         .nav-menu { padding: 20px; display: flex; flex-direction: column; gap: 8px; }
         .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; font-weight: 600; font-size: 14px; text-align: left; transition: all 0.2s; width: 100%; }
@@ -306,7 +318,6 @@ export default function AdminPage() {
         @media (max-width: 768px) { 
           .sidebar { transform: translateX(-100%); } 
           .main-content { margin-left: 0; padding: 20px; } 
-          .sidebar button:contains('X') { display: block !important; }
         }
       `}</style>
 
@@ -369,7 +380,13 @@ export default function AdminPage() {
         {aba === 'clientes' && (
           <ClientesView 
             clientesAgrupados={clientesAgrupados} setClienteDetalhe={setClienteDetalhe} isAdmin={isAdmin} isComercial={isComercial}
-            setModalClienteForm={setModalClienteForm} setFormCliente={setFormCliente} setModalComunicado={setModalComunicado} setFormComunicado={setFormComunicado}
+            setModalClienteForm={setModalClienteForm} setFormCliente={setFormCliente} 
+            
+            // Garantindo que todas as possíveis "props" para abrir o modal estejam disponíveis:
+            setModalComunicado={setModalComunicado} setFormComunicado={setFormComunicado}
+            abrirModalComunicado={() => { setFormComunicado({ publico: "Todos", assunto: "", mensagem: "" }); setModalComunicado(true); }}
+            abrirComunicado={() => { setFormComunicado({ publico: "Todos", assunto: "", mensagem: "" }); setModalComunicado(true); }}
+
             mostrarDesativados={mostrarDesativados} setMostrarDesativados={setMostrarDesativados}
             buscaCliente={buscaCliente} setBuscaCliente={setBuscaCliente} filtroTipoCliente={filtroTipoCliente} setFiltroTipoCliente={setFiltroTipoCliente}
             alternarStatusCliente={async (cli) => { await supabase.from('clientes').update({ ativo: !cli.ativo }).eq('id', cli.id); carregarTudo(); }} perfilAtivo={perfilAtivo}
@@ -410,7 +427,7 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* ─── MODAIS (AGORA TODOS ATIVOS) ─── */}
+      {/* ─── MODAIS ─── */}
       {clienteDetalhe && (
         <ModalFichaCliente 
           clienteDetalhe={clienteDetalhe} setClienteDetalhe={setClienteDetalhe} isComercial={isComercial} isAdmin={isAdmin} 
@@ -420,8 +437,8 @@ export default function AdminPage() {
             e.preventDefault(); 
             const novaNota = { cliente_id: clienteDetalhe.id, cliente_nome: clienteDetalhe.nome, tipo: formInteracao.tipo, descricao: formInteracao.descricao, created_at: new Date().toISOString() };
             await supabase.from('interacoes').insert([novaNota]); 
-            setFormInteracao({tipo:'Nota', descricao:''}); // Limpa o campo
-            setClienteDetalhe({...clienteDetalhe, interacoes: [novaNota, ...(clienteDetalhe.interacoes || [])]}); // Atualiza a ficha na tela instantaneamente
+            setFormInteracao({tipo:'Nota', descricao:''}); 
+            setClienteDetalhe({...clienteDetalhe, interacoes: [novaNota, ...(clienteDetalhe.interacoes || [])]}); 
             showToast("Nota inserida com sucesso!"); 
             carregarTudo(); 
           }} 
@@ -440,7 +457,6 @@ export default function AdminPage() {
           } as any)}
         />
       )}
-      
 
       {modalEditarValor.ativo && (
         <ModalEditarValor isOpen={true} onClose={()=>setModalEditarValor({ativo:false, prop:null, novoValor:''})} modalEditarValor={modalEditarValor} setModalEditarValor={setModalEditarValor} salvarNovoValorProposta={async(e:any)=>{ e.preventDefault(); await supabase.from('propostas').update({valor:Number(modalEditarValor.novoValor)}).eq('id',modalEditarValor.prop.id); setModalEditarValor({ativo:false, prop:null, novoValor:''}); carregarTudo(); }} />
@@ -457,9 +473,8 @@ export default function AdminPage() {
             if (modalEnvioProposta.tipo === 'WhatsApp') {
               const num = modalEnvioProposta.numeroWpp.replace(/\D/g, '');
               window.open(`https://wa.me/55${num}?text=${encodeURIComponent(formEnvioMensagem.texto)}`, '_blank');
-              showToast("Redirecionando para o WhatsApp...");
+              showToast("A redirecionar para o WhatsApp...");
             } else {
-              // Simulação de disparo de e-mail (aqui entraria sua API de email)
               showToast("E-mail disparado com sucesso!");
             }
             setModalEnvioProposta({...modalEnvioProposta, ativo:false}); 
