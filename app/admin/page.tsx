@@ -138,21 +138,29 @@ export default function AdminPage() {
     });
   }, [router, carregarTudo]);
 
-  // ─── SCRIPT PARA REMOVER O "X" DO MENU NO PC ───
+  // ─── VIGIA PARA REMOVER O "X" DO MENU NO PC DE FORMA GARANTIDA ───
   useEffect(() => {
     const ocultarBotaoX = () => {
+      // Se for telemóvel, deixa o X aparecer
+      if (window.innerWidth <= 768) return; 
+      
       const botoes = document.querySelectorAll('.sidebar button');
       botoes.forEach((btn: any) => {
         if (btn.innerText?.trim() === 'X' || btn.textContent?.trim() === 'X') {
-          btn.style.display = window.innerWidth > 768 ? 'none' : 'block';
+          btn.style.display = 'none';
         }
       });
     };
-    // Executa ao carregar e ao redimensionar o ecrã
-    setTimeout(ocultarBotaoX, 100); 
-    window.addEventListener('resize', ocultarBotaoX);
-    return () => window.removeEventListener('resize', ocultarBotaoX);
-  }, [aba, menuMobileAberto]);
+    
+    // Roda na hora
+    ocultarBotaoX(); 
+    
+    // Fica vigiando a tela caso o Next.js desenhe o X com atraso
+    const observer = new MutationObserver(ocultarBotaoX);
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    return () => observer.disconnect();
+  }, [aba, tema]);
 
   // ─── MOTOR COMPLETO DE CLIENTES ───
   const clientesAgrupados = useMemo(() => {
@@ -286,7 +294,6 @@ export default function AdminPage() {
         }
         body { background: var(--bg-main); color: var(--text-primary); }
         
-        /* Fundo correto nos Selects e Inputs */
         select, input, textarea { background-color: var(--bg-sidebar); color: var(--text-primary); border: 1px solid var(--border-light); padding: 8px; border-radius: 8px; outline: none; width: 100%; font-family: inherit; }
         select option { background-color: var(--bg-sidebar); color: var(--text-primary); }
         
@@ -380,16 +387,14 @@ export default function AdminPage() {
         {aba === 'clientes' && (
           <ClientesView 
             clientesAgrupados={clientesAgrupados} setClienteDetalhe={setClienteDetalhe} isAdmin={isAdmin} isComercial={isComercial}
-            setModalClienteForm={setModalClienteForm} setFormCliente={setFormCliente} 
-            
-            // Garantindo que todas as possíveis "props" para abrir o modal estejam disponíveis:
-            setModalComunicado={setModalComunicado} setFormComunicado={setFormComunicado}
-            abrirModalComunicado={() => { setFormComunicado({ publico: "Todos", assunto: "", mensagem: "" }); setModalComunicado(true); }}
-            abrirComunicado={() => { setFormComunicado({ publico: "Todos", assunto: "", mensagem: "" }); setModalComunicado(true); }}
-
+            setModalClienteForm={setModalClienteForm} setFormCliente={setFormCliente} setModalComunicado={setModalComunicado} setFormComunicado={setFormComunicado}
             mostrarDesativados={mostrarDesativados} setMostrarDesativados={setMostrarDesativados}
             buscaCliente={buscaCliente} setBuscaCliente={setBuscaCliente} filtroTipoCliente={filtroTipoCliente} setFiltroTipoCliente={setFiltroTipoCliente}
             alternarStatusCliente={async (cli) => { await supabase.from('clientes').update({ ativo: !cli.ativo }).eq('id', cli.id); carregarTudo(); }} perfilAtivo={perfilAtivo}
+            {...({ 
+              abrirModalComunicado: () => { setFormComunicado({ publico: "Todos", assunto: "", mensagem: "" }); setModalComunicado(true); },
+              abrirComunicado: () => { setFormComunicado({ publico: "Todos", assunto: "", mensagem: "" }); setModalComunicado(true); }
+            } as any)}
           />
         )}
 
