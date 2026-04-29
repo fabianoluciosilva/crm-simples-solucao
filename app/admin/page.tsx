@@ -138,25 +138,27 @@ export default function AdminPage() {
     });
   }, [router, carregarTudo]);
 
-  // ─── VIGIA PARA REMOVER O "X" DO MENU NO PC DE FORMA GARANTIDA ───
+  // ─── VIGIA AGRESSIVO PARA REMOVER O "X" NO PC ───
   useEffect(() => {
     const ocultarBotaoX = () => {
-      // Se for telemóvel, deixa o X aparecer
       if (window.innerWidth <= 768) return; 
-      
-      const botoes = document.querySelectorAll('.sidebar button');
-      botoes.forEach((btn: any) => {
-        if (btn.innerText?.trim() === 'X' || btn.textContent?.trim() === 'X') {
-          btn.style.display = 'none';
+      // Varre todos os botões, spans e divs buscando o 'X'
+      const elementos = document.querySelectorAll('button, div, span, a');
+      elementos.forEach((el: any) => {
+        const texto = el.textContent?.trim();
+        // Se o texto for apenas 'X' e for um elemento pequeno
+        if (texto === 'X' || texto === 'x' || texto === '✕' || texto === '✖') {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.width <= 60 && rect.height > 0 && rect.height <= 60) {
+            el.style.display = 'none';
+          }
         }
       });
     };
     
-    // Roda na hora
     ocultarBotaoX(); 
-    
-    // Fica vigiando a tela caso o Next.js desenhe o X com atraso
-    const observer = new MutationObserver(ocultarBotaoX);
+    // Fica vigiando a tela caso o Next.js desenhe o X atrasado
+    const observer = new MutationObserver(() => setTimeout(ocultarBotaoX, 50));
     observer.observe(document.body, { childList: true, subtree: true });
     
     return () => observer.disconnect();
@@ -432,7 +434,7 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* ─── MODAIS ─── */}
+      {/* ─── MODAIS (AGORA PROTEGIDOS CONTRA CRASH) ─── */}
       {clienteDetalhe && (
         <ModalFichaCliente 
           clienteDetalhe={clienteDetalhe} setClienteDetalhe={setClienteDetalhe} isComercial={isComercial} isAdmin={isAdmin} 
@@ -450,6 +452,7 @@ export default function AdminPage() {
         />
       )}
 
+      {/* ENVIAMOS AS VARIÁVEIS clientes e templates para não quebrar a tela de Envio em Massa */}
       {modalComunicado && (
         <ModalComunicado 
           isOpen={true} 
@@ -457,6 +460,9 @@ export default function AdminPage() {
           formComunicado={formComunicado} 
           setFormComunicado={setFormComunicado} 
           {...({ 
+            clientes: clientesAgrupados,
+            clientesBase: clientesBase,
+            templates: templates,
             enviarComunicado: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); },
             salvarComunicado: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); }
           } as any)}
