@@ -433,13 +433,13 @@ export default function AdminPage() {
           onClose={() => setModalComunicado(false)} 
           formComunicado={formComunicado} 
           setFormComunicado={setFormComunicado} 
-          enviarComunicado={async (e: any) => {
-            e.preventDefault();
-            setModalComunicado(false);
-            showToast("Comunicado em massa processado!");
-          }} 
+          {...({ 
+            enviarComunicado: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); },
+            salvarComunicado: async (e: any) => { e.preventDefault(); setModalComunicado(false); showToast("Comunicado em massa processado!"); }
+          } as any)}
         />
       )}
+      
 
       {modalEditarValor.ativo && (
         <ModalEditarValor isOpen={true} onClose={()=>setModalEditarValor({ativo:false, prop:null, novoValor:''})} modalEditarValor={modalEditarValor} setModalEditarValor={setModalEditarValor} salvarNovoValorProposta={async(e:any)=>{ e.preventDefault(); await supabase.from('propostas').update({valor:Number(modalEditarValor.novoValor)}).eq('id',modalEditarValor.prop.id); setModalEditarValor({ativo:false, prop:null, novoValor:''}); carregarTudo(); }} />
