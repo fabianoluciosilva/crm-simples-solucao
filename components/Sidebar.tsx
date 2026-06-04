@@ -39,6 +39,7 @@ export const Sidebar = ({
           </button>
         )}
         <button className={`nav-item ${aba === 'clientes' ? 'active' : ''}`} onClick={() => mudarAba('clientes')}>👥 Base de Clientes</button>
+        {isComercial && <button className={`nav-item ${aba === 'leads' ? 'active' : ''}`} onClick={() => mudarAba('leads')}>🌐 Leads do Site</button>}
         {isAdmin && <button className={`nav-item ${aba === 'contratos' ? 'active' : ''}`} onClick={() => mudarAba('contratos')}>📄 Financeiro (MRR)</button>}
         <button className={`nav-item ${aba === 'tarefas' ? 'active' : ''}`} onClick={() => mudarAba('tarefas')}>
           ✅ Tarefas

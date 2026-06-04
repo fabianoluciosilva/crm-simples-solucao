@@ -15,6 +15,7 @@ import { ContratosView } from "@/components/views/ContratosView";
 import { TarefasView } from "@/components/views/TarefasView";
 import { TemplatesView } from "@/components/views/TemplatesView";
 import { UsuariosView } from "@/components/views/UsuariosView";
+import { LeadsView } from "@/components/views/LeadsView";
 
 // ─── MODAIS ─────────────────────────────────────────────────────────────────
 import { ModalTarefa } from "@/components/modals/ModalTarefa";
@@ -29,7 +30,7 @@ import { ModalComunicado } from "@/components/modals/ModalComunicado";
 
 import { fmt, formatarWhatsApp, calcDiasAtraso } from "@/utils/crmLogic";
 
-type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "templates" | "usuarios" | "relatorios";
+type AbaType = "dashboard" | "propostas" | "clientes" | "contratos" | "tarefas" | "templates" | "usuarios" | "relatorios" | "leads";
 
 // Hook para não travar a pesquisa
 function useDebounce<T>(value: T, delay: number): T {
@@ -59,6 +60,7 @@ export default function AdminPage() {
   const [interacoes, setInteracoes] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [usuarios, setUsuarios] = useState<any[]>([]);
+  const [leads, setLeads] = useState<any[]>([]);
 
   // --- ESTADOS DE FILTROS E BUSCA ---
   const [buscaCliente, setBuscaCliente] = useState("");
@@ -103,14 +105,15 @@ export default function AdminPage() {
   const carregarTudo = useCallback(async () => {
     setCarregando(true);
     try {
-      const [p, c, co, t, i, tp, u] = await Promise.all([
+      const [p, c, co, t, i, tp, u, l] = await Promise.all([
         supabase.from('propostas').select('*').order('created_at', { ascending: false }),
         supabase.from('clientes').select('*').order('nome', { ascending: true }),
         supabase.from('contratos').select('*').order('created_at', { ascending: false }),
         supabase.from('tarefas').select('*').order('data_vencimento', { ascending: true }),
         supabase.from('interacoes').select('*').order('created_at', { ascending: false }),
         supabase.from('templates').select('*').order('created_at', { ascending: false }),
-        supabase.from('perfis').select('*').order('email', { ascending: true })
+        supabase.from('perfis').select('*').order('email', { ascending: true }),
+        supabase.from('leads').select('*').order('created_at', { ascending: false }),
       ]);
       setPropostas(p.data || []);
       setClientesBase(c.data || []);
@@ -119,6 +122,7 @@ export default function AdminPage() {
       setInteracoes(i.data || []);
       setTemplates(tp.data || []);
       setUsuarios(u.data || []);
+      setLeads(l.data || []);
     } finally {
       setCarregando(false);
     }
@@ -424,10 +428,14 @@ export default function AdminPage() {
         )}
 
         {aba === 'usuarios' && isAdmin && (
-          <UsuariosView 
+          <UsuariosView
             usuarios={usuarios} setModalUsuario={setModalUsuario} setFormUsuario={setFormUsuario} session={session} perfilAtivo={perfilAtivo}
-            excluirUsuario={async (id) => { await supabase.from('perfis').delete().eq('id', id); carregarTudo(); }} 
+            excluirUsuario={async (id) => { await supabase.from('perfis').delete().eq('id', id); carregarTudo(); }}
           />
+        )}
+
+        {aba === 'leads' && (
+          <LeadsView leads={leads} carregarTudo={carregarTudo} />
         )}
       </main>
 
